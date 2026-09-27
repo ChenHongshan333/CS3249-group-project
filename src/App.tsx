@@ -3,14 +3,15 @@ import {
   ArrowLeft, ArrowRight, Bell, BookOpen, Camera, Check, CheckCircle2, ChefHat,
   ChevronDown, ChevronRight, Clock3, Copy, Download, Flame, Heart, Home,
   Link2, MessageCircle, Mic, MicOff, Pause, Play, Plus,
-  Search, Send, Settings2, ShieldCheck, Sparkles, Square,
+  Search, Send, Settings2, ShieldCheck, Sparkles, Square, Trash2,
   Users, UtensilsCrossed, Video, VideoOff, Volume2, VolumeX, X,
 } from 'lucide-react'
 import { recipes, type Mode, type Screen } from './data'
 
 type Preferences = { level: string; diet: string; voice: boolean; captions: boolean; camera: boolean }
 type Message = { from: 'ai' | 'user' | 'partner'; text: string }
-type HistoryItem = { id: string; recipe: string; date: string; mode: Mode; partner: string }
+type HistoryItem = { id: string; recipe: string; date: string; mode: Mode; partner: string; videoExported?: boolean }
+type Post = { text: string; historyId?: string; withVideo?: boolean }
 
 const defaultPreferences: Preferences = { level: 'I know a few basics', diet: 'No restrictions', voice: true, captions: true, camera: true }
 const modeName = (mode: Mode) => mode === 'solo' ? 'Solo cooking' : mode === 'offline' ? 'Same kitchen' : 'Online with a friend'
@@ -40,12 +41,18 @@ function App() {
   const [search, setSearch] = useState('')
   const [videoUrl, setVideoUrl] = useState('')
   const [postText, setPostText] = useState('')
-  const [posts, setPosts] = useState<string[]>(() => stored('cookalong.posts', []))
+  const [posts, setPosts] = useState<Post[]>(() => stored<(Post | string)[]>('cookalong.posts', []).map(item => typeof item === 'string' ? { text: item } : item))
+  const [historyPickerOpen, setHistoryPickerOpen] = useState(false)
+  const [attachedMeal, setAttachedMeal] = useState('')
+  const [attachVideo, setAttachVideo] = useState(false)
+  const [sessionHistoryId, setSessionHistoryId] = useState('')
+  const videoUrls = useRef<Record<string, string>>({})
   const [recording, setRecording] = useState(false)
   const [seconds, setSeconds] = useState(0)
   const [timer, setTimer] = useState<number | null>(null)
   const [importUrl, setImportUrl] = useState('')
   const [importOpen, setImportOpen] = useState(false)
+  const [inviteOpen, setInviteOpen] = useState(false)
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
   const [confirmEnd, setConfirmEnd] = useState(false)
@@ -92,7 +99,9 @@ function App() {
   const nextStep = () => {
     if (paused) return
     if (step === recipe.steps.length - 1) {
-      setHistory(current => [{ id: `${Date.now()}`, recipe: recipe.name, date: new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' }), mode, partner: mode === 'solo' ? '' : 'Maya' }, ...current])
+      const id = `${Date.now()}`
+      setSessionHistoryId(id)
+      setHistory(current => [{ id, recipe: recipe.name, date: new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' }), mode, partner: mode === 'solo' ? '' : 'Maya' }, ...current])
       setScreen('finish'); window.speechSynthesis?.cancel(); return
     }
     const newStep = step + 1
@@ -137,7 +146,10 @@ function App() {
         stream.getTracks().forEach(track => track.stop())
         const url = URL.createObjectURL(new Blob(chunks, { type: recorder.mimeType || 'video/webm' }))
         const link = document.createElement('a'); link.href = url; link.download = `CookAlong-${recipe.id}-recap.webm`; link.click()
-        window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+        if (sessionHistoryId) {
+          videoUrls.current[sessionHistoryId] = url
+          setHistory(current => current.map(item => item.id === sessionHistoryId ? { ...item, videoExported: true } : item))
+        }
         setRecording(false); setToast('Demo recap video downloaded!')
       }
       recorder.start()
@@ -160,6 +172,20 @@ function App() {
       draw()
     } catch { setRecording(false); setToast('Could not export video in this browser.') }
   }
+  const mealIcon = (name: string) => recipes.find(item => item.name === name)?.icon || '🍽️'
+  const attachedItem = history.find(item => item.id === attachedMeal)
+  const sharePost = () => {
+    if (!postText.trim() && !attachedItem) return
+    setPosts([{ text: postText.trim(), historyId: attachedItem?.id, withVideo: !!attachedItem?.videoExported && attachVideo }, ...posts])
+    setPostText(''); setAttachedMeal(''); setAttachVideo(false); setHistoryPickerOpen(false)
+    setToast('Post shared in this demo')
+  }
+  const inviteLink = `cookalong.app/invite/${joinCode}`
+  const copyInvite = async () => { try { await navigator.clipboard.writeText(`https://${inviteLink}`); setToast('Invite link copied') } catch { setToast(`Invite link: ${inviteLink}`) } }
+  const shareInvite = async () => {
+    if (!navigator.share) { copyInvite(); return }
+    try { await navigator.share({ title: 'Cook with me on CookAlong', text: 'Join me for a low-pressure cooking session on CookAlong!', url: `https://${inviteLink}` }) } catch { /* share sheet dismissed */ }
+  }
   const back = () => {
     if (screen === 'cook') { setPaused(true); setToast('Session paused. Resume from the cooking screen.'); return }
     setScreen(({ friends: 'home', preferences: 'home', recipes: 'home', mode: 'recipes', pair: 'mode', finish: 'home', history: 'home', community: 'home', profile: 'home', home: 'home' } as Record<Screen, Screen>)[screen] || 'home')
@@ -179,7 +205,7 @@ function App() {
         <div className="gentle-note"><Heart size={19} /><span>Small steps count. Cooking alongside someone can make the next one easier.</span></div>
       </main><Nav screen={screen} go={setScreen} /></>}
 
-    {screen === 'friends' && <><main className="screen"><Header title="Cooking friends" label="YOUR COOKING CIRCLE" back={back} /><div className="content-scroll"><div className="page-heading compact"><h1>Better with someone <em>beside you.</em></h1><p>Start a familiar, low-pressure cooking session with someone you know.</p></div><div className="friends-list"><div className="friend-profile-card"><span className="profile-avatar friend-profile-avatar">M</span><div><strong>Maya</strong><small><span className="online-dot" /> Ready to cook · Usually online</small><p>Your last shared meal: Rainbow salad bowl</p></div></div><button className="primary-button" onClick={() => { setMode('online'); setScreen('recipes') }}>Cook with Maya <ArrowRight size={19} /></button><button className="invite-friend-button" onClick={() => setToast('Invite link ready in this demo')}><Link2 size={18} /> Invite another friend</button></div><div className="gentle-note"><Users size={19} /><span>CookAlong only pairs you with people you choose for this prototype.</span></div></div></main><Nav screen={screen} go={setScreen} /></>}
+    {screen === 'friends' && <><main className="screen"><Header title="Cooking friends" label="YOUR COOKING CIRCLE" back={back} /><div className="content-scroll"><div className="page-heading compact"><h1>Better with someone <em>beside you.</em></h1><p>Start a familiar, low-pressure cooking session with someone you know.</p></div><div className="friends-list"><div className="friend-profile-card"><span className="profile-avatar friend-profile-avatar">M</span><div><strong>Maya</strong><small><span className="online-dot" /> Ready to cook · Usually online</small><p>Your last shared meal: Rainbow salad bowl</p></div></div><button className="primary-button" onClick={() => { setMode('online'); setScreen('recipes') }}>Cook with Maya <ArrowRight size={19} /></button></div><button className="invite-friend-button" onClick={() => setInviteOpen(true)}><Link2 size={18} /> Invite a new friend to CookAlong</button><div className="gentle-note"><Users size={19} /><span>CookAlong only pairs you with people you choose for this prototype.</span></div></div></main><Nav screen={screen} go={setScreen} /></>}
 
     {screen === 'preferences' && <main className="screen has-footer"><Header title="Your preferences" label="MAKE IT YOURS" back={back} /><div className="content-scroll">
       <div className="page-heading"><h1>Cooking should<br /><em>feel good.</em></h1><p>Set things up the way that helps you feel comfortable.</p></div>
@@ -217,13 +243,13 @@ function App() {
 
     {screen === 'history' && <><main className="screen"><Header title="Cooking history" label="YOUR LITTLE WINS" back={back} /><div className="content-scroll"><div className="page-heading compact"><h1>Look what you've <em>made.</em></h1><p>Every meal is a step forward.</p></div>{history.length ? <div className="history-list">{history.map(item => <div className="history-card" key={item.id}><span className="history-icon">{recipes.find(r => r.name === item.recipe)?.icon || '🍽️'}</span><div><strong>{item.recipe}</strong><small>{item.date} · {modeName(item.mode)}{item.partner ? ` · ${item.partner}` : ''}</small></div><CheckCircle2 size={18} /></div>)}</div> : <div className="empty-panel"><BookOpen size={34} /><strong>Your story starts here.</strong><p>Cook a meal and it will appear in your history.</p><button className="small-primary" onClick={() => setScreen('recipes')}>Choose a recipe <ArrowRight size={16} /></button></div>}</div></main><Nav screen={screen} go={setScreen} /></>}
 
-    {screen === 'community' && <><main className="screen"><Header title="Community" label="COOKING TOGETHER" back={back} /><div className="content-scroll"><div className="page-heading compact"><h1>From our <em>kitchens.</em></h1><p>Share the little moments that make cooking fun.</p></div><div className="community-compose"><span className="avatar">H</span><input aria-label="Write a community post" value={postText} onChange={event => setPostText(event.target.value)} placeholder="What did you cook today?" /><button aria-label="Post" onClick={() => { if (postText.trim()) { setPosts([postText.trim(), ...posts]); setPostText(''); setToast('Post shared in this demo') } }}><Plus size={20} /></button></div><div className="post-card"><div className="post-author"><span className="avatar friend-avatar">M</span><div><strong>Maya</strong><small>Today · CookAlong community</small></div></div><div className="post-visual">🥗<span>GOOD FOOD,<br />GOOD COMPANY.</span></div><p>First salad bowl with a friend! The small steps made it feel so much easier. 🌿</p><span className="post-love"><Heart size={17} /> 12 little hearts</span></div>{posts.map((item, index) => <div className="post-card" key={`${item}-${index}`}><div className="post-author"><span className="avatar">H</span><div><strong>You</strong><small>Just now · Demo post</small></div></div><p>{item}</p><span className="post-love"><Heart size={17} /> Your cooking story</span></div>)}</div></main><Nav screen={screen} go={setScreen} /></>}
+    {screen === 'community' && <><main className="screen"><Header title="Community" label="COOKING TOGETHER" back={back} /><div className="content-scroll"><div className="page-heading compact"><h1>From our <em>kitchens.</em></h1><p>Share the little moments that make cooking fun.</p></div><div className="community-compose-card"><div className="community-compose"><span className="avatar">H</span><input aria-label="Write a community post" value={postText} onChange={event => setPostText(event.target.value)} placeholder="What did you cook today?" /><button aria-label="Post" onClick={sharePost}><Plus size={20} /></button></div>{attachedItem && <div className="attached-meal"><span className="history-icon">{mealIcon(attachedItem.recipe)}</span><div><strong>{attachedItem.recipe}</strong><small>{attachedItem.date} · {modeName(attachedItem.mode)}</small>{attachedItem.videoExported && <label className="attach-video-toggle"><input type="checkbox" checked={attachVideo} onChange={event => setAttachVideo(event.target.checked)} /> <Video size={13} /> Include exported recap video</label>}</div><button aria-label="Remove attached meal" onClick={() => { setAttachedMeal(''); setAttachVideo(false) }}><X size={16} /></button></div>}<button className="attach-history-button" onClick={() => setHistoryPickerOpen(open => !open)}><BookOpen size={15} /> {attachedItem ? 'Change meal from history' : 'Add a meal from your history'} <ChevronDown size={15} className={historyPickerOpen ? 'flipped' : ''} /></button>{historyPickerOpen && (history.length ? <div className="history-picker">{history.map(item => <button key={item.id} className={item.id === attachedMeal ? 'selected' : ''} onClick={() => { setAttachedMeal(item.id); setAttachVideo(!!item.videoExported); setHistoryPickerOpen(false) }}><span>{mealIcon(item.recipe)}</span><span><strong>{item.recipe}</strong><small>{item.date}{item.videoExported ? ' · Recap video' : ''}</small></span>{item.videoExported && <Video size={15} />}</button>)}</div> : <p className="history-picker-empty">Cook a meal first and it will show up here to share.</p>)}</div><div className="post-card"><div className="post-author"><span className="avatar friend-avatar">M</span><div><strong>Maya</strong><small>Today · CookAlong community</small></div></div><div className="post-visual">🥗<span>GOOD FOOD,<br />GOOD COMPANY.</span></div><p>First salad bowl with a friend! The small steps made it feel so much easier. 🌿</p><small className="post-meal-meta">Cooked today · Online with a friend · You</small><span className="post-love"><Heart size={17} /> 12 little hearts</span></div>{posts.map((item, index) => { const meal = history.find(entry => entry.id === item.historyId); const video = item.withVideo && item.historyId ? videoUrls.current[item.historyId] : ''; return <div className="post-card" key={`${item.text}-${index}`}><div className="post-author"><span className="avatar">H</span><div><strong>You</strong><small>Just now · Demo post</small></div><button className="post-remove" aria-label="Remove post" onClick={() => { setPosts(current => current.filter((_, i) => i !== index)); setToast('Post removed') }}><Trash2 size={15} /></button></div>{video ? <video className="post-video" src={video} controls playsInline /> : meal && <div className="post-visual">{mealIcon(meal.recipe)}<span>{meal.recipe.toUpperCase()}{item.withVideo && <><br /><small className="post-video-badge"><Play size={11} /> Recap video</small></>}</span></div>}{item.text && <p>{item.text}</p>}{meal && <small className="post-meal-meta">Cooked {meal.date} · {modeName(meal.mode)}{meal.partner ? ` · ${meal.partner}` : ''}</small>}<span className="post-love"><Heart size={17} /> Your cooking story</span></div> })}</div></main><Nav screen={screen} go={setScreen} /></>}
 
     {screen === 'profile' && <><main className="screen"><Header title="Your profile" label="MY KITCHEN" back={back} /><div className="content-scroll"><div className="profile-hero"><span className="profile-avatar">H</span><h1>Hi, home cook!</h1><p>Every recipe is a new adventure.</p></div><div className="profile-stat"><strong>{history.length}</strong><span>meals made</span><strong>{new Set(history.map(item => item.recipe)).size}</strong><span>recipes explored</span></div><div className="profile-links"><button onClick={() => setScreen('preferences')}><Settings2 size={20} /> Cooking preferences <ChevronRight size={19} /></button><button onClick={() => setScreen('history')}><BookOpen size={20} /> Cooking history <ChevronRight size={19} /></button><button onClick={() => setScreen('community')}><Users size={20} /> Community <ChevronRight size={19} /></button></div><div className="gentle-note"><Sparkles size={19} /><span>CookAlong is an AI guide. Check food safety and dietary needs yourself.</span></div></div></main><Nav screen={screen} go={setScreen} /></>}
 
     {confirmEnd && <div className="modal-backdrop"><div className="end-modal"><span className="end-modal-icon"><Pause size={24} /></span><h2>Leave this cooking session?</h2><p>Your current step will not be marked complete. You can stay and pause instead.</p><button className="primary-button" onClick={() => { setPaused(false); setConfirmEnd(false); setScreen('home'); window.speechSynthesis?.cancel() }}>End session</button><button className="secondary-link" onClick={() => { setConfirmEnd(false); setPaused(true) }}>Stay and pause</button></div></div>}
     {welcome && <div className="modal-backdrop"><div className="welcome-modal"><button aria-label="Close welcome" onClick={() => { setWelcome(false); localStorage.setItem('cookalong.seen', 'true') }}><X size={20} /></button><span className="welcome-symbol">👋</span><span className="eyebrow">HELLO, HOME COOK</span><h2>Meet CookAlong.</h2><p>Your friendly AI cooking companion. Follow simple steps, ask questions, and cook with a friend wherever you are.</p><div className="welcome-limit"><ShieldCheck size={19} /><span>I'm an AI guide. I can help you through a recipe, but I can't guarantee food is safe or diagnose an allergy.</span></div><button className="primary-button" onClick={() => { setWelcome(false); localStorage.setItem('cookalong.seen', 'true') }}>Let's get started <ArrowRight size={19} /></button></div></div>}
-    {importOpen && <div className="modal-backdrop"><div className="import-modal"><button className="modal-close" aria-label="Close" onClick={() => setImportOpen(false)}><X size={20} /></button><span className="import-icon"><Video size={26} /></span><h2>Recipe video input</h2><p>Explore how a cooking video could become a step-by-step recipe. This prototype uses a sample recipe for the demonstration.</p><label htmlFor="video-url">Video link</label><input id="video-url" type="url" value={importUrl} onChange={event => setImportUrl(event.target.value)} placeholder="https://example.com/recipe-video" /><button className="primary-button" disabled={!importUrl.trim()} onClick={() => { setVideoUrl(importUrl); setImportOpen(false); setRecipeId('noodles'); setToast('Demo recipe loaded: One-pan veggie noodles') }}>Preview example recipe <ArrowRight size={18} /></button>{videoUrl && <small>Previous example: {videoUrl}</small>}</div></div>}
+    {inviteOpen && <div className="modal-backdrop"><div className="import-modal invite-modal"><button className="modal-close" aria-label="Close" onClick={() => setInviteOpen(false)}><X size={20} /></button><span className="import-icon"><Link2 size={26} /></span><h2>Invite a friend</h2><p>Send your personal link to someone you'd like to cook with. It adds them to your cooking circle — it doesn't start a session or include Maya.</p><ol className="invite-steps"><li><strong>Share your link</strong> by message, email or any app.</li><li><strong>Your friend joins CookAlong</strong> using the link.</li><li><strong>They appear on this screen</strong>, ready for you to start cooking together.</li></ol><label htmlFor="invite-link">Your invite link</label><div className="invite-link-row"><input id="invite-link" readOnly value={inviteLink} onFocus={event => event.target.select()} /><button aria-label="Copy invite link" onClick={copyInvite}><Copy size={17} /></button></div><button className="primary-button" onClick={shareInvite}>Share invite link <Send size={17} /></button><small>Prototype only: no invite is actually sent.</small></div></div>}{importOpen && <div className="modal-backdrop"><div className="import-modal"><button className="modal-close" aria-label="Close" onClick={() => setImportOpen(false)}><X size={20} /></button><span className="import-icon"><Video size={26} /></span><h2>Recipe video input</h2><p>Explore how a cooking video could become a step-by-step recipe. This prototype uses a sample recipe for the demonstration.</p><label htmlFor="video-url">Video link</label><input id="video-url" type="url" value={importUrl} onChange={event => setImportUrl(event.target.value)} placeholder="https://example.com/recipe-video" /><button className="primary-button" disabled={!importUrl.trim()} onClick={() => { setVideoUrl(importUrl); setImportOpen(false); setRecipeId('noodles'); setToast('Demo recipe loaded: One-pan veggie noodles') }}>Preview example recipe <ArrowRight size={18} /></button>{videoUrl && <small>Previous example: {videoUrl}</small>}</div></div>}
     {toast && <div className="toast" role="status"><CheckCircle2 size={17} /> {toast}</div>}
     <div className="home-indicator"><span /></div>
   </div><div className="stage-caption"><span className="caption-dot" /> INTERACTIVE PROTOTYPE <span>·</span> iPhone 17</div></div>
