@@ -1,6 +1,6 @@
 # CookAlong interactive prototype
 
-A mobile-first React prototype for CS3249, based primarily on the hand-drawn low-fidelity screens. The Figma workflow informs the order and branches; the four-color palette comes from the supplied reference image.
+A mobile-first React prototype for CS3249, based primarily on the hand-drawn low-fidelity screens. The Figma workflow informs the order and branches; the four-color palette is: https://colorhunt.co/palette/c44a3ad97a2bf2d4796faf4f.
 
 ## Run
 
