@@ -53,4 +53,4 @@ export const recipes: Recipe[] = [
 ]
 
 export type Mode = 'solo' | 'offline' | 'online'
-export type Screen = 'home' | 'preferences' | 'recipes' | 'mode' | 'pair' | 'cook' | 'finish' | 'history' | 'community' | 'profile'
+export type Screen = 'home' | 'friends' | 'preferences' | 'recipes' | 'mode' | 'pair' | 'cook' | 'finish' | 'history' | 'community' | 'profile'
