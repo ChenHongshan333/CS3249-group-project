@@ -20,7 +20,16 @@ const stored = <T,>(key: string, fallback: T): T => {
 }
 
 function App() {
-  const [screen, setScreen] = useState<Screen>('home')
+  const [screen, setScreenState] = useState<Screen>('home')
+  const [detailOrigin, setDetailOrigin] = useState<Screen>('home')
+  const setScreen = (nextScreen: Screen) => {
+    if (nextScreen === 'preferences' || nextScreen === 'history' || nextScreen === 'community') {
+      setDetailOrigin(screen === 'profile' ? 'profile' : 'home')
+    } else if (nextScreen === 'home') {
+      setDetailOrigin('home')
+    }
+    setScreenState(nextScreen)
+  }
   const [welcome, setWelcome] = useState(!stored('cookalong.seen', false))
   const [preferences, setPreferences] = useState<Preferences>(() => stored('cookalong.preferences', defaultPreferences))
   const [recipeId, setRecipeId] = useState('salad')
@@ -188,6 +197,12 @@ function App() {
   }
   const back = () => {
     if (screen === 'cook') { setPaused(true); setToast('Session paused. Resume from the cooking screen.'); return }
+    if (detailOrigin === 'profile' && (screen === 'preferences' || screen === 'history' || screen === 'community')) {
+      setDetailOrigin('home')
+      setScreen('profile')
+      return
+    }
+    setDetailOrigin('home')
     setScreen(({ friends: 'home', preferences: 'home', recipes: 'home', mode: 'recipes', pair: 'mode', finish: 'home', history: 'home', community: 'home', profile: 'home', home: 'home' } as Record<Screen, Screen>)[screen] || 'home')
   }
 
@@ -212,7 +227,7 @@ function App() {
       <div className="field-card"><div className="field-heading"><ChefHat size={19} /><strong>Cooking experience</strong></div><div className="option-stack">{['First time cooking', 'I know a few basics'].map(item => <button key={item} className={`radio-row ${preferences.level === item ? 'selected' : ''}`} onClick={() => setPreferences({ ...preferences, level: item })}><span>{item}</span><span className="radio" /></button>)}</div></div>
       <div className="field-card"><div className="field-heading"><Heart size={19} /><strong>Dietary needs</strong></div><div className="chip-list">{['No restrictions', 'Vegetarian', 'Halal', 'Other'].map(item => <button key={item} className={`chip ${preferences.diet === item ? 'chosen' : ''}`} onClick={() => setPreferences({ ...preferences, diet: item })}>{item}</button>)}</div><p className="field-note">Check ingredient labels yourself for allergies or specific dietary needs.</p></div>
       <div className="field-card"><div className="field-heading"><MessageCircle size={19} /><strong>During cooking</strong></div><Toggle label="Read steps aloud" detail="Voice guidance" checked={preferences.voice} onChange={() => setPreferences({ ...preferences, voice: !preferences.voice })} /><Toggle label="Show text captions" detail="Follow along quietly" checked={preferences.captions} onChange={() => setPreferences({ ...preferences, captions: !preferences.captions })} /><Toggle label="Camera check prompts" detail="Simulated for this prototype" checked={preferences.camera} onChange={() => setPreferences({ ...preferences, camera: !preferences.camera })} /></div>
-    </div><div className="bottom-action"><button className="primary-button" onClick={() => { setToast('Preferences saved'); setScreen('home') }}>Save preferences <Check size={19} /></button></div></main>}
+    </div><div className="bottom-action"><button className="primary-button" onClick={() => { setToast('Preferences saved'); setScreen(detailOrigin === 'profile' ? 'profile' : 'home') }}>Save preferences <Check size={19} /></button></div></main>}
 
     {screen === 'recipes' && <main className="screen has-footer"><Header title="Choose a recipe" label="STEP 01 / THE MEAL" back={back} /><div className="content-scroll"><div className="page-heading compact"><h1>What sounds <em>good?</em></h1><p>Pick one meal to make. In a paired session, both cooks follow the same recipe.</p></div><div className="search-box"><Search size={19} /><input aria-label="Search recipes" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search meals or ingredients" /></div><div className="recipe-list">{visibleRecipes.map(item => <button key={item.id} className={`recipe-card ${recipeId === item.id ? 'active' : ''}`} onClick={() => setRecipeId(item.id)}><div className={`food-art ${item.tone}`}><span>{item.icon}</span></div><div className="recipe-info"><strong>{item.name}</strong><span><Clock3 size={14} /> {item.time} min · {item.level}</span><small>{item.ingredients.slice(0, 3).join(' · ')}</small></div><span className="recipe-check">{recipeId === item.id && <Check size={16} />}</span></button>)}{visibleRecipes.length === 0 && <p className="empty-state">No matching recipes. Try another ingredient.</p>}</div><button className="video-import" onClick={() => setImportOpen(true)}><Video size={19} /><span><strong>Have a recipe video?</strong><small>Explore the video input concept</small></span><ChevronRight size={18} /></button></div><div className="bottom-action"><button className="primary-button" onClick={() => setScreen('mode')}>Continue with {recipe.name} <ArrowRight size={19} /></button></div></main>}
 
