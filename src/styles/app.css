@@ -4,6 +4,8 @@
 
 .screen:has(+ .bottom-nav){padding-bottom:112px}
 
+.orbit-center{border:0;color:var(--ink);padding:0}.orbit-center:hover{box-shadow:0 13px 32px #d1b28955}.orbit-center:focus-visible{outline:3px solid #6faf4f66;outline-offset:4px}
+
 /* Revised information architecture and responsive prototype shell */
 html,body,#root{min-height:100%}body{overflow:hidden}.stage{height:100dvh;min-height:0;padding:16px;overflow:hidden}.phone{height:min(874px,calc(100dvh - 32px));max-height:calc(100dvh - 32px)}.stage-caption{display:none}
 .bottom-nav{bottom:0;height:76px;padding:6px 18px 12px}.bottom-nav button{min-width:64px;min-height:48px;font-size:10px}.screen:has(+ .bottom-nav){padding-bottom:96px}
