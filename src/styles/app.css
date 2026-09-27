@@ -8,7 +8,7 @@
 html,body,#root{min-height:100%}body{overflow:hidden}.stage{height:100dvh;min-height:0;padding:16px;overflow:hidden}.phone{height:min(874px,calc(100dvh - 32px));max-height:calc(100dvh - 32px)}.stage-caption{display:none}
 .bottom-nav{bottom:0;height:76px;padding:6px 18px 12px}.bottom-nav button{min-width:64px;min-height:48px;font-size:10px}.screen:has(+ .bottom-nav){padding-bottom:96px}
 .friend-session-card,.recent-meal-card{width:100%;border:1px solid var(--border);background:#fffefa;border-radius:16px;display:flex;align-items:center;gap:11px;padding:12px;color:var(--ink);text-align:left;min-height:68px}.friend-session-card>span:nth-child(2),.recent-meal-card>span:nth-child(2){display:flex;flex-direction:column;gap:3px;flex:1}.friend-session-card strong,.recent-meal-card strong{font-family:Outfit;font-size:13px}.friend-session-card small,.recent-meal-card small{font-size:10px;color:var(--muted)}.friend-session-card>svg,.recent-meal-card>svg{color:#a6ad9f}.recent-meal-card{margin-top:9px;background:#f7f2e7}.recent-meal-card>span:first-child{font-size:31px}.recent-meal-card small{font-size:8px;letter-spacing:1px;font-weight:800;color:#a47c49}
-.friends-list{background:#fffefa;border:1px solid var(--border);border-radius:18px;padding:15px}.friend-profile-card{display:flex;align-items:center;gap:13px;margin-bottom:16px}.friend-profile-card>div{display:flex;flex-direction:column;gap:4px}.friend-profile-card strong{font-family:Outfit;font-size:17px}.friend-profile-card small{font-size:10px;color:#6c8262}.friend-profile-card p{font-size:10px;color:var(--muted);margin:4px 0 0}.friend-profile-avatar{width:61px;height:61px;font-size:25px;margin:0;background:#d9e8cb;color:#689550}.online-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:4px}.invite-friend-button{width:100%;min-height:44px;border:1px solid var(--border);background:#f8f7f1;color:#5d6d58;border-radius:12px;margin-top:9px;display:flex;align-items:center;justify-content:center;gap:7px;font-size:11px;font-weight:800}.local-companion-card .field-heading{margin-bottom:9px}
+.friends-list{background:#fffefa;border:1px solid var(--border);border-radius:18px;padding:15px}.friend-profile-card{display:flex;align-items:center;gap:13px;margin-bottom:16px}.friend-profile-card>div{display:flex;flex-direction:column;gap:4px}.friend-profile-card strong{font-family:Outfit;font-size:17px}.friend-profile-card small{font-size:10px;color:#6c8262}.friend-profile-card p{font-size:10px;color:var(--muted);margin:4px 0 0}.friend-profile-avatar{width:61px;height:61px;font-size:25px;margin:0;background:#d9e8cb;color:#689550}.online-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:4px}.invite-friend-button{width:100%;min-height:44px;border:1.5px dashed #cfd5c4;background:transparent;color:#5d6d58;border-radius:12px;margin-top:12px;display:flex;align-items:center;justify-content:center;gap:7px;font-size:11px;font-weight:800}.local-companion-card .field-heading{margin-bottom:9px}
 
 /* Focused, voice-first cooking workspace */
 .cook-top{height:63px;padding:0 16px}.cook-top>div{min-width:0}.cook-top strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.timer-chip{border:1px solid #dfdfd3;background:#fffdf7;color:#65705f;border-radius:11px;height:36px;min-width:70px;padding:0 9px;display:flex;align-items:center;justify-content:center;gap:5px;font-size:10px;font-weight:800}.timer-chip.running{background:#fff0d6;border-color:#e7bd7c;color:#a66822}.cook-scroll{padding:4px 18px 16px}.compact-step{padding-bottom:10px}.compact-step h1{font-size:22px;margin-top:8px}.progress-track{margin:7px 0 0}.camera-grid{gap:8px}.camera-grid.single .camera-tile{height:auto;aspect-ratio:16/8.2}.camera-grid:not(.single) .camera-tile{height:auto;aspect-ratio:4/3}.camera-label{font-size:8px;padding:5px 7px}.session-strip{padding:9px 1px 10px}.rhythm-card{display:flex;align-items:center;gap:9px;background:#edf4e6;border-radius:13px;padding:9px 10px;margin-bottom:10px;color:#536c4b}.rhythm-card .avatar{width:29px;height:29px;font-size:12px}.rhythm-card>div{display:flex;flex-direction:column;gap:2px;flex:1}.rhythm-card strong{font-size:10px}.rhythm-card small{font-size:9px;line-height:1.35}.together-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px #6faf4f1f}.focused-guide{padding:13px}.focused-guide>p{margin:10px 0;font-size:13px;line-height:1.45}.voice-hint{display:flex;align-items:flex-start;gap:7px;color:#71806c;font-size:9px;line-height:1.4;padding:9px 4px}.voice-hint svg{flex-shrink:0;color:var(--green)}
@@ -20,3 +20,36 @@ html,body,#root{min-height:100%}body{overflow:hidden}.stage{height:100dvh;min-he
 
 @media(max-width:460px){.stage{min-height:100dvh}.phone{height:100dvh;max-height:100dvh}.status-bar,.home-indicator,.stage-caption{display:none}.bottom-nav{padding-bottom:max(10px,env(safe-area-inset-bottom));height:calc(68px + env(safe-area-inset-bottom))}.screen:has(+ .bottom-nav){padding-bottom:calc(86px + env(safe-area-inset-bottom))}.cook-top{padding-top:env(safe-area-inset-top);height:calc(63px + env(safe-area-inset-top))}}
 @media(max-height:740px) and (min-width:461px){.stage{justify-content:center}.phone{transform:none;margin-bottom:0;height:calc(100dvh - 24px);max-height:calc(100dvh - 24px)}}
+
+.community-compose-card{background:white;border:1px solid var(--border);border-radius:13px;padding:8px;margin-bottom:14px;display:flex;flex-direction:column;gap:8px}
+.community-compose-card .community-compose{border:0;padding:0;margin:0}
+.attach-history-button{align-self:flex-start;border:0;background:#f3f5ec;color:#5d6d58;border-radius:8px;padding:6px 9px;display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800}
+.attach-history-button .flipped{transform:rotate(180deg)}
+.history-picker{display:flex;flex-direction:column;gap:5px;max-height:190px;overflow-y:auto}
+.history-picker button{display:flex;align-items:center;gap:9px;text-align:left;border:1px solid var(--border);background:#fffefa;border-radius:10px;padding:7px 9px;color:var(--ink)}
+.history-picker button.selected{border-color:var(--green);background:#f1f6ea}
+.history-picker button>span:first-child{font-size:22px}
+.history-picker button>span:nth-child(2){flex:1;display:flex;flex-direction:column;gap:2px}
+.history-picker strong{font-size:11px}
+.history-picker small{font-size:9px;color:var(--muted)}
+.history-picker svg{color:var(--red)}
+.history-picker-empty{font-size:10px;color:var(--muted);margin:0 2px}
+.attached-meal{display:flex;align-items:center;gap:10px;background:#f7f9f2;border-radius:10px;padding:8px}
+.attached-meal .history-icon{width:40px;height:40px;font-size:24px}
+.attached-meal>div{flex:1;display:flex;flex-direction:column;gap:3px}
+.attached-meal strong{font-family:Outfit;font-size:12px}
+.attached-meal small{font-size:9px;color:var(--muted)}
+.attached-meal>button{border:0;background:transparent;color:var(--muted);display:grid;place-items:center}
+.attach-video-toggle{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--red);margin-top:2px}
+.post-video{width:100%;margin-top:12px;border-radius:10px;background:#fbf7ed;max-height:320px}
+.post-video-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--red);font-family:inherit}
+.post-meal-meta{display:block;font-size:9px;color:var(--muted);margin:-4px 0 8px}
+.post-remove{margin-left:auto;border:0;background:transparent;color:#a0a69a;width:28px;height:28px;border-radius:8px;display:grid;place-items:center}
+.post-remove:hover{background:#fbeae6;color:var(--red)}
+.invite-modal>p{font-size:11px;color:var(--muted);line-height:1.5;margin:0}
+.invite-steps{margin:14px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--ink);line-height:1.4}
+.invite-steps strong{font-weight:800}
+.invite-link-row{display:flex;gap:8px;margin-bottom:15px}
+.invite-link-row input{margin:0;flex:1;background:#f8f7f1;color:var(--ink)}
+.invite-link-row button{border:0;background:#e7f1de;color:var(--green);width:42px;border-radius:10px;display:grid;place-items:center;flex-shrink:0}
+.invite-modal small{text-align:center}
