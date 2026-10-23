@@ -1,6 +1,6 @@
 # Backend API contract (draft)
 
-Status: **draft, to agree on Thu 22 Oct**. Once agreed, the Flutter app and the backend both code against this file. Change it in its own pull request so everyone sees the change.
+Status: **draft**; the two open questions were settled on 23 Oct (see Decisions). Once agreed, the Flutter app and the backend both code against this file. Change it in its own pull request so everyone sees the change.
 
 All requests and responses are JSON. The base URL is shared in the group once the backend is deployed.
 
@@ -14,7 +14,10 @@ Request:
 {
   "sessionId": "a1b2c3",
   "recipeId": "salad",
+  "recipeName": "Rainbow salad bowl",
   "step": 1,
+  "stepText": "Cut half a cucumber into small, bite-sized pieces.",
+  "nextStepTitle": "Build your bowl",
   "question": "How small is bite-sized?",
   "acceptedSwaps": ["yoghurt-instead-of-mayo"],
   "history": [
@@ -25,6 +28,8 @@ Request:
 ```
 
 - `step` starts at 0.
+- `stepText` is the instruction the user currently sees. The backend answers about this text and keeps no recipe copy of its own.
+- `nextStepTitle` is empty on the last step.
 - `history` holds the last few turns only, oldest first.
 
 Response:
@@ -46,11 +51,14 @@ Request:
   "sessionId": "a1b2c3",
   "recipeId": "salad",
   "step": 1,
+  "stepText": "Cut half a cucumber into small, bite-sized pieces.",
+  "doneLooksLike": "The cucumber is chopped into bite-sized pieces.",
   "image": "<base64 JPEG, no data: prefix>",
   "source": "glasses"
 }
 ```
 
+- `doneLooksLike` comes from the recipe data and tells the AI what to look for.
 - `source` is `"glasses"` or `"phone"`.
 
 Response:
@@ -111,7 +119,9 @@ On failure, return a non-200 status with:
 
 The app then says something like "Sorry, I couldn't reach the assistant. You can keep going and ask me again."
 
-## Open questions
+## Decisions
 
-- Recipe data: does the backend keep its own copy of the recipes, or does the app send the step text with each request?
-- Does `/ask` need to stream its reply, or is one response fast enough?
+Agreed by team poll on 23 Oct.
+
+- **Recipes live in the app.** The app sends the current step's text with each request, so the backend never holds a second copy that could drift. If the backend later turns recipe links into recipes, recipes move to the backend and the app loads them from a new `GET /recipes`.
+- **No streaming for now.** `/ask` returns the whole reply in one response. Reply times are measured from the log (`ms`); streaming is reconsidered later if replies are too slow after trying a faster model and shorter prompts.
