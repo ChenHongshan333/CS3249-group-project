@@ -7,22 +7,38 @@ model ignores the prompt, and keeps replies speakable.
 import json
 import re
 
-from .schemas import CheckStatus
+from .schemas import PHASE_ACTIONS, Action, AskRequest, CheckStatus
+
+_CLAIM_VERB = r"(?:\bis|\bare|'s|'re|\blooks?|\bseems?)"
+_CERTAINLY = r"(?:\s+(?:fully|properly|thoroughly|completely|definitely|totally))?"
 
 # Claims the app must never make: food is cooked or safe, or allergy-safe.
-_FORBIDDEN = [
+_COOKED = [
     re.compile(p, re.IGNORECASE)
     for p in [
-        r"\b(is|are|looks?|seems?)\s+(fully\s+|properly\s+|thoroughly\s+)?"
-        r"(cooked\s+through|safe\s+to\s+eat|safe\s+for\s+you)",
-        r"\bsafe\s+for\s+(your|an?|people\s+with)?\s*\w*\s*allerg",
-        r"\b(allergy|allergen)[-\s](safe|free)\b",
+        rf"{_CLAIM_VERB}{_CERTAINLY}\s+(?:cooked\s+through|safe\s+to\s+eat|safe\s+for\s+you)",
+        rf"{_CLAIM_VERB}\s+(?:fully|properly|thoroughly|completely)\s+cooked\b",
         r"\bno\s+risk\s+of\s+food\s+poisoning\b",
     ]
 ]
+_ALLERGY = [
+    re.compile(p, re.IGNORECASE)
+    for p in [
+        r"\bsafe\s+for\s+(?:your|an?|people\s+with)?\s*\w*\s*allerg",
+        r"\b(?:allergy|allergen)[-\s](?:safe|free)\b",
+    ]
+]
+
+# A claim in the same clause as one of these is a caveat, not a claim:
+# "a photo can't confirm that chicken is cooked through" is what we want.
+_NEGATION = re.compile(
+    r"\b(?:can't|cannot|can\s+not|couldn't|won't|not|never|unable|don't|doesn't|"
+    r"no\s+way|impossible|whether|if)\b",
+    re.IGNORECASE,
+)
 
 COOKED_FALLBACK = (
-    "I can't tell from a photo whether food is cooked through or safe, "
+    "A photo can't tell me whether food is cooked through or safe, "
     "so please check it yourself before you eat."
 )
 ALLERGY_FALLBACK = (
@@ -31,20 +47,51 @@ ALLERGY_FALLBACK = (
 )
 
 
+def _claims(sentence: str, patterns: list[re.Pattern]) -> bool:
+    for clause in re.split(r"[,;:—–]|\bbut\b|\bthough\b|\balthough\b", sentence):
+        for pattern in patterns:
+            match = pattern.search(clause)
+            if match and not _NEGATION.search(clause[: match.start()]):
+                return True
+    return False
+
+
 def make_safe(text: str) -> tuple[str, bool]:
-    """Return speakable text and whether a forbidden claim was replaced."""
-    for pattern in _FORBIDDEN:
-        if pattern.search(text):
-            fallback = ALLERGY_FALLBACK if "allerg" in pattern.pattern else COOKED_FALLBACK
-            return fallback, True
-    return _speakable(text), False
+    """Drop sentences that claim food is cooked or allergy-safe.
+
+    Returns speakable text and whether anything was replaced. Other
+    sentences, such as a description of what the photo shows, are kept.
+    """
+    text = _speakable(text)
+    out: list[str] = []
+    replaced = False
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        if _claims(sentence, _ALLERGY):
+            sentence, replaced = ALLERGY_FALLBACK, True
+        elif _claims(sentence, _COOKED):
+            sentence, replaced = COOKED_FALLBACK, True
+        # The fallback replaces the claim in place, once.
+        if sentence and sentence not in out:
+            out.append(sentence)
+    return " ".join(out), replaced
 
 
 def _speakable(text: str) -> str:
     # The reply is read aloud, so drop markdown symbols and list markers.
-    text = re.sub(r"[*_#`>]+", "", text)
+    text = re.sub(r"[*#`>]+|(?<!\w)_+|_+(?!\w)", "", text)
     text = re.sub(r"^\s*([-•]|\d+\.)\s+", "", text, flags=re.MULTILINE)
     return " ".join(text.split())
+
+
+def _json_object(raw: str) -> dict:
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        return {}
+    try:
+        data = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 UNCLEAR_SAY = (
@@ -55,12 +102,7 @@ UNCLEAR_SAY = (
 
 def parse_check(raw: str) -> tuple[CheckStatus, str]:
     """Read the model's JSON verdict. Anything malformed becomes "unsure"."""
-    match = re.search(r"\{.*\}", raw, re.DOTALL)
-    try:
-        data = json.loads(match.group(0)) if match else {}
-    except json.JSONDecodeError:
-        data = {}
-
+    data = _json_object(raw)
     status = data.get("status")
     say = data.get("say")
     if status not in ("done", "not_yet", "unsure") or not isinstance(say, str) or not say.strip():
@@ -70,3 +112,42 @@ def parse_check(raw: str) -> tuple[CheckStatus, str]:
     # A replaced claim means the model judged doneness or safety; never
     # report that as "done".
     return ("unsure" if replaced else status), say
+
+
+def parse_ask(raw: str, req: AskRequest) -> tuple[str, Action | None, Action | None]:
+    """Read {"reply", "offer", "action"} from the model.
+
+    A reply that isn't JSON is used as plain text. Offers and actions that
+    don't fit the phase or the request are dropped, never passed to the app.
+    """
+    data = _json_object(raw)
+    reply = data.get("reply") if data else raw
+    if not isinstance(reply, str):
+        reply = ""
+    reply, _ = make_safe(reply)
+
+    offer = _valid_action(data.get("offer"), req)
+    action = _valid_action(data.get("action"), req)
+    return reply, offer, action
+
+
+def _valid_action(value: object, req: AskRequest) -> Action | None:
+    if not isinstance(value, dict):
+        return None
+    try:
+        action = Action.model_validate(value)
+    except ValueError:
+        return None
+    if action.type not in PHASE_ACTIONS[req.phase]:
+        return None
+
+    if action.type == "start_timer":
+        if action.seconds is None:
+            return None
+        return Action(type="start_timer", seconds=action.seconds, label=action.label or "Timer")
+    if action.type == "tick_ingredient":
+        # Only ingredients the app sent, spelled the way the app spells them.
+        by_lower = {i.name.lower(): i.name for i in req.ingredients}
+        name = by_lower.get((action.name or "").strip().lower())
+        return Action(type="tick_ingredient", name=name) if name else None
+    return Action(type=action.type)

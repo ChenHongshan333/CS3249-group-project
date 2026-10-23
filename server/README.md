@@ -63,7 +63,7 @@ Every provider whose key is in `.env` checks every photo. The script prints accu
 
 | Endpoint | What it does |
 | --- | --- |
-| `POST /ask` | Answers a spoken question about the current step, in one or two sentences. |
+| `POST /ask` | Answers what the user says about the current step, in one or two sentences. With `"phase": "opening"` it runs the short chat before step 1. The reply can carry an `offer` ("Would you like a timer?") and an `action` for the app to do. |
 | `POST /check-step` | Shrinks the photo to 1024 px, asks the model whether the step looks finished, and returns `done`, `not_yet` or `unsure`. A reply that can't be read becomes `unsure`. |
 | `POST /log` | Saves one study event to SQLite. |
 | `GET /health` | Shows whether the server is up and which model it uses. |
@@ -77,6 +77,27 @@ Errors use the contract's `{"error": "..."}` shape:
 - 502: the model failed.
 
 Each model call is also timed in an `llm_calls` table, so you can compare providers on real sessions.
+
+## Prompts and safety
+
+The prompts are in [`app/prompts.py`](app/prompts.py): one each for the opening, questions while cooking, and photo checks. Their voice follows the team's conversation workflow: warm and brief, one question at a time, ask before doing things for the cook, and describe a photo before giving advice.
+
+[`app/safety.py`](app/safety.py) checks every reply before the app speaks it:
+
+- **Doneness and allergy claims**: a sentence that says food is cooked through, safe to eat, or allergy-safe is replaced in place. A caveat such as "a photo can't confirm that chicken is cooked through" is kept, along with the rest of the reply.
+- **Offers and actions**: anything outside the five types in `docs/api.md` is dropped, as is anything that doesn't fit the phase or the request (for example, a timer longer than an hour, or ticking an ingredient the app didn't send).
+
+## Try the conversation workflow
+
+[`evals/chicken_chop.json`](evals/chicken_chop.json) is the team's chicken chop workflow as a script. It plays every user line through the backend, the way the app would:
+
+```bash
+python scripts/run_workflow.py                    # uses the model in .env
+python scripts/run_workflow.py --section 6        # just section 6
+python scripts/run_workflow.py --url https://...  # a deployed backend
+```
+
+It prints each real reply under the ideal one, with any offer or action. Where the workflow expects a particular action or photo status, it marks the turn OK or MISS. Read the wording yourself, and rerun the script after every prompt change. For photo checks, add the pictures listed in [`evals/photos/`](evals/photos/README.md).
 
 ## Tests
 
