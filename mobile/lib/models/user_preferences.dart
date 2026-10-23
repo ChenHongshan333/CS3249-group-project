@@ -13,6 +13,10 @@ class UserPreferences {
   final bool handsFreeListening;
   final String serverBaseUrl;
 
+  /// Developer only: take step photos from the Mock Device Kit instead of
+  /// the phone camera when no real glasses are connected.
+  final bool simulatedGlassesPhotos;
+
   const UserPreferences({
     this.level = 'I know a few basics',
     this.diet = 'No restrictions',
@@ -20,6 +24,7 @@ class UserPreferences {
     this.showCaptions = true,
     this.handsFreeListening = true,
     this.serverBaseUrl = kDefaultBackendUrl,
+    this.simulatedGlassesPhotos = false,
   });
 
   UserPreferences copyWith({
@@ -29,6 +34,7 @@ class UserPreferences {
     bool? showCaptions,
     bool? handsFreeListening,
     String? serverBaseUrl,
+    bool? simulatedGlassesPhotos,
   }) {
     return UserPreferences(
       level: level ?? this.level,
@@ -37,6 +43,8 @@ class UserPreferences {
       showCaptions: showCaptions ?? this.showCaptions,
       handsFreeListening: handsFreeListening ?? this.handsFreeListening,
       serverBaseUrl: serverBaseUrl ?? this.serverBaseUrl,
+      simulatedGlassesPhotos:
+          simulatedGlassesPhotos ?? this.simulatedGlassesPhotos,
     );
   }
 
@@ -47,6 +55,7 @@ class UserPreferences {
     'showCaptions': showCaptions,
     'handsFreeListening': handsFreeListening,
     'serverBaseUrl': serverBaseUrl,
+    'simulatedGlassesPhotos': simulatedGlassesPhotos,
   };
 
   factory UserPreferences.fromJson(Map<String, dynamic> json) {
@@ -57,6 +66,7 @@ class UserPreferences {
       showCaptions: json['showCaptions'] as bool? ?? true,
       handsFreeListening: json['handsFreeListening'] as bool? ?? true,
       serverBaseUrl: json['serverBaseUrl'] as String? ?? kDefaultBackendUrl,
+      simulatedGlassesPhotos: json['simulatedGlassesPhotos'] as bool? ?? false,
     );
   }
 

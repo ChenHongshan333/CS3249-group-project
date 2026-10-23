@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'camera/phone_camera.dart';
 import 'glasses/glasses_service.dart';
 import 'models/conversation.dart';
 import 'models/recipe.dart';
@@ -30,6 +31,7 @@ class CookTogetherApp extends StatefulWidget {
   final GlassesService? glassesService;
   final AssistantService? assistantService;
   final VoiceController? voiceController;
+  final PhoneCamera? phoneCamera;
   final bool showInitialWelcome;
 
   /// Screen to open on launch. Tests and the screenshot harness use it to
@@ -41,6 +43,7 @@ class CookTogetherApp extends StatefulWidget {
     this.glassesService,
     this.assistantService,
     this.voiceController,
+    this.phoneCamera,
     this.showInitialWelcome = true,
     this.initialScreen = AppScreen.home,
   });
@@ -72,6 +75,8 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
   late final GlassesService _glassesService;
   late final AssistantService _assistantService;
   late final VoiceController _voiceController;
+  late final PhoneCamera _phoneCamera =
+      widget.phoneCamera ?? SystemPhoneCamera();
 
   Recipe get _selectedRecipe => kStarterRecipes.firstWhere(
     (r) => r.id == _selectedRecipeId,
@@ -314,6 +319,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           glassesService: _glassesService,
           assistantService: _assistantService,
           voiceController: _voiceController,
+          phoneCamera: _phoneCamera,
           initialCheckedIngredients: _sessionCheckedIngredients,
           initialListeningMode: _sessionListeningMode,
           acceptedSwapIds: _sessionAcceptedSwapIds,

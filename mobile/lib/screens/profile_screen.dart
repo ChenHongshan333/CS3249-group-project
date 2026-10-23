@@ -176,6 +176,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             'Leave empty to use built-in demo answers.',
                       ),
                     ),
+                    _SwitchRow(
+                      title: 'Simulated glasses photos when no glasses',
+                      value: _draft.simulatedGlassesPhotos,
+                      onChanged: (v) => setState(
+                        () =>
+                            _draft = _draft.copyWith(simulatedGlassesPhotos: v),
+                      ),
+                    ),
                   ],
                 ),
               ),

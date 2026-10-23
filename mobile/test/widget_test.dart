@@ -5,6 +5,8 @@ import 'package:mobile/services/assistant_service.dart';
 import 'package:mobile/services/voice_intent_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'fake_phone_camera.dart';
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({'cooktogether.seen': true});
@@ -75,11 +77,14 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      // Demo answers: tests must not call the deployed backend.
+      // No real glasses here, so a check uses the phone camera. Demo
+      // answers: tests must not call the deployed backend.
+      final camera = FakePhoneCamera(photo: FakePhoneCamera.samplePhoto);
       await tester.pumpWidget(
-        const CookTogetherApp(
+        CookTogetherApp(
           showInitialWelcome: false,
-          assistantService: MockAssistantService(),
+          phoneCamera: camera,
+          assistantService: const MockAssistantService(),
         ),
       );
       await tester.pumpAndSettle();
@@ -152,6 +157,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Looks ready'), findsOneWidget);
+      expect(camera.opened, 1);
 
       await tester.tap(find.text('Next'));
       await tester.pump(const Duration(milliseconds: 500));
