@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/main.dart';
+import 'package:mobile/services/assistant_service.dart';
 import 'package:mobile/services/voice_intent_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -76,10 +77,15 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      // No real glasses here, so a check uses the phone camera.
+      // No real glasses here, so a check uses the phone camera. Demo
+      // answers: tests must not call the deployed backend.
       final camera = FakePhoneCamera(photo: FakePhoneCamera.samplePhoto);
       await tester.pumpWidget(
-        CookTogetherApp(showInitialWelcome: false, phoneCamera: camera),
+        CookTogetherApp(
+          showInitialWelcome: false,
+          phoneCamera: camera,
+          assistantService: const MockAssistantService(),
+        ),
       );
       await tester.pumpAndSettle();
 

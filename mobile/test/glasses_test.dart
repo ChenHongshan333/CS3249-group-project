@@ -5,6 +5,7 @@ import 'package:mobile/glasses/glasses_service.dart';
 import 'package:mobile/main.dart';
 import 'package:mobile/models/conversation.dart';
 import 'package:mobile/models/recipe.dart';
+import 'package:mobile/services/assistant_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fake_phone_camera.dart';
@@ -64,6 +65,7 @@ void main() {
         initialScreen: AppScreen.cook,
         glassesService: glasses,
         phoneCamera: camera,
+        assistantService: const MockAssistantService(),
       ),
     );
     await tester.pump(const Duration(seconds: 1));

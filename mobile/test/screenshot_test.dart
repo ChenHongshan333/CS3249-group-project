@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/main.dart';
 import 'package:mobile/models/user_preferences.dart';
+import 'package:mobile/services/assistant_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final String? _outDir = Platform.environment['SCREENSHOT_DIR'];
@@ -107,7 +108,10 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     RepaintBoundary(
       key: const ValueKey('screenshot-root'),
-      child: CookTogetherApp(initialScreen: screen),
+      child: CookTogetherApp(
+        initialScreen: screen,
+        assistantService: const MockAssistantService(),
+      ),
     ),
   );
   await tester.pump(const Duration(milliseconds: 300));

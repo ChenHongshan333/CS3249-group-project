@@ -113,6 +113,8 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
         _history = savedHistory;
       });
     } catch (_) {}
+    // Wake the backend now, so it's ready by the time the cook asks.
+    _assistantService.warmUp();
   }
 
   Future<void> _dismissWelcome() async {
@@ -129,10 +131,18 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
       _screen = AppScreen.home;
     });
     _showToast('Preferences saved');
+    _assistantService.warmUp();
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kPrefsKey, updated.encode());
     } catch (_) {}
+  }
+
+  /// Get ready comes a minute or two before the first question, which is
+  /// about how long a sleeping backend takes to wake.
+  void _openPrep() {
+    setState(() => _screen = AppScreen.prep);
+    _assistantService.warmUp();
   }
 
   Future<void> _recordCompletedSession({
@@ -262,10 +272,10 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           history: _history,
           onStartCooking: () => setState(() => _screen = AppScreen.recipes),
           onOpenWelcomeOverview: () => setState(() => _welcomeOpen = true),
-          onCookAgain: (recipeId) => setState(() {
+          onCookAgain: (recipeId) {
             _selectedRecipeId = recipeId;
-            _screen = AppScreen.prep;
-          }),
+            _openPrep();
+          },
         );
 
       case AppScreen.recipes:
@@ -273,7 +283,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           recipes: kStarterRecipes,
           selectedRecipeId: _selectedRecipeId,
           onSelectRecipe: (id) => setState(() => _selectedRecipeId = id),
-          onContinueToPrep: () => setState(() => _screen = AppScreen.prep),
+          onContinueToPrep: _openPrep,
           onBack: () => setState(() => _screen = AppScreen.home),
           onShowToast: _showToast,
         );

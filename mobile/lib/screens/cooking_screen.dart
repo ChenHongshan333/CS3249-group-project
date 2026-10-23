@@ -459,6 +459,10 @@ class _CookingScreenState extends State<CookingScreen>
     );
 
     if (!mounted) return;
+    if (response.isError) {
+      _appendAiMessage(response.reply);
+      return;
+    }
     setState(() => _visualChecksCount++);
 
     _appendAiMessage(
@@ -638,7 +642,8 @@ class _CookingScreenState extends State<CookingScreen>
     );
     if (!mounted) return;
     if (_opening) _openingTurns++;
-    _pendingOffer = response.offer;
+    // After an error the question was never answered, so the offer stands.
+    _pendingOffer = response.isError ? offer : response.offer;
 
     final action = response.action;
     // These read a step aloud, so the reply leads into that announcement

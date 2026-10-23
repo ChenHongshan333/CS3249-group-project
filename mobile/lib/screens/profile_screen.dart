@@ -173,7 +173,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Backend URL',
                         helperText:
-                            'Leave empty to use the built-in demo assistant.',
+                            'Leave empty to use built-in demo answers.',
                       ),
                     ),
                     _SwitchRow(

@@ -7,7 +7,7 @@ This guide is for testing the app on a real Android phone with our Meta glasses.
 - An Android phone with **Android 12 or newer**, and its USB cable
 - The Meta glasses (Meta Nova), charged
 - A Windows, macOS or Linux computer with about 15 GB free
-- The **backend URL** (ask Hongshan)
+- Nothing else: the app already points at our backend, `https://cookalong-backend.onrender.com`
 
 ## 1. Set up the computer
 
@@ -43,10 +43,10 @@ flutter run
 
 The first build takes several minutes. Keep the terminal open while you test: errors show up there.
 
-Then, in the app:
+Then:
 
-1. Open **Profile → Developer → Backend URL**, paste the URL, and tap **Save**.
-2. In the phone's browser, open `<backend URL>/health`. It should show `"configured": true`. If it shows `false`, tell Hongshan. The app would otherwise quietly fall back to demo answers.
+1. **Wake the backend first.** It sleeps after 15 idle minutes. In the phone's browser, open https://cookalong-backend.onrender.com/health and wait until it shows `"configured": true`, which can take up to a minute. If it shows `false`, tell Hongshan.
+2. The app already uses this backend; you don't need to enter it. You can check under **Profile → Developer → Backend URL**.
 
 ## 4. Tests
 
@@ -95,4 +95,6 @@ Write **Pass**, **Fail**, or what happened.
 | Build fails with "out of memory", or `hs_err_pid*.log` files appear | Close other programs and run `flutter run` again. Don't commit those log files |
 | "This build is not set up for Meta glasses" | Check that Developer Mode is on in Meta AI and that **Install** was done, then tell Hongshan |
 | "No glasses found" | Open Meta AI and check the glasses are connected there. Then try **Connect my glasses** again |
-| Answers sound generic or mention "demo" | The backend URL is missing or wrong. Check `/health` from step 3 |
+| "Sorry, I couldn't reach the assistant" | The backend is down or the phone is offline. Open `/health` from step 3. If it loads, ask again |
+| "The assistant took too long to answer" | The backend was probably asleep. Wait a few seconds and ask again |
+| Answers sound generic or mention "demo" | The Backend URL under Profile → Developer is empty. Put back `https://cookalong-backend.onrender.com` |
