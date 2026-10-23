@@ -465,6 +465,7 @@ class _CookingScreenState extends State<CookingScreen>
           stepIndex: _currentStep,
           question: text,
           history: _messages,
+          acceptedSwaps: widget.acceptedSwapIds.toList(),
         );
         if (!mounted) return;
         _appendAiMessage(response.reply);

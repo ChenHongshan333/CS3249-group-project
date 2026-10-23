@@ -28,6 +28,7 @@ abstract class AssistantService {
     required String question,
     required List<ChatMessage> history,
     VisionCapture? visionCapture,
+    List<String> acceptedSwaps = const [],
   });
 
   Future<AssistantResponse> checkStepWithVision({
@@ -58,6 +59,7 @@ class MockAssistantService implements AssistantService {
     required String question,
     required List<ChatMessage> history,
     VisionCapture? visionCapture,
+    List<String> acceptedSwaps = const [],
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 280));
     final step = recipe.steps[stepIndex.clamp(0, recipe.steps.length - 1)];
@@ -205,6 +207,7 @@ class HttpAssistantService implements AssistantService {
     required String question,
     required List<ChatMessage> history,
     VisionCapture? visionCapture,
+    List<String> acceptedSwaps = const [],
   }) async {
     // If a visual snapshot is attached, route through `/check-step` or hybrid vision flow
     if (visionCapture != null && _cleanBaseUrl.isNotEmpty) {
@@ -247,9 +250,14 @@ class HttpAssistantService implements AssistantService {
             body: jsonEncode({
               'sessionId': sessionId,
               'recipeId': recipe.id,
+              'recipeName': recipe.name,
               'step': stepIndex,
+              'stepText': recipe.steps[stepIndex].instruction,
+              'nextStepTitle': stepIndex + 1 < recipe.steps.length
+                  ? recipe.steps[stepIndex + 1].title
+                  : '',
               'question': question,
-              'acceptedSwaps': const <String>[],
+              'acceptedSwaps': acceptedSwaps,
               'history': recentTurns,
             }),
           )
@@ -303,6 +311,8 @@ class HttpAssistantService implements AssistantService {
               'sessionId': sessionId,
               'recipeId': recipe.id,
               'step': stepIndex,
+              'stepText': recipe.steps[stepIndex].instruction,
+              'doneLooksLike': recipe.steps[stepIndex].check,
               'image': visionCapture.base64Jpeg,
               'source': visionCapture.source,
               'question': ?userQuestion,
