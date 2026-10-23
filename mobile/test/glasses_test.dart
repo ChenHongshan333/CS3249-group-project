@@ -4,6 +4,7 @@ import 'package:mobile/glasses/glasses_service.dart';
 import 'package:mobile/main.dart';
 import 'package:mobile/models/conversation.dart';
 import 'package:mobile/models/recipe.dart';
+import 'package:mobile/services/assistant_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Glasses whose camera always fails, like real glasses that are folded.
@@ -55,6 +56,7 @@ void main() {
         showInitialWelcome: false,
         initialScreen: AppScreen.cook,
         glassesService: _BrokenCameraGlasses(),
+        assistantService: const MockAssistantService(),
       ),
     );
     await tester.pump(const Duration(seconds: 1));

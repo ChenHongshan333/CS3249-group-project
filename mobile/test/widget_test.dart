@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/main.dart';
+import 'package:mobile/services/assistant_service.dart';
 import 'package:mobile/services/voice_intent_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -74,7 +75,13 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      await tester.pumpWidget(const CookTogetherApp(showInitialWelcome: false));
+      // Demo answers: tests must not call the deployed backend.
+      await tester.pumpWidget(
+        const CookTogetherApp(
+          showInitialWelcome: false,
+          assistantService: MockAssistantService(),
+        ),
+      );
       await tester.pumpAndSettle();
 
       // 1. Home: one primary action and the Mock Device Kit status

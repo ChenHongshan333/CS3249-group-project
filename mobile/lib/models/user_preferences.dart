@@ -1,5 +1,9 @@
 import 'dart:convert';
 
+/// The team's deployed backend. Clear the URL under Profile → Developer to
+/// use the built-in demo answers instead.
+const String kDefaultBackendUrl = 'https://cookalong-backend.onrender.com';
+
 /// User preferences persisted locally in SharedPreferences.
 class UserPreferences {
   final String level;
@@ -15,7 +19,7 @@ class UserPreferences {
     this.voiceGuidance = true,
     this.showCaptions = true,
     this.handsFreeListening = true,
-    this.serverBaseUrl = '',
+    this.serverBaseUrl = kDefaultBackendUrl,
   });
 
   UserPreferences copyWith({
@@ -52,7 +56,7 @@ class UserPreferences {
       voiceGuidance: json['voiceGuidance'] as bool? ?? true,
       showCaptions: json['showCaptions'] as bool? ?? true,
       handsFreeListening: json['handsFreeListening'] as bool? ?? true,
-      serverBaseUrl: json['serverBaseUrl'] as String? ?? '',
+      serverBaseUrl: json['serverBaseUrl'] as String? ?? kDefaultBackendUrl,
     );
   }
 
