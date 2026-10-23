@@ -1,0 +1,87 @@
+{
+  "about": "The team's conversation workflow for chicken chop with pasta, as a script. scripts/run_workflow.py plays each user line through the backend and prints the reply next to the ideal one. Section 1 is the opening conversation (the recipe is already chosen in the app).",
+  "recipe": {
+    "id": "chicken-chop",
+    "name": "Chicken chop with tomato pasta",
+    "ingredients": [
+      "boneless chicken thigh",
+      "dried pasta",
+      "tomato pasta sauce",
+      "cherry tomatoes",
+      "garlic",
+      "olive oil",
+      "salt and black pepper",
+      "grated cheese"
+    ],
+    "acceptedSwaps": ["wholemeal-pasta"],
+    "steps": [
+      {
+        "title": "Prepare the vegetables",
+        "instruction": "Halve the six cherry tomatoes and finely chop one small garlic clove.",
+        "check": "The tomatoes are halved and the garlic is finely chopped."
+      },
+      {
+        "title": "Season the chicken",
+        "instruction": "Open the chicken thigh out flat on a separate plate, then season both sides with a little salt and pepper.",
+        "check": "The chicken is flat and seasoned on both sides."
+      },
+      {
+        "title": "Heat the pan",
+        "instruction": "Add one teaspoon of oil to the frying pan, then put it over medium heat.",
+        "check": "The oil moves easily across the pan and looks slightly shimmery."
+      },
+      {
+        "title": "Cook the chicken",
+        "instruction": "Using tongs, gently lower the chicken into the pan. Let the underside brown before turning it, then cook the other side.",
+        "check": "Both sides are golden brown."
+      },
+      {
+        "title": "Check the chicken",
+        "instruction": "Cut into the thickest part. The centre should no longer be pink and the juices should run clear. If you have a thermometer, it should read 75°C.",
+        "check": "The centre is no longer pink."
+      },
+      {
+        "title": "Cook the pasta",
+        "instruction": "Fill a saucepan with enough water for the pasta to move freely and bring it to a boil. Add the pasta, stir, and cook it for the time on the packet.",
+        "check": "The pasta is tender but not mushy."
+      },
+      {
+        "title": "Make the sauce",
+        "instruction": "In a small saucepan, warm the remaining teaspoon of oil with the garlic over low heat until fragrant, without letting it brown. Add the cherry tomatoes and 100 grams of tomato sauce, stir, and simmer gently.",
+        "check": "The tomatoes have softened into a smooth sauce."
+      },
+      {
+        "title": "Bring it together",
+        "instruction": "Turn off the pasta, save a little pasta water, then drain it. Add the pasta to the sauce and toss gently until coated. Serve with the chicken and a little grated cheese if you like.",
+        "check": "The pasta is coated in sauce and plated next to the chicken."
+      }
+    ]
+  },
+  "ticked": ["boneless chicken thigh", "dried pasta", "olive oil", "salt and black pepper"],
+  "turns": [
+    {"section": "1 Opening", "phase": "opening", "user": "Yes, that's right.", "ideal": "Lovely. Have you got the tomato sauce, cherry tomatoes and garlic as well?"},
+    {"section": "1 Opening", "phase": "opening", "user": "I've got the sauce and cherry tomatoes, and some cheese.", "ideal": "Great. What about the garlic?", "expectAction": "tick_ingredient"},
+    {"section": "1 Opening", "phase": "opening", "user": "Yes, I have garlic too. Let's start.", "ideal": "Lovely, let's start.", "expectAction": "start_cooking"},
+
+    {"section": "2 Preparing", "step": 0, "user": "How fine does the garlic need to be?", "ideal": "Small pieces are fine, it's up to you."},
+    {"section": "2 Preparing", "step": 0, "user": "Those are ready. What about the chicken?", "ideal": "Great.", "expectAction": "next_step"},
+
+    {"section": "3 Pausing", "step": 2, "user": "How will I know when to add the chicken?", "ideal": "When the oil moves easily across the pan and looks slightly shimmery. If it starts smoking, turn the heat down."},
+
+    {"section": "4 Cooking the chicken", "step": 3, "user": "Should I keep moving it around?", "ideal": "Leave it in place for now. Once it browns, it should lift more easily."},
+    {"section": "4 Cooking the chicken", "step": 3, "check": true, "photo": "chicken_surface.jpg", "user": "Can you have a look? I'm worried I'm burning it.", "ideal": "The surface looks golden brown, with a darker patch near the edge. Turn the heat down a little if it's browning too quickly.", "expectStatus": "not_yet"},
+
+    {"section": "5 Checking the inside", "step": 4, "check": true, "photo": "chicken_centre_dark.jpg", "user": "I've cut into the thickest part. Can you see the middle?", "ideal": "I can see the cut surface, but the middle is partly in shadow. Could you move the plate into better light?", "expectStatus": "unsure"},
+    {"section": "5 Checking the inside", "step": 4, "check": true, "photo": "chicken_centre_bright.jpg", "user": "Is that better?", "ideal": "Yes, that's clearer. The visible centre looks opaque, though a photo can't confirm that chicken is cooked through.", "expectStatus": "unsure"},
+    {"section": "5 Checking the inside", "step": 4, "user": "So you can check how it looks, but you can't tell me for sure?", "ideal": "That's right. Use my camera check as a reference only, not as proof."},
+
+    {"section": "6 Pasta and sauce", "step": 5, "user": "The water's boiling and the pasta's in. The packet says ten minutes.", "ideal": "Would you like a ten-minute timer?", "expectOffer": "start_timer"},
+    {"section": "6 Pasta and sauce", "step": 5, "user": "Yes, start it now.", "ideal": "Ten-minute timer started.", "expectAction": "start_timer"},
+    {"section": "6 Pasta and sauce", "step": 6, "user": "The sauce looks a bit thick.", "ideal": "Stir in a tablespoon of the pasta water. You can add another if it still looks too thick."},
+    {"section": "6 Pasta and sauce", "step": 6, "user": "The pasta is still a little too firm for me.", "ideal": "Give it another minute. Would you like a one-minute timer?", "expectOffer": "start_timer"},
+    {"section": "6 Pasta and sauce", "step": 6, "user": "Please.", "ideal": "One-minute timer started.", "expectAction": "start_timer"},
+
+    {"section": "7 Ending", "step": 7, "check": true, "photo": "plated.jpg", "user": "Okay, it looks good.", "ideal": "I can see the chicken beside the pasta, and the pasta looks coated in the sauce. You can add a little grated cheese if you'd like.", "expectStatus": "done"},
+    {"section": "7 Ending", "step": 7, "user": "Sure, I'm a cheese fan for real.", "ideal": "Lovely, enjoy your dinner!"}
+  ]
+}
