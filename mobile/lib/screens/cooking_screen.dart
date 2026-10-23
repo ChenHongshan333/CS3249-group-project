@@ -1,7 +1,10 @@
+import 'dart:typed_data';
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../camera/phone_camera.dart';
 import '../glasses/glasses_service.dart';
 import '../models/conversation.dart';
 import '../models/recipe.dart';
@@ -26,6 +29,7 @@ class CookingScreen extends StatefulWidget {
   final GlassesService glassesService;
   final AssistantService assistantService;
   final VoiceController voiceController;
+  final PhoneCamera? phoneCamera;
   final Set<String> initialCheckedIngredients;
   final VoiceListeningMode initialListeningMode;
   final Set<String> acceptedSwapIds;
@@ -45,6 +49,7 @@ class CookingScreen extends StatefulWidget {
     required this.glassesService,
     required this.assistantService,
     required this.voiceController,
+    this.phoneCamera,
     required this.initialCheckedIngredients,
     required this.initialListeningMode,
     this.acceptedSwapIds = const {},
@@ -341,6 +346,81 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
+  /// Takes the photo for a step check: from the real glasses when they are
+  /// connected, otherwise from the phone camera. If the glasses fail, says
+  /// why and uses the phone camera instead. Returns null, after saying why,
+  /// when no photo was taken. The Mock Device Kit is only used when the
+  /// Developer setting asks for it.
+  Future<VisionCapture?> _takeStepPhoto(String promptText) async {
+    final glasses = widget.glassesService;
+    final useGlasses =
+        glasses.usingRealGlasses || widget.preferences.simulatedGlassesPhotos;
+    if (useGlasses) {
+      widget.voiceController.setActivityState(
+        VoiceActivityState.capturingVision,
+        hint: 'Taking a photo with your glasses…',
+      );
+      try {
+        return await glasses.captureFrame(
+          recipe: widget.recipe,
+          stepIndex: _currentStep,
+          userPrompt: promptText,
+        );
+      } on GlassesCaptureException catch (e) {
+        if (mounted) {
+          _appendAiMessage(
+            '${e.message} Let\'s use your phone camera instead.',
+          );
+        }
+      }
+    }
+    return _takePhonePhoto(promptText);
+  }
+
+  Future<VisionCapture?> _takePhonePhoto(String promptText) async {
+    final camera = widget.phoneCamera;
+    if (camera == null) {
+      if (mounted) {
+        _appendAiMessage('No camera is available for a photo check.');
+      }
+      return null;
+    }
+    widget.voiceController.setActivityState(
+      VoiceActivityState.capturingVision,
+      hint: 'Take a photo of your food with the phone…',
+    );
+    final Uint8List? bytes;
+    try {
+      bytes = await camera.takePhoto();
+    } on PhoneCameraException catch (e) {
+      if (mounted) _appendAiMessage(e.message);
+      return null;
+    }
+    if (bytes == null) {
+      if (mounted) {
+        _appendAiMessage(
+          'No photo taken. Say "check this" when you\'re ready.',
+        );
+      }
+      return null;
+    }
+    final step = widget.recipe.steps[_currentStep];
+    return VisionCapture(
+      id: 'phone-${DateTime.now().millisecondsSinceEpoch}',
+      recipeId: widget.recipe.id,
+      stepIndex: _currentStep,
+      source: 'phone',
+      deviceName: 'Phone camera',
+      sceneDescription: step.visionSceneDescription,
+      recipeIcon: widget.recipe.icon,
+      recipeTone: widget.recipe.tone,
+      jpegBytes: bytes,
+      base64Jpeg: base64Encode(bytes),
+      capturedAt: DateTime.now(),
+      userQuestion: promptText,
+    );
+  }
+
   Future<void> _triggerVisualCheck({String? userQuestion}) async {
     if (_opening) {
       _appendAiMessage("Let's start the first step, then I can take a look.");
@@ -358,23 +438,10 @@ class _CookingScreenState extends State<CookingScreen>
       _appendUserMessage('Check this step 🕶️');
     }
 
-    widget.voiceController.setActivityState(
-      VoiceActivityState.capturingVision,
-      hint: 'Capturing POV snapshot from Meta glasses…',
-    );
-
     final startTime = DateTime.now();
-    final VisionCapture capture;
-    try {
-      capture = await widget.glassesService.captureFrame(
-        recipe: widget.recipe,
-        stepIndex: _currentStep,
-        userPrompt: promptText,
-      );
-    } on GlassesCaptureException catch (e) {
-      // Say why instead of sending the assistant a blank photo.
+    final capture = await _takeStepPhoto(promptText);
+    if (capture == null) {
       widget.voiceController.setActivityState(VoiceActivityState.idle);
-      if (mounted) _appendAiMessage(e.message);
       return;
     }
 

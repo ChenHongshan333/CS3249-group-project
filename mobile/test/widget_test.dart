@@ -4,6 +4,8 @@ import 'package:mobile/main.dart';
 import 'package:mobile/services/voice_intent_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'fake_phone_camera.dart';
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({'cooktogether.seen': true});
@@ -74,7 +76,11 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      await tester.pumpWidget(const CookTogetherApp(showInitialWelcome: false));
+      // No real glasses here, so a check uses the phone camera.
+      final camera = FakePhoneCamera(photo: FakePhoneCamera.samplePhoto);
+      await tester.pumpWidget(
+        CookTogetherApp(showInitialWelcome: false, phoneCamera: camera),
+      );
       await tester.pumpAndSettle();
 
       // 1. Home: one primary action and the Mock Device Kit status
@@ -145,6 +151,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Looks ready'), findsOneWidget);
+      expect(camera.opened, 1);
 
       await tester.tap(find.text('Next'));
       await tester.pump(const Duration(milliseconds: 500));
