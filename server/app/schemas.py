@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -16,20 +16,55 @@ class Turn(_Body):
     text: str = Field(max_length=2000)
 
 
+ActionType = Literal["start_timer", "next_step", "repeat_step", "start_cooking", "tick_ingredient"]
+
+# Which actions make sense in each phase. Anything else from the model is dropped.
+PHASE_ACTIONS: dict[str, set[str]] = {
+    "opening": {"start_cooking", "tick_ingredient"},
+    "cooking": {"start_timer", "next_step", "repeat_step"},
+}
+
+
+class Action(_Body):
+    """Something the app does, or something CookAlong offers to do."""
+
+    type: ActionType
+    seconds: int | None = Field(default=None, ge=1, le=3600)
+    label: str | None = Field(default=None, max_length=60)
+    name: str | None = Field(default=None, max_length=100)
+
+
+class Ingredient(_Body):
+    name: str = Field(max_length=100)
+    ready: bool = False
+
+
 class AskRequest(_Body):
     session_id: str = Field(max_length=100)
     recipe_id: str = Field(max_length=100)
     recipe_name: str = Field(default="", max_length=200)
-    step: int = Field(ge=0)
-    step_text: str = Field(max_length=2000)
+    phase: Literal["opening", "cooking"] = "cooking"
+    # Required while cooking; the opening has no current step yet.
+    step: int = Field(default=0, ge=0)
+    step_text: str = Field(default="", max_length=2000)
     next_step_title: str = Field(default="", max_length=200)
     question: str = Field(min_length=1, max_length=1000)
     accepted_swaps: list[str] = Field(default_factory=list, max_length=20)
+    ingredients: list[Ingredient] = Field(default_factory=list, max_length=40)
     history: list[Turn] = Field(default_factory=list, max_length=50)
+    pending_offer: Action | None = None
+
+    @model_validator(mode="after")
+    def _cooking_needs_step_text(self):
+        if self.phase == "cooking" and not self.step_text.strip():
+            raise ValueError("stepText is required while cooking")
+        return self
 
 
 class AskResponse(BaseModel):
     reply: str
+    offer: Action | None = None
+    action: Action | None = None
 
 
 CheckStatus = Literal["done", "not_yet", "unsure"]
@@ -66,6 +101,7 @@ EventType = Literal[
     "check",
     "swap",
     "misheard",
+    "opening_end",
     "session_end",
 ]
 

@@ -137,21 +137,30 @@ def _add_routes(app: FastAPI) -> None:
             "problem": app.state.llm_error,
         }
 
-    @app.post("/ask", response_model=AskResponse, dependencies=[Depends(require_key)])
+    # Fields left out of the response are omitted, so older apps still see
+    # exactly {"reply": "..."}.
+    @app.post(
+        "/ask",
+        response_model=AskResponse,
+        response_model_exclude_none=True,
+        dependencies=[Depends(require_key)],
+    )
     async def ask(req: AskRequest, llm: LLM = Depends(model), s: Settings = Depends(settings)):
+        opening = req.phase == "opening"
         raw = await call_model(
-            "ask",
+            "opening" if opening else "ask",
             req.session_id,
             llm,
-            system=prompts.ASK_SYSTEM,
-            text=prompts.ask_context(req),
-            max_tokens=150,
+            system=prompts.OPENING_SYSTEM if opening else prompts.ASK_SYSTEM,
+            text=prompts.opening_context(req) if opening else prompts.ask_context(req),
+            json_output=True,
+            max_tokens=200,
             timeout=s.ask_timeout_s,
         )
-        reply, _ = safety.make_safe(raw)
+        reply, offer, action = safety.parse_ask(raw, req)
         if not reply:
             raise LLMError("empty reply")
-        return AskResponse(reply=reply)
+        return AskResponse(reply=reply, offer=offer, action=action)
 
     @app.post(
         "/check-step", response_model=CheckStepResponse, dependencies=[Depends(require_key)]
