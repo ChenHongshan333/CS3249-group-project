@@ -19,6 +19,20 @@ class RecipeStep {
   });
 }
 
+/// A healthier choice offered before cooking, such as using less oil.
+/// Swaps live in the recipe data so every user sees the same ones.
+class HealthySwap {
+  final String id;
+  final String title;
+  final String detail;
+
+  const HealthySwap({
+    required this.id,
+    required this.title,
+    required this.detail,
+  });
+}
+
 class Recipe {
   final String id;
   final String name;
@@ -28,6 +42,7 @@ class Recipe {
   final String level;
   final List<String> ingredients;
   final List<RecipeStep> steps;
+  final List<HealthySwap> swaps;
 
   const Recipe({
     required this.id,
@@ -38,6 +53,7 @@ class Recipe {
     required this.level,
     required this.ingredients,
     required this.steps,
+    this.swaps = const [],
   });
 }
 
@@ -55,6 +71,20 @@ const List<Recipe> kStarterRecipes = [
       'cucumber',
       'chickpeas',
       'olive oil',
+    ],
+    swaps: [
+      HealthySwap(
+        id: 'salad-lemon-dressing',
+        title: 'Lemon instead of extra oil',
+        detail:
+            'Dress with one teaspoon of olive oil plus a squeeze of lemon instead of two tablespoons of oil.',
+      ),
+      HealthySwap(
+        id: 'salad-more-chickpeas',
+        title: 'Add more chickpeas',
+        detail:
+            'Use the whole can of chickpeas for extra protein and fibre, so the bowl keeps you full for longer.',
+      ),
     ],
     steps: [
       RecipeStep(
@@ -110,6 +140,20 @@ const List<Recipe> kStarterRecipes = [
       'bell pepper',
       'garlic',
       'soy sauce',
+    ],
+    swaps: [
+      HealthySwap(
+        id: 'noodles-less-soy',
+        title: 'Half the soy sauce',
+        detail:
+            'Start with half the soy sauce and add a squeeze of lime for flavour, which cuts the salt.',
+      ),
+      HealthySwap(
+        id: 'noodles-extra-veg',
+        title: 'Double the vegetables',
+        detail:
+            'Use two carrots and a whole pepper, and slightly fewer noodles, for a lighter bowl.',
+      ),
     ],
     steps: [
       RecipeStep(
@@ -170,6 +214,20 @@ const List<Recipe> kStarterRecipes = [
       'onion',
       'paprika',
     ],
+    swaps: [
+      HealthySwap(
+        id: 'rice-less-oil',
+        title: 'One teaspoon of oil',
+        detail:
+            'Soften the onion in one teaspoon of oil with a splash of water instead of a tablespoon of oil.',
+      ),
+      HealthySwap(
+        id: 'rice-brown-rice',
+        title: 'Brown rice',
+        detail:
+            'Use cooked brown rice instead of white for more fibre. The steps stay the same.',
+      ),
+    ],
     steps: [
       RecipeStep(
         title: 'Prepare ingredients',
@@ -228,6 +286,20 @@ const List<Recipe> kStarterRecipes = [
       'tortillas',
       'tomatoes',
       'yogurt',
+    ],
+    swaps: [
+      HealthySwap(
+        id: 'wrap-wholemeal',
+        title: 'Wholemeal tortillas',
+        detail:
+            'Use wholemeal tortillas instead of white ones for more fibre.',
+      ),
+      HealthySwap(
+        id: 'wrap-more-spinach',
+        title: 'Extra spinach, fewer eggs',
+        detail:
+            'Use two eggs per two wraps instead of three, and add an extra handful of spinach.',
+      ),
     ],
     steps: [
       RecipeStep(

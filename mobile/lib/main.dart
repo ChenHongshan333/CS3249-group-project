@@ -63,6 +63,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
   String _selectedRecipeId = kStarterRecipes.first.id;
 
   Set<String> _sessionCheckedIngredients = {};
+  Set<String> _sessionAcceptedSwapIds = {};
   VoiceListeningMode _sessionListeningMode = VoiceListeningMode.handsFree;
   int _lastElapsedSeconds = 0;
   int _lastVisualChecksCount = 0;
@@ -272,9 +273,11 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           onStartCookingSession: ({
             required Set<String> checkedIngredients,
             required VoiceListeningMode listeningMode,
+            required Set<String> acceptedSwapIds,
           }) {
             setState(() {
               _sessionCheckedIngredients = checkedIngredients;
+              _sessionAcceptedSwapIds = acceptedSwapIds;
               _sessionListeningMode = listeningMode;
               _screen = AppScreen.cook;
             });
@@ -292,6 +295,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           voiceController: _voiceController,
           initialCheckedIngredients: _sessionCheckedIngredients,
           initialListeningMode: _sessionListeningMode,
+          acceptedSwapIds: _sessionAcceptedSwapIds,
           onFinishCooking: _recordCompletedSession,
           onExitToHome: () => setState(() => _screen = AppScreen.home),
           onShowToast: _showToast,
