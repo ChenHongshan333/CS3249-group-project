@@ -83,7 +83,9 @@ class MockAssistantService implements AssistantService {
       );
     }
 
-    if (RegExp(r'small|size|bite-sized|thin|thick|dice|slice|cut').hasMatch(lower)) {
+    if (RegExp(
+      r'small|size|bite-sized|thin|thick|dice|slice|cut',
+    ).hasMatch(lower)) {
       return AssistantResponse(
         reply:
             'Aim for pieces about 1 to 2 cm wide so they are easy to eat. ${step.tip} Say "does this look right?" if you want me to look through your Meta glasses.',
@@ -94,9 +96,7 @@ class MockAssistantService implements AssistantService {
       final durationHint = step.suggestedTimerSeconds != null
           ? 'This step takes about ${(step.suggestedTimerSeconds! / 60).ceil()} minutes. You can say "set a timer" anytime.'
           : step.check;
-      return AssistantResponse(
-        reply: '$durationHint ${step.tip}',
-      );
+      return AssistantResponse(reply: '$durationHint ${step.tip}');
     }
 
     if (RegExp(r'ingredient|what do i need|how much').hasMatch(lower)) {
@@ -143,15 +143,21 @@ class MockAssistantService implements AssistantService {
     VisualCheckStatus status = VisualCheckStatus.done;
     String reply;
 
-    if (lower.contains('blurry') || lower.contains('dark') || lower.contains('unsure')) {
+    if (lower.contains('blurry') ||
+        lower.contains('dark') ||
+        lower.contains('unsure')) {
       status = VisualCheckStatus.unsure;
       reply =
           'The view from your glasses is a bit angled. Try tilting your head slightly toward the counter and ask me to check again.';
-    } else if (lower.contains('not yet') || lower.contains('raw') || lower.contains('too big')) {
+    } else if (lower.contains('not yet') ||
+        lower.contains('raw') ||
+        lower.contains('too big')) {
       status = VisualCheckStatus.notYet;
       reply =
           'Looking through your glasses at the ${step.visionSceneDescription.toLowerCase()}: a few pieces still need a little more work. ${step.tip}';
-    } else if (lower.contains('small enough') || lower.contains('chop') || lower.contains('slice')) {
+    } else if (lower.contains('small enough') ||
+        lower.contains('chop') ||
+        lower.contains('slice')) {
       status = VisualCheckStatus.done;
       reply =
           'Looking through your Meta glasses: ${step.check} The pieces look even and bite-sized. Ready to move on whenever you are!';
@@ -197,7 +203,8 @@ class HttpAssistantService implements AssistantService {
 
   http.Client get _httpClient => _client ??= http.Client();
 
-  String get _cleanBaseUrl => baseUrlProvider().trim().replaceAll(RegExp(r'/+$'), '');
+  String get _cleanBaseUrl =>
+      baseUrlProvider().trim().replaceAll(RegExp(r'/+$'), '');
 
   @override
   Future<AssistantResponse> askQuestion({
@@ -233,7 +240,10 @@ class HttpAssistantService implements AssistantService {
 
     try {
       final recentTurns = history
-          .where((m) => m.sender == MessageSender.ai || m.sender == MessageSender.user)
+          .where(
+            (m) =>
+                m.sender == MessageSender.ai || m.sender == MessageSender.user,
+          )
           .take(6)
           .map(
             (m) => {

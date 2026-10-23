@@ -29,13 +29,7 @@ enum VisualCheckStatus {
 enum VoiceListeningMode { handsFree, tapToSpeak }
 
 /// Real-time state of the Voice Orb & Assistant on the Cooking screen.
-enum VoiceActivityState {
-  idle,
-  listening,
-  capturingVision,
-  thinking,
-  speaking,
-}
+enum VoiceActivityState { idle, listening, capturingVision, thinking, speaking }
 
 /// Snapshot captured from Meta glasses (via `meta_wearables_dat_flutter` Mock Device Kit)
 /// or phone camera fallback during a visual check or visual question.

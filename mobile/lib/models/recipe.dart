@@ -91,7 +91,8 @@ const List<Recipe> kStarterRecipes = [
         title: 'Wash & prepare',
         instruction:
             'Rinse the greens, tomatoes and cucumber. Pat the greens dry before adding them to a large bowl.',
-        tip: 'No rush. Give everything a good rinse and pat dry so the dressing sticks later.',
+        tip:
+            'No rush. Give everything a good rinse and pat dry so the dressing sticks later.',
         check: 'The vegetables look clean, dry, and ready to cut.',
         visionSceneDescription:
             'Colander & mixing bowl with rinsed mixed greens, cherry tomatoes, and whole cucumber',
@@ -101,7 +102,8 @@ const List<Recipe> kStarterRecipes = [
         instruction:
             'Cut the tomatoes in half and slice the cucumber into bite-sized pieces. Keep your fingers tucked away from the knife.',
         tip: 'Aim for pieces about 1 to 2 cm wide on a stable cutting board.',
-        check: 'The tomatoes are halved and the cucumber is sliced into bite-sized pieces.',
+        check:
+            'The tomatoes are halved and the cucumber is sliced into bite-sized pieces.',
         visionSceneDescription:
             'Cutting board with halved cherry tomatoes and 1.5 cm cucumber slices',
       ),
@@ -109,7 +111,8 @@ const List<Recipe> kStarterRecipes = [
         title: 'Build your bowl',
         instruction:
             'Add the greens, chopped vegetables and drained chickpeas to the bowl. Toss gently for a minute.',
-        tip: 'Use two spoons or clean hands to lift the greens from the bottom.',
+        tip:
+            'Use two spoons or clean hands to lift the greens from the bottom.',
         check: 'All ingredients are evenly combined in the bowl.',
         suggestedTimerSeconds: 60,
         suggestedTimerLabel: 'Toss salad gently',
@@ -134,13 +137,7 @@ const List<Recipe> kStarterRecipes = [
     tone: 'orange',
     icon: '🍜',
     level: 'Beginner',
-    ingredients: [
-      'noodles',
-      'carrot',
-      'bell pepper',
-      'garlic',
-      'soy sauce',
-    ],
+    ingredients: ['noodles', 'carrot', 'bell pepper', 'garlic', 'soy sauce'],
     swaps: [
       HealthySwap(
         id: 'noodles-less-soy',
@@ -160,8 +157,10 @@ const List<Recipe> kStarterRecipes = [
         title: 'Prepare the vegetables',
         instruction:
             'Wash and slice the carrot and bell pepper into thin strips. Mince one clove of garlic.',
-        tip: 'Cut slowly into uniform thin strips so they soften at the same pace.',
-        check: 'The carrot and pepper are thinly sliced and garlic is finely minced.',
+        tip:
+            'Cut slowly into uniform thin strips so they soften at the same pace.',
+        check:
+            'The carrot and pepper are thinly sliced and garlic is finely minced.',
         visionSceneDescription:
             'Prep board with julienned carrot strips, sliced red bell pepper, and minced garlic',
       ),
@@ -169,7 +168,8 @@ const List<Recipe> kStarterRecipes = [
         title: 'Cook the noodles',
         instruction:
             'Bring water to a boil and cook the noodles for about 3 minutes according to the packet. Drain carefully.',
-        tip: 'Steam and boiling water can burn. Pour away from yourself when draining.',
+        tip:
+            'Steam and boiling water can burn. Pour away from yourself when draining.',
         check: 'The noodles are tender, loosened, and drained in a colander.',
         suggestedTimerSeconds: 180,
         suggestedTimerLabel: 'Boil noodles',
@@ -207,13 +207,7 @@ const List<Recipe> kStarterRecipes = [
     tone: 'red',
     icon: '🍅',
     level: 'Beginner',
-    ingredients: [
-      'cooked rice',
-      'chickpeas',
-      'tomatoes',
-      'onion',
-      'paprika',
-    ],
+    ingredients: ['cooked rice', 'chickpeas', 'tomatoes', 'onion', 'paprika'],
     swaps: [
       HealthySwap(
         id: 'rice-less-oil',
@@ -234,7 +228,8 @@ const List<Recipe> kStarterRecipes = [
         instruction:
             'Dice the onion and tomatoes, then rinse and drain the chickpeas.',
         tip: 'A small, even dice helps the onion and tomatoes cook evenly.',
-        check: 'Onion and tomatoes are diced and chickpeas are drained within reach.',
+        check:
+            'Onion and tomatoes are diced and chickpeas are drained within reach.',
         visionSceneDescription:
             'Diced onion, chopped red tomatoes, and rinsed chickpeas in prep bowls',
       ),
@@ -254,7 +249,8 @@ const List<Recipe> kStarterRecipes = [
         instruction:
             'Add tomatoes, chickpeas and a pinch of paprika. Simmer for 4 minutes until the tomatoes soften.',
         tip: 'If the pan looks dry, add a small splash of water.',
-        check: 'The tomatoes have broken down into a rich sauce around the chickpeas.',
+        check:
+            'The tomatoes have broken down into a rich sauce around the chickpeas.',
         suggestedTimerSeconds: 240,
         suggestedTimerLabel: 'Simmer tomato sauce',
         visionSceneDescription:
@@ -280,19 +276,12 @@ const List<Recipe> kStarterRecipes = [
     tone: 'yellow',
     icon: '🌯',
     level: 'Beginner',
-    ingredients: [
-      'eggs',
-      'spinach',
-      'tortillas',
-      'tomatoes',
-      'yogurt',
-    ],
+    ingredients: ['eggs', 'spinach', 'tortillas', 'tomatoes', 'yogurt'],
     swaps: [
       HealthySwap(
         id: 'wrap-wholemeal',
         title: 'Wholemeal tortillas',
-        detail:
-            'Use wholemeal tortillas instead of white ones for more fibre.',
+        detail: 'Use wholemeal tortillas instead of white ones for more fibre.',
       ),
       HealthySwap(
         id: 'wrap-more-spinach',
@@ -316,7 +305,8 @@ const List<Recipe> kStarterRecipes = [
         instruction:
             'Warm a pan on medium-low heat and cook the eggs for 2 minutes, stirring gently until fully set.',
         tip: 'Keep cooking gently if any egg still looks liquid or runny.',
-        check: 'The scrambled eggs are soft, curded, and fully set with no runny spots.',
+        check:
+            'The scrambled eggs are soft, curded, and fully set with no runny spots.',
         suggestedTimerSeconds: 120,
         suggestedTimerLabel: 'Scramble eggs',
         visionSceneDescription:

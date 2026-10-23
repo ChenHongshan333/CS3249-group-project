@@ -17,21 +17,14 @@ import 'screens/recipes_screen.dart';
 import 'services/assistant_service.dart';
 import 'services/voice_controller.dart';
 import 'theme/app_theme.dart';
+import 'theme/widgets.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const CookTogetherApp());
 }
 
-enum AppScreen {
-  home,
-  recipes,
-  prep,
-  cook,
-  finish,
-  history,
-  profile,
-}
+enum AppScreen { home, recipes, prep, cook, finish, history, profile }
 
 class CookTogetherApp extends StatefulWidget {
   final GlassesService? glassesService;
@@ -39,12 +32,17 @@ class CookTogetherApp extends StatefulWidget {
   final VoiceController? voiceController;
   final bool showInitialWelcome;
 
+  /// Screen to open on launch. Tests and the screenshot harness use it to
+  /// jump straight to one screen.
+  final AppScreen initialScreen;
+
   const CookTogetherApp({
     super.key,
     this.glassesService,
     this.assistantService,
     this.voiceController,
     this.showInitialWelcome = true,
+    this.initialScreen = AppScreen.home,
   });
 
   @override
@@ -56,7 +54,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
   static const String _kPrefsKey = 'cooktogether.preferences';
   static const String _kHistoryKey = 'cooktogether.history';
 
-  AppScreen _screen = AppScreen.home;
+  late AppScreen _screen = widget.initialScreen;
   bool _welcomeOpen = false;
   UserPreferences _preferences = const UserPreferences();
   List<CookingHistoryItem> _history = const [];
@@ -83,14 +81,11 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
   @override
   void initState() {
     super.initState();
-    _glassesService =
-        widget.glassesService ?? MetaWearablesDatGlassesService();
+    _glassesService = widget.glassesService ?? MetaWearablesDatGlassesService();
     _voiceController = widget.voiceController ?? VoiceController();
     _assistantService =
         widget.assistantService ??
-        HttpAssistantService(
-          baseUrlProvider: () => _preferences.serverBaseUrl,
-        );
+        HttpAssistantService(baseUrlProvider: () => _preferences.serverBaseUrl);
 
     // Pair Mock Device Kit on launch so Meta glasses status is ready
     _glassesService.initializeAndPairMockDevice();
@@ -154,8 +149,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
       'Nov',
       'Dec',
     ];
-    final formattedDate =
-        '${now.day} ${months[now.month - 1]} ${now.year}';
+    final formattedDate = '${now.day} ${months[now.month - 1]} ${now.year}';
 
     final item = CookingHistoryItem(
       id: 'hist-${now.millisecondsSinceEpoch}',
@@ -213,26 +207,39 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
       title: 'CookTogether',
       debugShowCheckedModeBanner: false,
       theme: CookTogetherTheme.buildTheme(),
+      // On wide screens (web, tablets) the phone-width column sits on a
+      // white page; on phones the column fills the screen.
       home: Scaffold(
-        backgroundColor: CookTogetherTheme.cream,
-        body: SafeArea(
-          bottom: false,
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460),
-              child: Stack(
-                children: [
-                  _buildCurrentScreen(),
-                  if (_showBottomNav)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: _buildBottomNav(),
+        backgroundColor: Colors.white,
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: CookTogetherTheme.maxContentWidth,
+            ),
+            child: SizedBox.expand(
+              // Material, not ColoredBox, so ink ripples stay visible.
+              child: Material(
+                color: CookTogetherTheme.background,
+                child: SafeArea(
+                  bottom: false,
+                  // Builder gives the overlays a context below MaterialApp,
+                  // so they pick up the app theme.
+                  child: Builder(
+                    builder: (context) => Stack(
+                      children: [
+                        Column(
+                          children: [
+                            Expanded(child: _buildCurrentScreen()),
+                            if (_showBottomNav) _buildBottomNav(),
+                          ],
+                        ),
+                        if (_welcomeOpen) _buildWelcomeModal(context),
+                        if (_toastMessage.isNotEmpty)
+                          _buildToastBanner(context),
+                      ],
                     ),
-                  if (_welcomeOpen) _buildWelcomeModal(),
-                  if (_toastMessage.isNotEmpty) _buildToastBanner(),
-                ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -249,8 +256,10 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           history: _history,
           onStartCooking: () => setState(() => _screen = AppScreen.recipes),
           onOpenWelcomeOverview: () => setState(() => _welcomeOpen = true),
-          onOpenHistory: () => setState(() => _screen = AppScreen.history),
-          onOpenProfile: () => setState(() => _screen = AppScreen.profile),
+          onCookAgain: (recipeId) => setState(() {
+            _selectedRecipeId = recipeId;
+            _screen = AppScreen.prep;
+          }),
         );
 
       case AppScreen.recipes:
@@ -270,18 +279,19 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           initialListeningMode: _preferences.handsFreeListening
               ? VoiceListeningMode.handsFree
               : VoiceListeningMode.tapToSpeak,
-          onStartCookingSession: ({
-            required Set<String> checkedIngredients,
-            required VoiceListeningMode listeningMode,
-            required Set<String> acceptedSwapIds,
-          }) {
-            setState(() {
-              _sessionCheckedIngredients = checkedIngredients;
-              _sessionAcceptedSwapIds = acceptedSwapIds;
-              _sessionListeningMode = listeningMode;
-              _screen = AppScreen.cook;
-            });
-          },
+          onStartCookingSession:
+              ({
+                required Set<String> checkedIngredients,
+                required VoiceListeningMode listeningMode,
+                required Set<String> acceptedSwapIds,
+              }) {
+                setState(() {
+                  _sessionCheckedIngredients = checkedIngredients;
+                  _sessionAcceptedSwapIds = acceptedSwapIds;
+                  _sessionListeningMode = listeningMode;
+                  _screen = AppScreen.cook;
+                });
+              },
           onBack: () => setState(() => _screen = AppScreen.recipes),
           onShowToast: _showToast,
         );
@@ -329,272 +339,101 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
   }
 
   Widget _buildBottomNav() {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFFFFFEFB),
-        border: Border(top: BorderSide(color: Color(0xFFF0EBE1))),
-      ),
-      padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _BottomNavItem(
-              icon: Icons.home_rounded,
-              label: 'Home',
-              active: _screen == AppScreen.home,
-              onTap: () => setState(() => _screen = AppScreen.home),
-            ),
-            _BottomNavItem(
-              icon: Icons.restaurant_menu_rounded,
-              label: 'Recipes',
-              active: _screen == AppScreen.recipes,
-              onTap: () => setState(() => _screen = AppScreen.recipes),
-            ),
-            _BottomNavItem(
-              icon: Icons.schedule_rounded,
-              label: 'History',
-              active: _screen == AppScreen.history,
-              onTap: () => setState(() => _screen = AppScreen.history),
-            ),
-            _BottomNavItem(
-              icon: Icons.person_outline_rounded,
-              label: 'Profile',
-              active: _screen == AppScreen.profile,
-              onTap: () => setState(() => _screen = AppScreen.profile),
-            ),
-          ],
+    const tabs = [
+      AppScreen.home,
+      AppScreen.recipes,
+      AppScreen.history,
+      AppScreen.profile,
+    ];
+    return NavigationBar(
+      selectedIndex: tabs.indexOf(_screen).clamp(0, tabs.length - 1),
+      onDestinationSelected: (i) => setState(() => _screen = tabs[i]),
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.home_outlined),
+          selectedIcon: Icon(Icons.home_rounded),
+          label: 'Home',
         ),
-      ),
+        NavigationDestination(
+          icon: Icon(Icons.restaurant_menu_rounded),
+          label: 'Recipes',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.history_rounded),
+          label: 'History',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.person_outline_rounded),
+          selectedIcon: Icon(Icons.person_rounded),
+          label: 'Profile',
+        ),
+      ],
     );
   }
 
-  Widget _buildWelcomeModal() {
+  Widget _buildWelcomeModal(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     return Container(
       color: const Color(0x8A263023),
       alignment: Alignment.center,
-      padding: const EdgeInsets.all(26),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: CookTogetherTheme.surface,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x33000000),
-              blurRadius: 36,
-              offset: Offset(0, 16),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  width: 58,
-                  height: 58,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8EAD0),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text('👋', style: TextStyle(fontSize: 32)),
-                ),
-                IconButton(
-                  tooltip: 'Close welcome',
-                  onPressed: _dismissWelcome,
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: const BoxDecoration(
-                    color: CookTogetherTheme.herbGreen,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 7),
-                Text(
-                  'HELLO, HOME COOK',
-                  style: CookTogetherTheme.bodyStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: CookTogetherTheme.herbGreen,
-                    letterSpacing: 1.8,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Meet CookTogether.',
-              style: CookTogetherTheme.headingStyle(fontSize: 26),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Your conversational AI cooking companion. Navigate recipes with your voice, set contextual timers, and let CookTogether look through your Meta glasses to answer questions about your food.',
-              style: CookTogetherTheme.bodyStyle(
-                fontSize: 12.5,
-                color: const Color(0xFF798175),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFECF3E5),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.verified_user_outlined,
-                    size: 19,
-                    color: Color(0xFF5F8054),
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      'I\'m an AI guide. I can help you through a recipe, but I can\'t guarantee food is safe or diagnose an allergy.',
-                      style: CookTogetherTheme.bodyStyle(
-                        fontSize: 10.5,
-                        color: const Color(0xFF5F8054),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: CookTogetherTheme.terracottaRed,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                ),
-                onPressed: _dismissWelcome,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Let\'s get started',
-                      style: CookTogetherTheme.headingStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.arrow_forward_rounded, size: 19),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildToastBanner() {
-    return Positioned(
-      left: 24,
-      right: 24,
-      bottom: _showBottomNav ? 88 : 98,
+      padding: const EdgeInsets.all(24),
       child: Material(
-        color: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          decoration: BoxDecoration(
-            color: const Color(0xFF293C28),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x33000000),
-                blurRadius: 18,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Row(
+        color: CookTogetherTheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.check_circle_outline_rounded,
-                size: 18,
-                color: Colors.white,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _toastMessage,
-                  style: CookTogetherTheme.bodyStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
+              const Text(
+                '👋',
+                style: TextStyle(
+                  fontSize: 40,
+                  fontFamilyFallback: ['Noto Color Emoji'],
                 ),
               ),
+              const SizedBox(height: 12),
+              Text('Meet CookTogether', style: textTheme.headlineSmall),
+              const SizedBox(height: 8),
+              Text(
+                'I\'ll talk you through a recipe, one step at a time. '
+                'Say "next step" or "check this" whenever you\'re ready.',
+                style: textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'I\'m an AI guide. I can\'t tell you if food is safe to eat '
+                'or free of allergens.',
+                style: textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 24),
+              PrimaryButton(label: 'Let\'s cook', onPressed: _dismissWelcome),
             ],
           ),
         ),
       ),
     );
   }
-}
 
-class _BottomNavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _BottomNavItem({
-    required this.icon,
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = active
-        ? CookTogetherTheme.terracottaRed
-        : const Color(0xFF93998E);
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 22, color: color),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: CookTogetherTheme.bodyStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
+  Widget _buildToastBanner(BuildContext context) {
+    return Positioned(
+      left: 20,
+      right: 20,
+      bottom: _showBottomNav ? 84 : 100,
+      child: Material(
+        color: CookTogetherTheme.ink,
+        elevation: 6,
+        borderRadius: BorderRadius.circular(CookTogetherTheme.radiusControl),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Text(
+            _toastMessage,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
             ),
-          ],
+          ),
         ),
       ),
     );
