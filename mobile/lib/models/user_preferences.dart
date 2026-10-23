@@ -61,7 +61,9 @@ class UserPreferences {
   static UserPreferences decode(String? raw) {
     if (raw == null || raw.isEmpty) return const UserPreferences();
     try {
-      return UserPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      return UserPreferences.fromJson(
+        jsonDecode(raw) as Map<String, dynamic>,
+      );
     } catch (_) {
       return const UserPreferences();
     }

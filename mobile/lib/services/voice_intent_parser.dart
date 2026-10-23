@@ -71,16 +71,10 @@ class VoiceIntentParser {
     if (RegExp(
       r'\b(cancel|clear|remove|delete|reset)\b.*\btimer\b',
     ).hasMatch(lower)) {
-      return ParsedVoiceIntent(
-        type: VoiceIntentType.cancelTimer,
-        rawText: trimmed,
-      );
+      return ParsedVoiceIntent(type: VoiceIntentType.cancelTimer, rawText: trimmed);
     }
     if (RegExp(r'\b(pause|stop)\b.*\btimer\b').hasMatch(lower)) {
-      return ParsedVoiceIntent(
-        type: VoiceIntentType.pauseTimer,
-        rawText: trimmed,
-      );
+      return ParsedVoiceIntent(type: VoiceIntentType.pauseTimer, rawText: trimmed);
     }
 
     // 2. Timer creation ("set a timer for 5 minutes", "start timer", "3 minute timer")
@@ -118,10 +112,7 @@ class VoiceIntentParser {
     if (RegExp(
       r'^(next|next step|move on|continue|done with this step|i finished this step|go to next step)[.!?]*$',
     ).hasMatch(lower)) {
-      return ParsedVoiceIntent(
-        type: VoiceIntentType.nextStep,
-        rawText: trimmed,
-      );
+      return ParsedVoiceIntent(type: VoiceIntentType.nextStep, rawText: trimmed);
     }
     if (RegExp(
       r'^(previous|previous step|go back|back a step|last step)[.!?]*$',
@@ -134,10 +125,7 @@ class VoiceIntentParser {
     if (RegExp(
       r'^(repeat|repeat that|say that again|read step again|what is this step)[.!?]*$',
     ).hasMatch(lower)) {
-      return ParsedVoiceIntent(
-        type: VoiceIntentType.repeatStep,
-        rawText: trimmed,
-      );
+      return ParsedVoiceIntent(type: VoiceIntentType.repeatStep, rawText: trimmed);
     }
     if (RegExp(
       r'\b(show|open|view|see)\b.*\b(all steps|steps|ingredients|recipe)\b',
@@ -157,9 +145,7 @@ class VoiceIntentParser {
     }
 
     // 6. Session & audio controls
-    if (RegExp(
-      r'^(pause|pause session|pause cooking)[.!?]*$',
-    ).hasMatch(lower)) {
+    if (RegExp(r'^(pause|pause session|pause cooking)[.!?]*$').hasMatch(lower)) {
       return ParsedVoiceIntent(
         type: VoiceIntentType.pauseSession,
         rawText: trimmed,
@@ -173,13 +159,8 @@ class VoiceIntentParser {
         rawText: trimmed,
       );
     }
-    if (RegExp(
-      r'^(mute|mute audio|quiet|stop speaking)[.!?]*$',
-    ).hasMatch(lower)) {
-      return ParsedVoiceIntent(
-        type: VoiceIntentType.muteAudio,
-        rawText: trimmed,
-      );
+    if (RegExp(r'^(mute|mute audio|quiet|stop speaking)[.!?]*$').hasMatch(lower)) {
+      return ParsedVoiceIntent(type: VoiceIntentType.muteAudio, rawText: trimmed);
     }
     if (RegExp(r'^(unmute|unmute audio|speak aloud)[.!?]*$').hasMatch(lower)) {
       return ParsedVoiceIntent(

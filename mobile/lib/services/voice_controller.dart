@@ -358,10 +358,7 @@ class VoiceController extends ChangeNotifier {
       // Safety fallback timeout based on utterance length so TTS is never cut off at 900ms,
       // while ensuring the state still recovers if the OS drops the completion callback.
       final timeoutMs = (text.length * 80).clamp(4000, 15000);
-      _ttsSafetyTimer = Timer(
-        Duration(milliseconds: timeoutMs),
-        _onTtsFinished,
-      );
+      _ttsSafetyTimer = Timer(Duration(milliseconds: timeoutMs), _onTtsFinished);
     } catch (_) {
       _onTtsFinished();
     }
