@@ -10,16 +10,16 @@ import '../services/assistant_service.dart';
 import '../services/voice_controller.dart';
 import '../services/voice_intent_parser.dart';
 import '../theme/app_theme.dart';
+import '../theme/widgets.dart';
 import 'step_ingredient_sheet.dart';
 
-/// Refined Voice-First & Meta Glasses Conversational Cooking Workspace.
+/// Voice-first cooking workspace, built to be read at arm's length.
 ///
 /// Layout hierarchy:
-/// 1. Top Header & Smart Contextual Timers strip
-/// 2. Pinned Glanceable Step Card (tap to open [StepIngredientSheet]) +
-///    Compact Meta Glasses POV Pill (expands when capturing a frame)
-/// 3. Rich Conversational Stream in the center with inline Vision Assessment Cards
-/// 4. Prominent Voice Orb & minimal Hands-Free dock at the bottom
+/// 1. Slim top bar: leave, recipe name, mute, pause, more
+/// 2. Pinned step panel: progress, step title, instruction, tip, timers
+/// 3. Quieter conversation with inline glasses-check results
+/// 4. Dock: Check, the mic orb, and the primary Next action
 class CookingScreen extends StatefulWidget {
   final Recipe recipe;
   final UserPreferences preferences;
@@ -33,7 +33,8 @@ class CookingScreen extends StatefulWidget {
     required int elapsedSeconds,
     required int stepsCompleted,
     required int visualChecksCount,
-  }) onFinishCooking;
+  })
+  onFinishCooking;
   final VoidCallback onExitToHome;
   final ValueChanged<String> onShowToast;
 
@@ -65,7 +66,6 @@ class _CookingScreenState extends State<CookingScreen>
   bool _isPaused = false;
   bool _composerOpen = false;
   bool _confirmEndOpen = false;
-  bool _glassesPreviewExpanded = false;
 
   late Set<String> _checkedIngredients;
   final List<ChatMessage> _messages = [];
@@ -109,7 +109,9 @@ class _CookingScreenState extends State<CookingScreen>
               isRunning: nextRemaining > 0,
             );
             if (nextRemaining == 0) {
-              widget.onShowToast('Timer finished: ${t.label} — check your food!');
+              widget.onShowToast(
+                'Timer finished: ${t.label} — check your food!',
+              );
               _appendAiMessage(
                 'Your ${t.label.toLowerCase()} timer just finished! Take a look or say "check this step" so we can inspect it together.',
               );
@@ -297,9 +299,6 @@ class _CookingScreenState extends State<CookingScreen>
       _appendUserMessage('Check this step 🕶️');
     }
 
-    setState(() {
-      _glassesPreviewExpanded = true;
-    });
     widget.voiceController.setActivityState(
       VoiceActivityState.capturingVision,
       hint: 'Capturing POV snapshot from Meta glasses…',
@@ -326,10 +325,7 @@ class _CookingScreenState extends State<CookingScreen>
     );
 
     if (!mounted) return;
-    setState(() {
-      _visualChecksCount++;
-      _glassesPreviewExpanded = false;
-    });
+    setState(() => _visualChecksCount++);
 
     _appendAiMessage(
       response.reply,
@@ -504,9 +500,8 @@ class _CookingScreenState extends State<CookingScreen>
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
       builder: (context) => FractionallySizedBox(
-        heightFactor: 0.76,
+        heightFactor: 0.8,
         child: StepIngredientSheet(
           recipe: widget.recipe,
           currentStepIndex: _currentStep,
@@ -537,6 +532,29 @@ class _CookingScreenState extends State<CookingScreen>
     return _timers.any((t) => t.label == label);
   }
 
+  bool get _isLastStep => _currentStep == widget.recipe.steps.length - 1;
+
+  void _nextOrFinish() {
+    if (_isLastStep) {
+      _completeSession();
+    } else {
+      _goToStep(_currentStep + 1);
+    }
+  }
+
+  void _toggleListeningMode() {
+    final nextMode =
+        widget.voiceController.listeningMode == VoiceListeningMode.handsFree
+        ? VoiceListeningMode.tapToSpeak
+        : VoiceListeningMode.handsFree;
+    widget.voiceController.setListeningMode(nextMode);
+    widget.onShowToast(
+      nextMode == VoiceListeningMode.handsFree
+          ? 'Hands-free listening on'
+          : 'Tap the mic when you want to talk',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -544,11 +562,17 @@ class _CookingScreenState extends State<CookingScreen>
         Column(
           children: [
             _buildTopBar(),
-            _buildSmartTimerStrip(),
-            _buildPinnedGlanceableStepCard(),
-            if (_isPaused) _buildPausedBanner(),
-            Expanded(child: _buildConversationalStream()),
-            _buildBottomVoiceOrbDock(),
+            // On short phones the step scrolls rather than squeezing the
+            // conversation to nothing.
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.5,
+              ),
+              child: SingleChildScrollView(child: _buildStepPanel()),
+            ),
+            Expanded(child: _buildConversation()),
+            if (_composerOpen) _buildComposer(),
+            _buildDock(),
           ],
         ),
         if (_confirmEndOpen) _buildConfirmEndModal(),
@@ -557,1187 +581,572 @@ class _CookingScreenState extends State<CookingScreen>
   }
 
   Widget _buildTopBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      decoration: const BoxDecoration(
-        color: CookTogetherTheme.cream,
-      ),
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
       child: Row(
         children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(11),
-            onTap: () => setState(() => _confirmEndOpen = true),
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: CookTogetherTheme.surface,
-                borderRadius: BorderRadius.circular(11),
-                border: Border.all(color: CookTogetherTheme.border),
-              ),
-              child: const Icon(
-                Icons.arrow_back_rounded,
-                size: 19,
-                color: CookTogetherTheme.ink,
-              ),
-            ),
+          IconButton(
+            tooltip: 'Leave session',
+            onPressed: () => setState(() => _confirmEndOpen = true),
+            icon: const Icon(Icons.close_rounded),
           ),
-          const SizedBox(width: 11),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'NOW COOKING · STEP ${_currentStep + 1}/${widget.recipe.steps.length}',
-                  style: CookTogetherTheme.bodyStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    color: CookTogetherTheme.warmOrange,
-                    letterSpacing: 1.3,
-                  ),
-                ),
-                Text(
                   widget.recipe.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: CookTogetherTheme.headingStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
+                  style: textTheme.titleSmall,
+                ),
+                Text(
+                  _formatElapsed(_elapsedSeconds),
+                  style: textTheme.bodySmall?.copyWith(
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-            decoration: BoxDecoration(
-              color: CookTogetherTheme.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: CookTogetherTheme.border),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.schedule_rounded,
-                  size: 14,
-                  color: CookTogetherTheme.muted,
+          ListenableBuilder(
+            listenable: widget.voiceController,
+            builder: (context, _) {
+              final muted = widget.voiceController.audioMuted;
+              return IconButton(
+                tooltip: muted ? 'Turn voice on' : 'Mute voice',
+                onPressed: () => widget.voiceController.toggleAudioMuted(),
+                icon: Icon(
+                  muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  _formatElapsed(_elapsedSeconds),
-                  style: CookTogetherTheme.bodyStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: CookTogetherTheme.ink,
-                  ),
-                ),
-              ],
+              );
+            },
+          ),
+          IconButton(
+            tooltip: _isPaused ? 'Resume' : 'Pause',
+            onPressed: () => _togglePause(),
+            icon: Icon(
+              _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
             ),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'More',
+            icon: const Icon(Icons.more_vert_rounded),
+            onSelected: (value) {
+              switch (value) {
+                case 'type':
+                  setState(() => _composerOpen = !_composerOpen);
+                case 'mode':
+                  _toggleListeningMode();
+                case 'steps':
+                  _openStepAndIngredientSheet();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'type',
+                child: Text(_composerOpen ? 'Hide keyboard' : 'Type instead'),
+              ),
+              PopupMenuItem(
+                value: 'mode',
+                child: Text(
+                  widget.voiceController.listeningMode ==
+                          VoiceListeningMode.handsFree
+                      ? 'Switch to tap to talk'
+                      : 'Switch to hands-free',
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'steps',
+                child: Text('Steps & ingredients'),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSmartTimerStrip() {
+  Widget _buildStepPanel() {
+    final textTheme = Theme.of(context).textTheme;
+    final totalSteps = widget.recipe.steps.length;
     final suggestedSecs = _step.suggestedTimerSeconds;
     final suggestedLabel = _step.suggestedTimerLabel ?? _step.title;
     final showSuggestion =
         suggestedSecs != null && !_hasActiveTimerForCurrentStep;
 
-    if (_timers.isEmpty && !showSuggestion) {
-      return const SizedBox.shrink();
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(
+        CookTogetherTheme.gutter,
+        8,
+        CookTogetherTheme.gutter,
+        16,
+      ),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: CookTogetherTheme.line)),
+      ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final timer in _timers)
-            Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: timer.isFinished
-                    ? CookTogetherTheme.toneRedBg
-                    : const Color(0xFFFFF0D6),
-                borderRadius: BorderRadius.circular(13),
-                border: Border.all(
-                  color: timer.isFinished
-                      ? CookTogetherTheme.terracottaRed
-                      : const Color(0xFFE7BD7C),
+          // One segment per step, filled up to the current one.
+          Row(
+            children: [
+              for (int i = 0; i < totalSteps; i++) ...[
+                if (i > 0) const SizedBox(width: 4),
+                Expanded(
+                  child: Container(
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: i <= _currentStep
+                          ? CookTogetherTheme.success
+                          : CookTogetherTheme.line,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Step ${_currentStep + 1} of $totalSteps',
+                  style: textTheme.labelMedium?.copyWith(
+                    color: CookTogetherTheme.inkMuted,
+                  ),
                 ),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    timer.isFinished
-                        ? Icons.notifications_active_rounded
-                        : Icons.timer_rounded,
-                    size: 17,
-                    color: timer.isFinished
-                        ? CookTogetherTheme.terracottaRed
-                        : const Color(0xFFA66822),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          timer.label,
-                          style: CookTogetherTheme.bodyStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color: CookTogetherTheme.ink,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(99),
-                          child: LinearProgressIndicator(
-                            value: timer.progress,
-                            minHeight: 4,
-                            backgroundColor: Colors.white.withValues(alpha: 0.6),
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              timer.isFinished
-                                  ? CookTogetherTheme.terracottaRed
-                                  : CookTogetherTheme.warmOrange,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    timer.isFinished ? 'DONE' : timer.formattedRemaining,
-                    style: CookTogetherTheme.headingStyle(
-                      fontSize: 15,
-                      color: timer.isFinished
-                          ? CookTogetherTheme.terracottaRed
-                          : const Color(0xFFA66822),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  if (!timer.isFinished)
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      tooltip: timer.isRunning ? 'Pause timer' : 'Resume timer',
-                      onPressed: () {
-                        setState(() {
-                          final idx = _timers.indexWhere(
-                            (item) => item.id == timer.id,
-                          );
-                          if (idx >= 0) {
-                            _timers[idx] = timer.copyWith(
-                              isRunning: !timer.isRunning,
-                            );
-                          }
-                        });
-                      },
-                      icon: Icon(
-                        timer.isRunning
-                            ? Icons.pause_circle_filled_rounded
-                            : Icons.play_circle_fill_rounded,
-                        size: 20,
-                        color: const Color(0xFFA66822),
-                      ),
-                    ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    tooltip: 'Dismiss timer',
-                    onPressed: () {
-                      setState(() {
-                        _timers.removeWhere((item) => item.id == timer.id);
-                      });
-                    },
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      size: 18,
-                      color: CookTogetherTheme.muted,
-                    ),
-                  ),
-                ],
+              if (_currentStep > 0)
+                IconButton(
+                  tooltip: 'Previous step',
+                  onPressed: () => _goToStep(_currentStep - 1),
+                  icon: const Icon(Icons.chevron_left_rounded),
+                ),
+              TextButton.icon(
+                onPressed: _openStepAndIngredientSheet,
+                icon: const Icon(Icons.format_list_bulleted_rounded, size: 20),
+                label: const Text('All steps'),
               ),
-            ),
-          if (showSuggestion)
-            InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => _startOrUpdateTimer(
+            ],
+          ),
+          if (_isPaused) ...[_buildPausedBanner(), const SizedBox(height: 12)],
+          Text(_step.title, style: textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          Text(
+            _step.instruction,
+            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 1),
+                child: Icon(
+                  Icons.lightbulb_outline_rounded,
+                  size: 18,
+                  color: CookTogetherTheme.inkMuted,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: Text(_step.tip, style: textTheme.bodyMedium)),
+            ],
+          ),
+          for (final timer in _timers) ...[
+            const SizedBox(height: 12),
+            _buildTimerRow(timer),
+          ],
+          if (showSuggestion) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _startOrUpdateTimer(
                 seconds: suggestedSecs,
                 label: suggestedLabel,
               ),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: CookTogetherTheme.surfaceWarm,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE9DFCC)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.timer_outlined,
-                      size: 16,
-                      color: CookTogetherTheme.warmOrange,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Suggested timer: $suggestedLabel (${(suggestedSecs / 60).ceil()} min)',
-                        style: CookTogetherTheme.bodyStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFFA4773A),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: CookTogetherTheme.toneOrangeBg,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Start timer',
-                        style: CookTogetherTheme.bodyStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: CookTogetherTheme.warmOrange,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              icon: const Icon(
+                Icons.timer_outlined,
+                color: CookTogetherTheme.warning,
               ),
+              label: Text('Start ${_formatTimerLength(suggestedSecs)} timer'),
             ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildPinnedGlanceableStepCard() {
-    final totalSteps = widget.recipe.steps.length;
-    final progress = (_currentStep + 1) / totalSteps;
+  String _formatTimerLength(int seconds) {
+    if (seconds < 60) return '$seconds sec';
+    return '${(seconds / 60).ceil()} min';
+  }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: ListenableBuilder(
-        listenable: widget.glassesService,
-        builder: (context, _) {
-          final isCapturing = widget.glassesService.isCapturing;
-          final showExpandedPov = _glassesPreviewExpanded || isCapturing;
-
-          return Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: CookTogetherTheme.surfaceWarm,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFE9DFCC)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0D28332A),
-                  blurRadius: 12,
-                  offset: Offset(0, 4),
-                ),
-              ],
+  Widget _buildTimerRow(CookingTimer timer) {
+    final textTheme = Theme.of(context).textTheme;
+    final finished = timer.isFinished;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 6, 4, 6),
+      decoration: BoxDecoration(
+        color: CookTogetherTheme.warningSoft,
+        borderRadius: BorderRadius.circular(CookTogetherTheme.radiusControl),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            finished
+                ? Icons.notifications_active_rounded
+                : Icons.timer_outlined,
+            color: CookTogetherTheme.warning,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              timer.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.bodyLarge,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Top row: Step progress + Meta Glasses POV pill + Expandable Steps button
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: CookTogetherTheme.toneGreenBg,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'STEP ${_currentStep + 1} OF $totalSteps',
-                        style: CookTogetherTheme.bodyStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: CookTogetherTheme.deepHerbGreen,
-                          letterSpacing: 0.7,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    // Compact Meta Glasses POV Pill
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _glassesPreviewExpanded =
-                                  !_glassesPreviewExpanded;
-                            });
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF28332A),
-                              borderRadius: BorderRadius.circular(99),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    color: isCapturing
-                                        ? CookTogetherTheme.warmOrange
-                                        : CookTogetherTheme.herbGreen,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 5),
-                                Flexible(
-                                  child: Text(
-                                    isCapturing
-                                        ? 'SNAP IN PROGRESS…'
-                                        : 'META GLASSES POV',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: CookTogetherTheme.bodyStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white,
-                                      letterSpacing: 0.4,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(9),
-                      onTap: _openStepAndIngredientSheet,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: CookTogetherTheme.surface,
-                          borderRadius: BorderRadius.circular(9),
-                          border: Border.all(color: CookTogetherTheme.border),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.format_list_bulleted_rounded,
-                              size: 14,
-                              color: CookTogetherTheme.ink,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Steps & Items',
-                              style: CookTogetherTheme.bodyStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                color: CookTogetherTheme.ink,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 9),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(99),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 5,
-                    backgroundColor: const Color(0xFFE5E9DD),
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      CookTogetherTheme.herbGreen,
-                    ),
-                  ),
-                ),
-                if (showExpandedPov) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(11),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFF2B392D),
-                          Color(0xFF425744),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(11),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            widget.recipe.icon,
-                            style: const TextStyle(fontSize: 24),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${widget.glassesService.deviceName} · ${widget.glassesService.batteryLevel}%',
-                                style: CookTogetherTheme.bodyStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: const Color(0xFFB5E49C),
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                _step.visionSceneDescription,
-                                style: CookTogetherTheme.bodyStyle(
-                                  fontSize: 11,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: isCapturing
-                              ? null
-                              : () => _triggerVisualCheck(),
-                          icon: const Icon(
-                            Icons.camera_alt_outlined,
-                            size: 15,
-                            color: Colors.white,
-                          ),
-                          label: Text(
-                            'Snap',
-                            style: CookTogetherTheme.bodyStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _step.title,
-                            style: CookTogetherTheme.headingStyle(fontSize: 20),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            _step.instruction,
-                            style: CookTogetherTheme.bodyStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: CookTogetherTheme.ink,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 9),
-                Container(
-                  padding: const EdgeInsets.only(top: 8),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      top: BorderSide(color: Color(0xFFEEE6D7)),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.local_fire_department_rounded,
-                        size: 15,
-                        color: CookTogetherTheme.warmOrange,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          _step.tip,
-                          style: CookTogetherTheme.bodyStyle(
-                            fontSize: 11,
-                            color: const Color(0xFFA4773A),
-                          ),
-                        ),
-                      ),
-                      if (_currentStep > 0)
-                        TextButton(
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                          ),
-                          onPressed: () => _goToStep(_currentStep - 1),
-                          child: Text(
-                            'Prev',
-                            style: CookTogetherTheme.bodyStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: CookTogetherTheme.muted,
-                            ),
-                          ),
-                        ),
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                        ),
-                        onPressed: () {
-                          if (_currentStep == widget.recipe.steps.length - 1) {
-                            _completeSession();
-                          } else {
-                            _goToStep(_currentStep + 1);
-                          }
-                        },
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _currentStep == widget.recipe.steps.length - 1
-                                  ? 'Finish'
-                                  : 'Next step',
-                              style: CookTogetherTheme.bodyStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: CookTogetherTheme.deepHerbGreen,
-                              ),
-                            ),
-                            const SizedBox(width: 3),
-                            const Icon(
-                              Icons.arrow_forward_rounded,
-                              size: 14,
-                              color: CookTogetherTheme.deepHerbGreen,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+          ),
+          Text(
+            finished ? 'Done' : timer.formattedRemaining,
+            style: textTheme.headlineSmall?.copyWith(
+              color: CookTogetherTheme.warning,
+              fontFeatures: const [FontFeature.tabularFigures()],
             ),
-          );
-        },
+          ),
+          if (!finished)
+            IconButton(
+              tooltip: timer.isRunning ? 'Pause timer' : 'Resume timer',
+              onPressed: () => setState(() {
+                final idx = _timers.indexWhere((t) => t.id == timer.id);
+                if (idx >= 0) {
+                  _timers[idx] = timer.copyWith(isRunning: !timer.isRunning);
+                }
+              }),
+              icon: Icon(
+                timer.isRunning
+                    ? Icons.pause_rounded
+                    : Icons.play_arrow_rounded,
+              ),
+            ),
+          IconButton(
+            tooltip: 'Dismiss timer',
+            onPressed: () =>
+                setState(() => _timers.removeWhere((t) => t.id == timer.id)),
+            icon: const Icon(Icons.close_rounded, size: 20),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildPausedBanner() {
+    final textTheme = Theme.of(context).textTheme;
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF2DC),
-        borderRadius: BorderRadius.circular(12),
+        color: CookTogetherTheme.warningSoft,
+        borderRadius: BorderRadius.circular(CookTogetherTheme.radiusControl),
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.pause_circle_filled_rounded,
-            size: 19,
-            color: Color(0xFFAE732D),
-          ),
-          const SizedBox(width: 9),
           Expanded(
             child: Text(
-              'Session paused — take your time. Say "resume" or tap Resume below.',
-              style: CookTogetherTheme.bodyStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFFAE732D),
+              'Paused. Take your time.',
+              style: textTheme.bodyLarge?.copyWith(
+                color: CookTogetherTheme.warning,
+                fontWeight: FontWeight.w600,
               ),
             ),
+          ),
+          TextButton(
+            onPressed: () => _togglePause(forcePause: false),
+            child: const Text('Resume'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildConversationalStream() {
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      itemCount: _messages.length,
-      itemBuilder: (context, index) {
-        final msg = _messages[index];
-        final isUser = msg.sender == MessageSender.user;
+  /// Step announcements are already on the step panel, so they show as a
+  /// small marker instead of a repeated bubble. With captions off, only the
+  /// latest reply is shown.
+  Widget _buildConversation() {
+    final textTheme = Theme.of(context).textTheme;
+    var items = _messages;
+    if (!widget.preferences.showCaptions) {
+      final replies = _messages.where((m) => !m.isStepAnnouncement);
+      items = replies.isEmpty ? const [] : [replies.last];
+    }
+    final hasReplies = items.any((m) => !m.isStepAnnouncement);
+    // A step marker only earns its place when replies follow it.
+    bool repliesAfter(int i) =>
+        items.skip(i + 1).takeWhile((m) => !m.isStepAnnouncement).isNotEmpty;
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Column(
-            crossAxisAlignment:
-                isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-            children: [
-              if (msg.visionCapture != null)
-                _buildInlineVisionCard(msg.visionCapture!, msg.text)
-              else
-                Container(
-                  constraints: const BoxConstraints(maxWidth: 320),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 13,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isUser
-                        ? const Color(0xFFF7E9DC)
-                        : const Color(0xFFEEF4E7),
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(15),
-                      topRight: const Radius.circular(15),
-                      bottomLeft: Radius.circular(isUser ? 15 : 4),
-                      bottomRight: Radius.circular(isUser ? 4 : 15),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            isUser
-                                ? Icons.record_voice_over_rounded
-                                : Icons.auto_awesome_rounded,
-                            size: 12,
-                            color: isUser
-                                ? const Color(0xFF815830)
-                                : CookTogetherTheme.deepHerbGreen,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            isUser ? 'YOU' : 'COOKTOGETHER AI',
-                            style: CookTogetherTheme.bodyStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: isUser
-                                  ? const Color(0xFF815830)
-                                  : CookTogetherTheme.deepHerbGreen,
-                              letterSpacing: 0.8,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        msg.text,
-                        style: CookTogetherTheme.bodyStyle(
-                          fontSize: 13,
-                          color: isUser
-                              ? const Color(0xFF6B4623)
-                              : const Color(0xFF364B2E),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
+    return ListView(
+      controller: _scrollController,
+      padding: const EdgeInsets.fromLTRB(
+        CookTogetherTheme.gutter,
+        12,
+        CookTogetherTheme.gutter,
+        12,
+      ),
+      children: [
+        for (final (i, msg) in items.indexed)
+          if (msg.isStepAnnouncement)
+            if (repliesAfter(i)) _buildStepMarker(msg) else const SizedBox()
+          else if (msg.visionCapture != null)
+            _buildVisionCard(msg.visionCapture!, msg.text)
+          else
+            _buildBubble(msg),
+        if (!hasReplies)
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: Text(
+              'Ask me anything, like "how small is bite-sized?"',
+              textAlign: TextAlign.center,
+              style: textTheme.bodyMedium,
+            ),
           ),
-        );
-      },
+      ],
     );
   }
 
-  Widget _buildInlineVisionCard(VisionCapture capture, String aiReply) {
+  Widget _buildStepMarker(ChatMessage msg) {
+    final index = msg.stepIndex ?? 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const Expanded(child: Divider()),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              'Step ${index + 1} · ${widget.recipe.steps[index].title}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          const Expanded(child: Divider()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBubble(ChatMessage msg) {
+    final isUser = msg.sender == MessageSender.user;
+    final style = Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 15);
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 300),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isUser ? const Color(0xFFEFEADF) : CookTogetherTheme.surface,
+          border: isUser ? null : Border.all(color: CookTogetherTheme.line),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isUser ? 16 : 4),
+            bottomRight: Radius.circular(isUser ? 4 : 16),
+          ),
+        ),
+        child: Text(msg.text, style: style),
+      ),
+    );
+  }
+
+  Widget _buildVisionCard(VisionCapture capture, String aiReply) {
+    final textTheme = Theme.of(context).textTheme;
     final statusColor = switch (capture.status) {
-      VisualCheckStatus.done => CookTogetherTheme.herbGreen,
-      VisualCheckStatus.notYet => CookTogetherTheme.warmOrange,
-      VisualCheckStatus.unsure => const Color(0xFFB98D22),
-    };
-    final statusBg = switch (capture.status) {
-      VisualCheckStatus.done => CookTogetherTheme.toneGreenBg,
-      VisualCheckStatus.notYet => CookTogetherTheme.toneOrangeBg,
-      VisualCheckStatus.unsure => CookTogetherTheme.toneYellowBg,
+      VisualCheckStatus.done => CookTogetherTheme.success,
+      VisualCheckStatus.notYet => CookTogetherTheme.warning,
+      VisualCheckStatus.unsure => CookTogetherTheme.inkMuted,
     };
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(13),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: CookTogetherTheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFDCE6D4), width: 1.2),
+        borderRadius: BorderRadius.circular(CookTogetherTheme.radiusCard),
+        border: Border.all(color: CookTogetherTheme.line),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Flexible(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF28332A),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.visibility_rounded,
-                        size: 12,
-                        color: Color(0xFFB5E49C),
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          capture.deviceName.toUpperCase(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: CookTogetherTheme.bodyStyle(
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              Icon(Icons.visibility_outlined, size: 20, color: statusColor),
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusBg,
-                  borderRadius: BorderRadius.circular(99),
-                ),
+              Expanded(
                 child: Text(
-                  capture.status.badgeLabel.toUpperCase(),
-                  style: CookTogetherTheme.bodyStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    color: statusColor,
-                    letterSpacing: 0.6,
-                  ),
+                  capture.status.badgeLabel,
+                  style: textTheme.titleSmall?.copyWith(color: statusColor),
                 ),
               ),
+              Text('Step ${capture.stepIndex + 1}', style: textTheme.bodySmall),
             ],
           ),
-          const SizedBox(height: 10),
-          // Captured POV Frame / Scene Preview
-          Container(
-            padding: const EdgeInsets.all(11),
-            decoration: BoxDecoration(
-              color: CookTogetherTheme.toneBackground(capture.recipeTone),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Text(
-                  capture.recipeIcon,
-                  style: const TextStyle(fontSize: 34),
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'CAPTURED GLASSES VIEW · STEP ${capture.stepIndex + 1}',
-                        style: CookTogetherTheme.bodyStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          color: CookTogetherTheme.warmOrange,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        capture.sceneDescription,
-                        style: CookTogetherTheme.bodyStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: CookTogetherTheme.ink,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 9),
+          const SizedBox(height: 8),
+          Text(aiReply, style: textTheme.bodyLarge?.copyWith(fontSize: 15)),
+          const SizedBox(height: 8),
           Text(
-            aiReply,
-            style: CookTogetherTheme.bodyStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: CookTogetherTheme.ink,
-            ),
+            'A camera can\'t confirm food is cooked or safe. Check it yourself too.',
+            style: textTheme.bodySmall,
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Visual reference only: a camera cannot guarantee food safety or doneness—check manually before moving on.',
-            style: CookTogetherTheme.bodyStyle(
-              fontSize: 10,
-              color: CookTogetherTheme.muted,
-            ),
-          ),
-          if (capture.status == VisualCheckStatus.done) ...[
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              height: 40,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: CookTogetherTheme.herbGreen,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                ),
-                onPressed: _isPaused
-                    ? null
-                    : () {
-                        if (_currentStep == widget.recipe.steps.length - 1) {
-                          _completeSession();
-                        } else {
-                          _goToStep(_currentStep + 1);
-                        }
-                      },
-                icon: const Icon(Icons.check_circle_outline_rounded, size: 17),
-                label: Text(
-                  _currentStep == widget.recipe.steps.length - 1
-                      ? 'Looks good — finish cooking'
-                      : 'Looks good — continue to Step ${_currentStep + 2}',
-                  style: CookTogetherTheme.headingStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildBottomVoiceOrbDock() {
+  Widget _buildComposer() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CookTogetherTheme.gutter,
+        0,
+        CookTogetherTheme.gutter,
+        8,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _textController,
+              autofocus: true,
+              textInputAction: TextInputAction.send,
+              onSubmitted: _handleUserUtterance,
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: const InputDecoration(
+                hintText: 'Type a question or command',
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filled(
+            style: IconButton.styleFrom(
+              backgroundColor: CookTogetherTheme.ink,
+              foregroundColor: Colors.white,
+            ),
+            tooltip: 'Send',
+            onPressed: () => _handleUserUtterance(_textController.text),
+            icon: const Icon(Icons.send_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDock() {
+    final textTheme = Theme.of(context).textTheme;
     return ListenableBuilder(
       listenable: widget.voiceController,
       builder: (context, _) {
         final state = widget.voiceController.activityState;
         final mode = widget.voiceController.listeningMode;
         final partial = widget.voiceController.partialTranscript;
-        final isMuted = widget.voiceController.audioMuted;
 
         final orbColor = switch (state) {
-          VoiceActivityState.listening => CookTogetherTheme.herbGreen,
-          VoiceActivityState.capturingVision => CookTogetherTheme.warmOrange,
-          VoiceActivityState.thinking => CookTogetherTheme.warmOrange,
-          VoiceActivityState.speaking => CookTogetherTheme.terracottaRed,
-          VoiceActivityState.idle => const Color(0xFF5D7553),
+          VoiceActivityState.listening => CookTogetherTheme.success,
+          VoiceActivityState.capturingVision ||
+          VoiceActivityState.thinking => CookTogetherTheme.warning,
+          VoiceActivityState.speaking => CookTogetherTheme.ink,
+          VoiceActivityState.idle => const Color(0xFF55664F),
         };
 
         final statusLabel = partial.isNotEmpty
-            ? '“$partial…”'
+            ? '"$partial…"'
+            : _isPaused
+            ? 'Paused'
             : switch (state) {
-                VoiceActivityState.listening =>
-                  mode == VoiceListeningMode.handsFree
-                      ? 'Hands-free mic active · Say "next step", "set a timer", or "does this look right?"'
-                      : 'Listening… ask your question or give a command',
+                VoiceActivityState.listening => 'Listening…',
                 VoiceActivityState.capturingVision =>
-                  'Looking through your Meta glasses…',
-                VoiceActivityState.thinking =>
-                  'CookTogether is thinking…',
-                VoiceActivityState.speaking =>
-                  'CookTogether is speaking…',
+                  'Looking through your glasses…',
+                VoiceActivityState.thinking => 'Thinking…',
+                VoiceActivityState.speaking => 'Speaking…',
                 VoiceActivityState.idle =>
                   mode == VoiceListeningMode.handsFree
-                      ? 'Hands-free mode ready · Tap orb or speak'
-                      : 'Tap the voice orb to speak',
+                      ? 'Say "next step" or ask a question'
+                      : 'Tap the mic to talk',
               };
 
         return Container(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+          padding: const EdgeInsets.fromLTRB(
+            CookTogetherTheme.gutter,
+            10,
+            CookTogetherTheme.gutter,
+            14,
+          ),
           decoration: const BoxDecoration(
             color: CookTogetherTheme.surface,
-            border: Border(top: BorderSide(color: CookTogetherTheme.border)),
-            boxShadow: [
-              BoxShadow(
-                color: Color(0x1228332A),
-                blurRadius: 18,
-                offset: Offset(0, -5),
-              ),
-            ],
+            border: Border(top: BorderSide(color: CookTogetherTheme.line)),
           ),
           child: SafeArea(
             top: false,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Voice status & Hands-Free / Tap-to-Speak mode switch
+                Text(
+                  statusLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: partial.isNotEmpty ? CookTogetherTheme.ink : null,
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        statusLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: CookTogetherTheme.bodyStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: partial.isNotEmpty
-                              ? CookTogetherTheme.ink
-                              : CookTogetherTheme.muted,
+                      child: SizedBox(
+                        height: 56,
+                        child: OutlinedButton.icon(
+                          onPressed: _isPaused
+                              ? null
+                              : () => _triggerVisualCheck(),
+                          icon: const Icon(Icons.visibility_outlined),
+                          label: const Text('Check'),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () {
-                        final nextMode = mode == VoiceListeningMode.handsFree
-                            ? VoiceListeningMode.tapToSpeak
-                            : VoiceListeningMode.handsFree;
-                        widget.voiceController.setListeningMode(nextMode);
-                        widget.onShowToast(
-                          nextMode == VoiceListeningMode.handsFree
-                              ? 'Hands-free continuous listening enabled'
-                              : 'Switched to Tap-to-Speak mode',
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: mode == VoiceListeningMode.handsFree
-                              ? CookTogetherTheme.toneGreenBg
-                              : const Color(0xFFF1F1E8),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              mode == VoiceListeningMode.handsFree
-                                  ? Icons.hearing_rounded
-                                  : Icons.touch_app_rounded,
-                              size: 12,
-                              color: mode == VoiceListeningMode.handsFree
-                                  ? CookTogetherTheme.deepHerbGreen
-                                  : CookTogetherTheme.muted,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              mode == VoiceListeningMode.handsFree
-                                  ? 'Hands-Free'
-                                  : 'Tap-to-Speak',
-                              style: CookTogetherTheme.bodyStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                color: mode == VoiceListeningMode.handsFree
-                                    ? CookTogetherTheme.deepHerbGreen
-                                    : CookTogetherTheme.muted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                // Dock row with 4 utility controls + central Animated Voice Orb
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _DockActionButton(
-                      icon: Icons.visibility_outlined,
-                      label: 'Check Step',
-                      activeColor: CookTogetherTheme.deepHerbGreen,
-                      onTap: _isPaused ? null : () => _triggerVisualCheck(),
-                    ),
-                    _DockActionButton(
-                      icon: isMuted
-                          ? Icons.volume_off_rounded
-                          : Icons.volume_up_rounded,
-                      label: isMuted ? 'Muted' : 'Audio',
-                      isOff: isMuted,
-                      onTap: () => widget.voiceController.toggleAudioMuted(),
-                    ),
-                    // Prominent Voice Orb
-                    GestureDetector(
-                      onTap: () {
-                        if (_isPaused) {
-                          _togglePause(forcePause: false);
-                          return;
-                        }
-                        if (widget.voiceController.speechAvailable) {
-                          widget.voiceController.toggleTapToSpeak();
-                        } else {
-                          // When running on simulator/test without hardware mic,
-                          // trigger a realistic voice query or open the input bar
-                          _handleUserUtterance(
-                            'Does this look chopped small enough?',
-                          );
-                        }
-                      },
-                      child: AnimatedBuilder(
-                        animation: _orbPulseController,
-                        builder: (context, child) {
-                          final scale = state == VoiceActivityState.listening ||
-                                  state == VoiceActivityState.speaking
-                              ? 1.0 + (_orbPulseController.value * 0.08)
-                              : 1.0;
-                          return Transform.scale(
-                            scale: scale,
-                            child: Container(
-                              width: 62,
-                              height: 62,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: RadialGradient(
-                                  colors: [
-                                    orbColor.withValues(alpha: 0.92),
-                                    orbColor,
-                                  ],
+                    const SizedBox(width: 16),
+                    _buildMicOrb(state, orbColor),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: SizedBox(
+                        height: 56,
+                        child: FilledButton(
+                          onPressed: _isPaused ? null : _nextOrFinish,
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  _isLastStep ? 'Finish' : 'Next',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: orbColor.withValues(alpha: 0.35),
-                                    blurRadius: 16,
-                                    spreadRadius: 2,
-                                  ),
-                                ],
                               ),
-                              child: Icon(
-                                switch (state) {
-                                  VoiceActivityState.capturingVision =>
-                                    Icons.camera_enhance_rounded,
-                                  VoiceActivityState.speaking =>
-                                    Icons.graphic_eq_rounded,
-                                  VoiceActivityState.thinking =>
-                                    Icons.auto_awesome_rounded,
-                                  _ => Icons.mic_rounded,
-                                },
-                                color: Colors.white,
-                                size: 28,
+                              const SizedBox(width: 6),
+                              Icon(
+                                _isLastStep
+                                    ? Icons.check_rounded
+                                    : Icons.arrow_forward_rounded,
+                                size: 20,
                               ),
-                            ),
-                          );
-                        },
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                    _DockActionButton(
-                      icon: _isPaused
-                          ? Icons.play_arrow_rounded
-                          : Icons.pause_rounded,
-                      label: _isPaused ? 'Resume' : 'Pause',
-                      isWarning: _isPaused,
-                      onTap: () => _togglePause(),
-                    ),
-                    _DockActionButton(
-                      icon: _composerOpen
-                          ? Icons.keyboard_hide_rounded
-                          : Icons.keyboard_alt_outlined,
-                      label: _composerOpen ? 'Hide' : 'Type',
-                      onTap: () =>
-                          setState(() => _composerOpen = !_composerOpen),
                     ),
                   ],
                 ),
-                if (_composerOpen) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          height: 42,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF9F8F3),
-                            borderRadius: BorderRadius.circular(13),
-                            border: Border.all(color: CookTogetherTheme.border),
-                          ),
-                          child: TextField(
-                            controller: _textController,
-                            textInputAction: TextInputAction.send,
-                            onSubmitted: _handleUserUtterance,
-                            style: CookTogetherTheme.bodyStyle(fontSize: 13),
-                            decoration: const InputDecoration(
-                              hintText:
-                                  'Say or type a command ("next step", "does this look right?")…',
-                              border: InputBorder.none,
-                              isDense: true,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 42,
-                        height: 42,
-                        child: IconButton(
-                          style: IconButton.styleFrom(
-                            backgroundColor: CookTogetherTheme.terracottaRed,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          tooltip: 'Send question',
-                          onPressed: () =>
-                              _handleUserUtterance(_textController.text),
-                          icon: const Icon(Icons.send_rounded, size: 18),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),
@@ -1746,148 +1155,102 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
-  Widget _buildConfirmEndModal() {
-    return Container(
-      color: const Color(0x8A263023),
-      alignment: Alignment.center,
-      padding: const EdgeInsets.all(26),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: CookTogetherTheme.surface,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                color: CookTogetherTheme.toneRedBg,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(
-                Icons.pause_rounded,
-                color: CookTogetherTheme.terracottaRed,
-                size: 28,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'Leave this cooking session?',
-              textAlign: TextAlign.center,
-              style: CookTogetherTheme.headingStyle(fontSize: 22),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Your current step will not be marked complete. You can stay and pause instead.',
-              textAlign: TextAlign.center,
-              style: CookTogetherTheme.bodyStyle(
-                fontSize: 12,
-                color: CookTogetherTheme.muted,
-              ),
-            ),
-            const SizedBox(height: 18),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: CookTogetherTheme.terracottaRed,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+  Widget _buildMicOrb(VoiceActivityState state, Color orbColor) {
+    return Semantics(
+      button: true,
+      label: _isPaused ? 'Resume session' : 'Talk to CookTogether',
+      child: GestureDetector(
+        onTap: () {
+          if (_isPaused) {
+            _togglePause(forcePause: false);
+            return;
+          }
+          if (widget.voiceController.speechAvailable) {
+            widget.voiceController.toggleTapToSpeak();
+          } else {
+            // Simulator, web, or tests without a mic: send a sample question
+            // so the conversation flow can still be demonstrated.
+            _handleUserUtterance('Does this look chopped small enough?');
+          }
+        },
+        child: AnimatedBuilder(
+          animation: _orbPulseController,
+          builder: (context, child) {
+            final pulsing =
+                state == VoiceActivityState.listening ||
+                state == VoiceActivityState.speaking;
+            return Transform.scale(
+              scale: pulsing ? 1.0 + (_orbPulseController.value * 0.06) : 1.0,
+              child: child,
+            );
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: orbColor,
+              boxShadow: [
+                BoxShadow(
+                  color: orbColor.withValues(alpha: 0.3),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
                 ),
-                onPressed: widget.onExitToHome,
-                child: Text(
-                  'End session',
-                  style: CookTogetherTheme.headingStyle(
-                    fontSize: 15,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
+              ],
             ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () {
-                setState(() => _confirmEndOpen = false);
-                _togglePause(forcePause: true);
+            child: Icon(
+              switch (state) {
+                VoiceActivityState.capturingVision => Icons.camera_alt_rounded,
+                VoiceActivityState.speaking => Icons.graphic_eq_rounded,
+                VoiceActivityState.thinking => Icons.more_horiz_rounded,
+                _ => Icons.mic_rounded,
               },
-              child: Text(
-                'Stay and pause',
-                style: CookTogetherTheme.bodyStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: CookTogetherTheme.deepHerbGreen,
-                ),
-              ),
+              color: Colors.white,
+              size: 32,
             ),
-          ],
+          ),
         ),
       ),
     );
   }
-}
 
-class _DockActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isOff;
-  final bool isWarning;
-  final Color? activeColor;
-  final VoidCallback? onTap;
-
-  const _DockActionButton({
-    required this.icon,
-    required this.label,
-    this.isOff = false,
-    this.isWarning = false,
-    this.activeColor,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bgColor = isOff
-        ? const Color(0xFFFBE9E5)
-        : isWarning
-        ? const Color(0xFFFFF0D9)
-        : const Color(0xFFEFF2E9);
-    final fgColor = isOff
-        ? CookTogetherTheme.terracottaRed
-        : isWarning
-        ? const Color(0xFFA76B22)
-        : (activeColor ?? const Color(0xFF536C4B));
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Container(
-        width: 58,
-        height: 48,
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 20, color: fgColor),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: CookTogetherTheme.bodyStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                color: fgColor,
+  Widget _buildConfirmEndModal() {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      color: const Color(0x8A263023),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(24),
+      child: Material(
+        color: CookTogetherTheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Leave this session?', style: textTheme.headlineSmall),
+              const SizedBox(height: 8),
+              Text(
+                'Your progress on this recipe won\'t be saved.',
+                style: textTheme.bodyLarge,
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+              PrimaryButton(label: 'Leave', onPressed: widget.onExitToHome),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () {
+                    setState(() => _confirmEndOpen = false);
+                    _togglePause(forcePause: true);
+                  },
+                  child: const Text('Stay and pause'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

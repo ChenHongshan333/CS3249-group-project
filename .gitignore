@@ -3,3 +3,11 @@ dist
 .DS_Store
 *.local
 .env
+
+# JVM crash logs (Gradle / IDE out of memory)
+hs_err_pid*.log
+replay_pid*.log
+
+# Personal Claude Code settings; shared skills in .claude/skills stay tracked
+.claude/settings.json
+.claude/settings.local.json
