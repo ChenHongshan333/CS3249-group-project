@@ -2,7 +2,11 @@ import base64
 import io
 import os
 
-# Keep the module-level app in app.main from touching real keys or files.
+# Keep the module-level app in app.main from touching real keys or files,
+# and keep tests the same on machines that have provider keys set.
+for _name in list(os.environ):
+    if _name.endswith("_API_KEY") or _name in ("ADMIN_KEY", "OPENAI_MODEL", "OPENROUTER_MODEL"):
+        del os.environ[_name]
 os.environ.update({"LLM_PROVIDER": "fake", "LOG_DB_PATH": ":memory:"})
 
 import pytest

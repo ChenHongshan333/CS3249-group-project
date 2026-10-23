@@ -66,7 +66,7 @@ async def run_case(llm, case: dict, folder: Path, max_side: int, timeout: float)
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("folder", type=Path)
-    parser.add_argument("--providers", default="claude,openai,qwen")
+    parser.add_argument("--providers", default="claude,openai,qwen,openrouter")
     parser.add_argument("--timeout", type=float, default=20.0)
     args = parser.parse_args()
 

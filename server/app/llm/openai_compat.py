@@ -1,7 +1,7 @@
-"""OpenAI, and Qwen through Alibaba Cloud's OpenAI-compatible endpoint.
+"""OpenAI, plus Qwen and OpenRouter through their OpenAI-compatible endpoints.
 
-Both speak the Chat Completions format, so one class serves both; only the
-base URL, key, and a couple of parameter names differ.
+All three speak the Chat Completions format, so one class serves them; only
+the base URL, key, and a couple of parameter names differ.
 """
 
 import base64
@@ -20,11 +20,16 @@ class OpenAICompatLLM(LLM):
         model: str,
         base_url: str | None = None,
         native_openai: bool,
+        headers: dict[str, str] | None = None,
+        extra_body: dict | None = None,
     ):
         self.name = name
         self.model = model
         self._native = native_openai
-        self._client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url, max_retries=0)
+        self._extra_body = extra_body
+        self._client = openai.AsyncOpenAI(
+            api_key=api_key, base_url=base_url, max_retries=0, default_headers=headers
+        )
 
     async def _complete(self, system, text, image_jpeg, json_output, max_tokens, timeout):
         content: list[dict] = [{"type": "text", "text": text}]
@@ -39,9 +44,9 @@ class OpenAICompatLLM(LLM):
             if json_output:
                 extra["response_format"] = {"type": "json_object"}
         else:
-            # Qwen's compatible mode uses the older name. JSON mode is not
-            # supported by every Qwen vision model, so the prompt asks for
-            # JSON and safety.parse_check handles anything else.
+            # Qwen and OpenRouter use the older name. JSON mode isn't
+            # supported by every model behind them, so the prompt asks for
+            # JSON and the parsers in safety.py handle anything else.
             extra["max_tokens"] = max_tokens
 
         try:
@@ -52,6 +57,7 @@ class OpenAICompatLLM(LLM):
                     {"role": "user", "content": content},
                 ],
                 timeout=timeout,
+                extra_body=self._extra_body,
                 **extra,
             )
         except openai.APITimeoutError as e:

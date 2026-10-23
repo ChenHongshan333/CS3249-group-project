@@ -11,25 +11,48 @@ from app.llm.claude import ClaudeLLM
 from app.llm.openai_compat import OpenAICompatLLM
 
 
+KEY = "sk-test-0123456789abcdefghij"
+
+
 def settings(**kw) -> Settings:
     return Settings(_env_file=None, **kw)
 
 
 def test_each_provider_needs_its_key():
-    for provider, env in [("claude", "ANTHROPIC"), ("openai", "OPENAI"), ("qwen", "QWEN")]:
+    for provider, env in [
+        ("claude", "ANTHROPIC"),
+        ("openai", "OPENAI"),
+        ("qwen", "QWEN"),
+        ("openrouter", "OPENROUTER"),
+    ]:
         with pytest.raises(LLMNotConfigured, match=env):
             build_llm(settings(), provider)
 
 
 def test_openai_needs_a_model_name():
     with pytest.raises(LLMNotConfigured, match="OPENAI_MODEL"):
-        build_llm(settings(openai_api_key="k"), "openai")
+        build_llm(settings(openai_api_key=KEY), "openai")
+
+
+def test_placeholder_key_is_reported():
+    with pytest.raises(LLMNotConfigured, match="only 1 characters"):
+        build_llm(settings(openrouter_api_key="x"), "openrouter")
 
 
 def test_qwen_uses_the_compatible_endpoint():
-    llm = build_llm(settings(qwen_api_key="k"), "qwen")
+    llm = build_llm(settings(qwen_api_key=KEY), "qwen")
     assert isinstance(llm, OpenAICompatLLM)
     assert "compatible-mode" in str(llm._client.base_url)
+
+
+def test_openrouter_defaults_to_haiku_through_its_endpoint():
+    llm = build_llm(settings(openrouter_api_key=KEY), "openrouter")
+    assert isinstance(llm, OpenAICompatLLM)
+    assert llm.model == "anthropic/claude-haiku-5.5"
+    assert str(llm._client.base_url).startswith("https://openrouter.ai/api/v1")
+    assert llm._client.default_headers["X-Title"] == "CookAlong"
+    # Thinking cut replies off, so it is turned off.
+    assert llm._extra_body == {"reasoning": {"enabled": False}}
 
 
 def test_claude_request_shape():

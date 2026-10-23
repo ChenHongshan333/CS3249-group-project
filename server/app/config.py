@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-Provider = Literal["claude", "openai", "qwen", "fake"]
+Provider = Literal["claude", "openai", "qwen", "openrouter", "fake"]
 
 
 class Settings(BaseSettings):
@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     qwen_api_key: str = ""
     qwen_model: str = "qwen-vl-max"
     qwen_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+
+    # OpenRouter: one key for models from many companies, through an
+    # OpenAI-compatible endpoint. Model ids look like "anthropic/claude-haiku-5.5".
+    openrouter_api_key: str = ""
+    openrouter_model: str = "anthropic/claude-haiku-5.5"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # The app gives up after 6 s (/ask) and 8 s (/check-step), so the backend
     # stops waiting for the model a little earlier and returns a clear error.

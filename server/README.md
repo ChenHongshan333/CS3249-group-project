@@ -45,6 +45,7 @@ Set `LLM_PROVIDER` in `.env` and restart:
 | `claude` | `ANTHROPIC_API_KEY` | Defaults to `claude-haiku-5-5`, which is fast and reads photos. Set `CLAUDE_MODEL` to try another. |
 | `openai` | `OPENAI_API_KEY`, `OPENAI_MODEL` | Pick a current vision-capable model. There is no default because the names change often. |
 | `qwen` | `QWEN_API_KEY` | Alibaba Cloud Model Studio, international (Singapore) endpoint. Defaults to `qwen-vl-max`. |
+| `openrouter` | `OPENROUTER_API_KEY` | One key for models from many companies. Defaults to `anthropic/claude-haiku-5.5`; set `OPENROUTER_MODEL` to any id from [openrouter.ai/models](https://openrouter.ai/models) that takes images. |
 | `fake` | nothing | Canned replies, for trying the app and for tests. |
 
 `GET /health` shows which provider and model are active, or what is missing.
