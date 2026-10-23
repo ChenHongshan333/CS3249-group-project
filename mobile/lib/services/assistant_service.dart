@@ -232,9 +232,18 @@ class HttpAssistantService implements AssistantService {
     }
 
     try {
-      final recentTurns = history
-          .where((m) => m.sender == MessageSender.ai || m.sender == MessageSender.user)
-          .take(6)
+      // The last few turns, oldest first (docs/api.md). Step announcements
+      // repeat stepText, which is sent separately.
+      final turns = history
+          .where(
+            (m) =>
+                !m.isStepAnnouncement &&
+                (m.sender == MessageSender.ai ||
+                    m.sender == MessageSender.user),
+          )
+          .toList();
+      final recentTurns = turns
+          .skip(turns.length > 6 ? turns.length - 6 : 0)
           .map(
             (m) => {
               'from': m.sender == MessageSender.ai ? 'assistant' : 'user',
