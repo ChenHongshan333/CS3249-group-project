@@ -8,6 +8,17 @@
         android:label="CookTogether"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Meta Wearables Device Access Toolkit: "0" works in Developer Mode. -->
+        <meta-data
+            android:name="com.meta.wearable.mwdat.APPLICATION_ID"
+            android:value="0" />
+        <meta-data
+            android:name="com.meta.wearable.mwdat.CLIENT_TOKEN"
+            android:value="0" />
+        <!-- Don't send Meta usage analytics from study sessions. -->
+        <meta-data
+            android:name="com.meta.wearable.mwdat.ANALYTICS_OPT_OUT"
+            android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -28,6 +39,13 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Meta AI opens cookalong:// to finish registering the glasses. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="cookalong" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

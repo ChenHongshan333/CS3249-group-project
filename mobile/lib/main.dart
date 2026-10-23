@@ -87,8 +87,9 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
         widget.assistantService ??
         HttpAssistantService(baseUrlProvider: () => _preferences.serverBaseUrl);
 
-    // Pair Mock Device Kit on launch so Meta glasses status is ready
-    _glassesService.initializeAndPairMockDevice();
+    // Real glasses if this app is already registered with Meta AI,
+    // otherwise the Mock Device Kit.
+    _glassesService.start();
     _loadPersistedState();
   }
 

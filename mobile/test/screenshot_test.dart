@@ -84,6 +84,9 @@ Future<void> _capture(WidgetTester tester, String name) async {
     file.parent.createSync(recursive: true);
     file.writeAsBytesSync(data!.buffer.asUint8List());
   });
+  // Startup work that resumed during the real-time capture above (such as
+  // the glasses falling back to the Mock Device Kit) may leave timers.
+  await tester.pump(const Duration(seconds: 1));
 }
 
 Future<void> _pumpScreen(
