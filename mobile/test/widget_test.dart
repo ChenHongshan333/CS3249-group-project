@@ -89,12 +89,15 @@ void main() {
       await tester.tap(find.text('Rainbow salad bowl'));
       await tester.pumpAndSettle();
 
-      // 3. Prep: Start cooking stays disabled until ingredients are ticked
+      // 3. Prep: unticked ingredients are checked later, in the opening chat
       expect(find.text('Get ready'), findsOneWidget);
-      expect(find.text('Tick off 5 more ingredients to start'), findsOneWidget);
+      expect(
+        find.text("I'll ask about the 5 you haven't ticked"),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Mark all'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('more ingredient'), findsNothing);
+      expect(find.textContaining("you haven't ticked"), findsNothing);
 
       // Glasses settings live in a sheet, away from the main flow
       await tester.dragUntilVisible(
@@ -112,7 +115,14 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
 
-      // 4. Cooking: step panel with Next as the primary action
+      // 4. Opening chat before step 1; everything is ticked, so it only
+      // confirms the recipe.
+      expect(find.text('Before we start'), findsOneWidget);
+      expect(find.textContaining('Everything is ticked'), findsOneWidget);
+      await tester.tap(find.text('Start'));
+      await tester.pump(const Duration(seconds: 1));
+
+      // 5. Cooking: step panel with Next as the primary action
       expect(find.text('Step 1 of 4'), findsOneWidget);
       expect(find.text('Wash & prepare'), findsOneWidget);
 
