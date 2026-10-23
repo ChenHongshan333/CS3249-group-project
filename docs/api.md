@@ -6,7 +6,7 @@ All requests and responses are JSON. The base URL is shared in the group once th
 
 ## `POST /ask`
 
-A spoken question that is not a voice command, such as "how small is bite-sized?".
+Anything the user says that is not a voice command the app handles itself: a question ("how small is bite-sized?"), an answer to something CookAlong asked ("yes, start it"), or, before step 1, a reply in the opening conversation.
 
 Request:
 
@@ -32,6 +32,14 @@ Request:
 - `nextStepTitle` is empty on the last step.
 - `history` holds the last few turns only, oldest first.
 
+Optional fields (added 23 Oct; requests without them still work):
+
+| Field | Meaning |
+| --- | --- |
+| `phase` | `"cooking"` (default) or `"opening"`, the short conversation before step 1. In the opening, `step` and `stepText` may be left out. |
+| `ingredients` | `[{ "name": "garlic", "ready": true }]`. `ready` is the tick on the Get ready screen. In the opening, CookAlong only asks about ingredients that are not ready. |
+| `pendingOffer` | The `offer` from the previous reply, if the user has not answered it yet. Send it back exactly as received, then forget it. |
+
 Response:
 
 ```json
@@ -39,6 +47,54 @@ Response:
 ```
 
 The app speaks `reply` as it is, so keep it to one or two sentences.
+
+The response may also carry an `offer`, an `action`, or both:
+
+- `offer`: something the reply proposes, such as "Would you like a ten-minute timer?". The app keeps it and sends it back as `pendingOffer` with the next `/ask`.
+- `action`: something the app does now, because the user accepted an offer or asked for it directly.
+
+Both use the same shape. The app ignores any `type` it does not know.
+
+| `type` | Other fields | When |
+| --- | --- | --- |
+| `start_timer` | `seconds` (1–3600), `label` | "Yes, start the timer." |
+| `next_step` | | "Yes, let's move on." |
+| `repeat_step` | | "Say that again?" |
+| `start_cooking` | | Opening only: the user is ready for step 1. |
+| `tick_ingredient` | `name`, one of the request's `ingredients` | Opening only: "I've got the garlic now." |
+
+Example of an offer, then the user accepting it:
+
+```json
+// Request
+{ "question": "It's still a little too firm for me.", "...": "..." }
+// Response
+{
+  "reply": "Give it another minute. Would you like a one-minute timer?",
+  "offer": { "type": "start_timer", "seconds": 60, "label": "Pasta" }
+}
+
+// Next request
+{
+  "question": "Please.",
+  "pendingOffer": { "type": "start_timer", "seconds": 60, "label": "Pasta" },
+  "...": "..."
+}
+// Response
+{
+  "reply": "One-minute timer started.",
+  "action": { "type": "start_timer", "seconds": 60, "label": "Pasta" }
+}
+```
+
+### The opening conversation
+
+After the user starts a recipe, and before step 1, the app speaks a fixed first line. Every participant hears the same opening, and it needs no backend call:
+
+- Some ingredients not ticked: "Today we're making {recipe}, right? Have you got the {unticked ingredients}?"
+- All ticked: "Today we're making {recipe}, right? You've got everything, so say 'let's start' when you're ready."
+
+The user's replies go to `/ask` with `"phase": "opening"`. CookAlong confirms what is missing, suggests what to leave out or swap, and returns `start_cooking` when the user is ready. Saying "let's start" or tapping Start also begins step 1 without a backend call.
 
 ## `POST /check-step`
 
@@ -60,6 +116,7 @@ Request:
 
 - `doneLooksLike` comes from the recipe data and tells the AI what to look for.
 - `source` is `"glasses"` or `"phone"`.
+- `question` (optional) is what the user asked, such as "does this look chopped small enough?". Leave it out for a plain "check this".
 
 Response:
 
@@ -72,6 +129,7 @@ Response:
 
 - `status` is `"done"`, `"not_yet"` or `"unsure"`. The app never moves to the next step because of `status`; the user decides.
 - Use `"unsure"` when the photo is unclear, and say what to change, e.g. "Move the camera slightly above the bowl."
+- Whether meat, fish, eggs or rice are cooked is never `"done"`. CookAlong describes what it sees and says a photo can't confirm it.
 
 ## `POST /log`
 
@@ -99,6 +157,7 @@ Request:
 | `check` | `{ "step": 1, "status": "not_yet", "ms": 2650 }` |
 | `swap` | `{ "swapId": "yoghurt-instead-of-mayo", "accepted": true }` |
 | `misheard` | `{ "heard": "next step", "meant": "repeat" }` |
+| `opening_end` | `{ "ms": 41200, "turns": 3, "missing": ["cherry tomatoes"] }`: how long the opening took, how many user replies, and what was still unticked at step 1 |
 | `session_end` | `{ "completed": true }` |
 
 `ms` is how long the backend took to answer, for the reply-time measure.
@@ -124,4 +183,6 @@ The app then says something like "Sorry, I couldn't reach the assistant. You can
 Agreed by team poll on 23 Oct.
 
 - **Recipes live in the app.** The app sends the current step's text with each request, so the backend never holds a second copy that could drift. If the backend later turns recipe links into recipes, recipes move to the backend and the app loads them from a new `GET /recipes`.
+- **The opening conversation confirms, it does not choose.** Agreed 23 Oct: the user picks the recipe in the app, and CookAlong opens with "Today we're making …, right?". The Get ready checklist stays; the opening only asks about ingredients that are not ticked.
+- **Offers are confirmed through `/ask`.** When CookAlong proposes something ("Would you like a timer?"), the app sends the offer back with the user's next words, so "please" or "no thanks" is understood without the app parsing it.
 - **No streaming for now.** `/ask` returns the whole reply in one response. Reply times are measured from the log (`ms`); streaming is reconsidered later if replies are too slow after trying a faster model and shorter prompts.
