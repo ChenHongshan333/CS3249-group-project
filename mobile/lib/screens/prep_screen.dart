@@ -15,6 +15,7 @@ class PrepScreen extends StatefulWidget {
   final void Function({
     required Set<String> checkedIngredients,
     required VoiceListeningMode listeningMode,
+    required Set<String> acceptedSwapIds,
   }) onStartCookingSession;
   final VoidCallback onBack;
   final ValueChanged<String> onShowToast;
@@ -35,6 +36,7 @@ class PrepScreen extends StatefulWidget {
 
 class _PrepScreenState extends State<PrepScreen> {
   final Set<String> _checkedIngredients = {};
+  final Set<String> _acceptedSwapIds = {};
   late VoiceListeningMode _listeningMode;
 
   bool get _allIngredientsReady =>
@@ -147,6 +149,11 @@ class _PrepScreenState extends State<PrepScreen> {
               // Interactive Ingredient Checklist Card
               _buildIngredientsCard(),
               const SizedBox(height: 12),
+              if (widget.recipe.swaps.isNotEmpty) ...[
+                // Optional healthier swaps, saved for the session
+                _buildSwapsCard(),
+                const SizedBox(height: 12),
+              ],
               // Voice Navigation Mode Selector Card
               _buildVoiceModeCard(),
               const SizedBox(height: 12),
@@ -208,6 +215,7 @@ class _PrepScreenState extends State<PrepScreen> {
                         ? () => widget.onStartCookingSession(
                               checkedIngredients: _checkedIngredients,
                               listeningMode: _listeningMode,
+                              acceptedSwapIds: _acceptedSwapIds,
                             )
                         : null,
                     child: Row(
@@ -643,6 +651,74 @@ class _PrepScreenState extends State<PrepScreen> {
     );
   }
 
+  Widget _buildSwapsCard() {
+    final swaps = widget.recipe.swaps;
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: CookTogetherTheme.surface,
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: CookTogetherTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.eco_rounded,
+                size: 18,
+                color: CookTogetherTheme.herbGreen,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  'Healthier swaps',
+                  style: CookTogetherTheme.headingStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                'Optional',
+                style: CookTogetherTheme.bodyStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: CookTogetherTheme.muted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Pick any you would like to try. CookTogether will guide you with them.',
+            style: CookTogetherTheme.bodyStyle(
+              fontSize: 11,
+              color: CookTogetherTheme.muted,
+            ),
+          ),
+          for (final swap in swaps) ...[
+            const SizedBox(height: 10),
+            _SwapOptionRow(
+              swap: swap,
+              accepted: _acceptedSwapIds.contains(swap.id),
+              onChanged: (accepted) {
+                setState(() {
+                  if (accepted) {
+                    _acceptedSwapIds.add(swap.id);
+                  } else {
+                    _acceptedSwapIds.remove(swap.id);
+                  }
+                });
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildVoiceModeCard() {
     return Container(
       padding: const EdgeInsets.all(15),
@@ -693,6 +769,88 @@ class _PrepScreenState extends State<PrepScreen> {
                 setState(() => _listeningMode = VoiceListeningMode.tapToSpeak),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// One healthier swap with a toggle: tap to use it, tap again to skip it.
+class _SwapOptionRow extends StatelessWidget {
+  final HealthySwap swap;
+  final bool accepted;
+  final ValueChanged<bool> onChanged;
+
+  const _SwapOptionRow({
+    required this.swap,
+    required this.accepted,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => onChanged(!accepted),
+      child: Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: accepted ? const Color(0xFFF3F9EE) : const Color(0xFFFAF9F3),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: accepted
+                ? CookTogetherTheme.herbGreen
+                : const Color(0xFFE8E8DE),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    swap.title,
+                    style: CookTogetherTheme.bodyStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: CookTogetherTheme.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    swap.detail,
+                    style: CookTogetherTheme.bodyStyle(
+                      fontSize: 11,
+                      color: CookTogetherTheme.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: accepted ? CookTogetherTheme.herbGreen : Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: accepted
+                      ? CookTogetherTheme.herbGreen
+                      : const Color(0xFFE8E8DE),
+                ),
+              ),
+              child: Text(
+                accepted ? 'Using' : 'Use it',
+                style: CookTogetherTheme.bodyStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: accepted ? Colors.white : CookTogetherTheme.ink,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

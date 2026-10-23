@@ -28,6 +28,7 @@ class CookingScreen extends StatefulWidget {
   final VoiceController voiceController;
   final Set<String> initialCheckedIngredients;
   final VoiceListeningMode initialListeningMode;
+  final Set<String> acceptedSwapIds;
   final void Function({
     required int elapsedSeconds,
     required int stepsCompleted,
@@ -45,6 +46,7 @@ class CookingScreen extends StatefulWidget {
     required this.voiceController,
     required this.initialCheckedIngredients,
     required this.initialListeningMode,
+    this.acceptedSwapIds = const {},
     required this.onFinishCooking,
     required this.onExitToHome,
     required this.onShowToast,
@@ -149,6 +151,16 @@ class _CookingScreenState extends State<CookingScreen>
       type: 'session_start',
       data: {'recipeId': widget.recipe.id, 'condition': 'glasses_cui'},
     );
+    for (final swap in widget.recipe.swaps) {
+      widget.assistantService.logEvent(
+        sessionId: _sessionId,
+        type: 'swap',
+        data: {
+          'swapId': swap.id,
+          'accepted': widget.acceptedSwapIds.contains(swap.id),
+        },
+      );
+    }
   }
 
   @override
