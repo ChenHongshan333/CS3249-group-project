@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -18,12 +19,16 @@ class AssistantResponse {
   /// Something to do now, because the user accepted an offer.
   final AssistantAction? action;
 
+  /// The backend couldn't answer; [reply] says so and is safe to speak.
+  final bool isError;
+
   const AssistantResponse({
     required this.reply,
     this.visualStatus,
     this.visionCapture,
     this.offer,
     this.action,
+    this.isError = false,
   });
 }
 
@@ -109,12 +114,20 @@ abstract class AssistantService {
     required String type,
     required Map<String, dynamic> data,
   });
+
+  /// Wakes the backend ahead of time. A free Render instance sleeps after
+  /// 15 idle minutes and takes up to a minute to wake, far longer than the
+  /// app waits for an answer. Never throws.
+  Future<void> warmUp();
 }
 
 /// Smart context-aware local implementation of [AssistantService] that
 /// processes step instructions, cooking tips, and Meta glasses POV snapshots.
 class MockAssistantService implements AssistantService {
   const MockAssistantService();
+
+  @override
+  Future<void> warmUp() async {}
 
   @override
   Future<AssistantResponse> askQuestion({
@@ -322,8 +335,11 @@ class MockAssistantService implements AssistantService {
 }
 
 /// Web protocol client implementing `POST /ask`, `POST /check-step`, and `POST /log`
-/// from `docs/api.md`, with automatic fallback to [MockAssistantService] when
-/// the server URL is not configured or unreachable.
+/// from `docs/api.md`.
+///
+/// With no backend URL it uses [MockAssistantService] (demo mode). With a
+/// URL, a failure is reported as a spoken error, never replaced by a demo
+/// answer that would look real.
 class HttpAssistantService implements AssistantService {
   final String Function() baseUrlProvider;
   http.Client? _client;
@@ -340,6 +356,25 @@ class HttpAssistantService implements AssistantService {
   http.Client get _httpClient => _client ??= http.Client();
 
   String get _cleanBaseUrl => baseUrlProvider().trim().replaceAll(RegExp(r'/+$'), '');
+
+  // The wording follows docs/api.md, "Errors".
+  static const unreachableReply =
+      "Sorry, I couldn't reach the assistant. You can keep going and ask me again.";
+  static const tooSlowReply =
+      'The assistant took too long to answer. Ask me again in a moment.';
+
+  static String _errorReply(Object error) =>
+      error is TimeoutException ? tooSlowReply : unreachableReply;
+
+  @override
+  Future<void> warmUp() async {
+    if (_cleanBaseUrl.isEmpty) return;
+    try {
+      await _httpClient
+          .get(Uri.parse('$_cleanBaseUrl/health'))
+          .timeout(const Duration(seconds: 90));
+    } catch (_) {}
+  }
 
   @override
   Future<AssistantResponse> askQuestion({
@@ -437,21 +472,10 @@ class HttpAssistantService implements AssistantService {
           );
         }
       }
-    } catch (_) {
-      // Fall back cleanly when backend is offline
+      return const AssistantResponse(reply: unreachableReply, isError: true);
+    } catch (e) {
+      return AssistantResponse(reply: _errorReply(e), isError: true);
     }
-
-    return fallback.askQuestion(
-      sessionId: sessionId,
-      recipe: recipe,
-      stepIndex: stepIndex,
-      question: question,
-      history: history,
-      visionCapture: visionCapture,
-      phase: phase,
-      ingredients: ingredients,
-      pendingOffer: pendingOffer,
-    );
   }
 
   @override
@@ -501,17 +525,11 @@ class HttpAssistantService implements AssistantService {
           visionCapture: updatedCapture,
         );
       }
-    } catch (_) {
-      // Fall back to local mock vision evaluation when server is unreachable
+      return const AssistantResponse(reply: unreachableReply, isError: true);
+    } catch (e) {
+      // No verdict at all, so the screen can't show "Looks ready" by mistake.
+      return AssistantResponse(reply: _errorReply(e), isError: true);
     }
-
-    return fallback.checkStepWithVision(
-      sessionId: sessionId,
-      recipe: recipe,
-      stepIndex: stepIndex,
-      visionCapture: visionCapture,
-      userQuestion: userQuestion,
-    );
   }
 
   @override

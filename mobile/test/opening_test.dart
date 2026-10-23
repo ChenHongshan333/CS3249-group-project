@@ -46,6 +46,9 @@ class _ScriptedAssistant implements AssistantService {
   }) async => const AssistantResponse(reply: 'Looks fine.');
 
   @override
+  Future<void> warmUp() async {}
+
+  @override
   Future<void> logEvent({
     required String sessionId,
     required String type,
