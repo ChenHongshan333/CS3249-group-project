@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -30,6 +31,18 @@ abstract class GlassesService extends ChangeNotifier {
   MockGlassesModel get mockModel;
   String? get lastStatusNote;
 
+  /// True when photos come from the user's own glasses, not the Mock Kit.
+  bool get usingRealGlasses;
+
+  /// Uses the real glasses if this app is already registered with Meta AI,
+  /// otherwise the Mock Device Kit. Never throws.
+  Future<void> start();
+
+  /// Registers with the Meta AI app (opening it if needed), asks for camera
+  /// permission, and switches to the real glasses. Sets [lastStatusNote] to
+  /// a short, user-facing reason when it fails.
+  Future<bool> connectRealGlasses();
+
   Future<void> initializeAndPairMockDevice({
     MockGlassesModel model = MockGlassesModel.rayBanMeta,
   });
@@ -37,6 +50,9 @@ abstract class GlassesService extends ChangeNotifier {
   Future<void> startPreviewStream();
   Future<void> stopPreviewStream();
   Future<void> simulateTouchpadTap();
+
+  /// Throws [GlassesCaptureException] when the real glasses can't take a
+  /// photo, so the caller never sends a blank image to the assistant.
   Future<VisionCapture> captureFrame({
     required Recipe recipe,
     required int stepIndex,
@@ -44,10 +60,23 @@ abstract class GlassesService extends ChangeNotifier {
   });
 }
 
-/// Implementation of [GlassesService] backed by `meta_wearables_dat_flutter`
-/// using the Mock Device Kit (`MetaWearablesDat.enableMockDevice`,
-/// `MetaWearablesDat.pairMockGlasses`, `mockPowerOn`, `mockUnfold`, `mockDon`,
-/// `startStreamSession`, and `capturePhoto`).
+/// A photo could not be taken. [message] is safe to show or speak.
+class GlassesCaptureException implements Exception {
+  final String message;
+  const GlassesCaptureException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+/// Implementation of [GlassesService] backed by `meta_wearables_dat_flutter`.
+///
+/// Two modes:
+/// - Real glasses: registered with the Meta AI app in Developer Mode. The
+///   camera stream starts only for a photo and stops right after, so the
+///   glasses' capture light is on only while a photo is being taken.
+/// - Mock Device Kit: simulated glasses for the web build, tests, and
+///   phones without glasses.
 class MetaWearablesDatGlassesService extends GlassesService {
   GlassesConnectionState _connectionState =
       GlassesConnectionState.connectedMockKit;
@@ -61,6 +90,9 @@ class MetaWearablesDatGlassesService extends GlassesService {
   HingeState _hingeState = HingeState.open;
   MockGlassesModel _mockModel = MockGlassesModel.rayBanMeta;
   String? _lastStatusNote = 'Mock Device Kit active · Donned & Ready';
+  bool _usingRealGlasses = false;
+  StreamSubscription<DeviceInfo?>? _deviceSub;
+  StreamSubscription<RegistrationRequest>? _requestSub;
 
   // Minimal valid 1x1 JPEG bytes used when the native platform channel is
   // running in a headless test VM or before a camera feed file is seeded.
@@ -106,6 +138,128 @@ class MetaWearablesDatGlassesService extends GlassesService {
   @override
   String? get lastStatusNote => _lastStatusNote;
 
+  @override
+  bool get usingRealGlasses => _usingRealGlasses;
+
+  @override
+  Future<void> start() async {
+    try {
+      // Throws straight away on web and in tests, where there is no native
+      // plugin, so nothing below runs there.
+      final state = await MetaWearablesDat.getRegistrationState();
+      // The user can also start the connection from the Meta AI app.
+      _requestSub ??= MetaWearablesDat.registrationRequestStream().listen((
+        request,
+      ) async {
+        try {
+          await request.continueRegistration();
+        } catch (_) {}
+      }, onError: (_) {});
+      if (state == RegistrationState.registered && await connectRealGlasses()) {
+        return;
+      }
+    } catch (_) {
+      // Web, tests, or a phone without the Meta AI app.
+    }
+    await initializeAndPairMockDevice(model: _mockModel);
+  }
+
+  @override
+  Future<bool> connectRealGlasses() async {
+    _connectionState = GlassesConnectionState.connecting;
+    _lastStatusNote = 'Connecting to your glasses…';
+    notifyListeners();
+
+    try {
+      if (await MetaWearablesDat.isMockDeviceEnabled()) {
+        await MetaWearablesDat.disableMockDevice();
+      }
+      if (!await MetaWearablesDat.requestAndroidPermissions()) {
+        return _fail(
+          'Allow Bluetooth for CookTogether in your phone settings.',
+        );
+      }
+
+      if (await MetaWearablesDat.getRegistrationState() !=
+          RegistrationState.registered) {
+        // Opens the Meta AI app; the user approves, and Meta AI opens this
+        // app again through the cookalong:// link.
+        await MetaWearablesDat.startRegistration();
+        await MetaWearablesDat.registrationStateStream()
+            .firstWhere((s) => s == RegistrationState.registered)
+            .timeout(const Duration(minutes: 2));
+      }
+
+      final permission = await MetaWearablesDat.requestPermission(
+        Permission.camera,
+      );
+      if (!permission.isGranted) {
+        return _fail(
+          'Allow camera access for CookTogether in the Meta AI app.',
+        );
+      }
+
+      final device = await MetaWearablesDat.activeDeviceStream()
+          .firstWhere((d) => d != null)
+          .timeout(const Duration(seconds: 15));
+      _usingRealGlasses = true;
+      _applyDevice(device!);
+      await _deviceSub?.cancel();
+      _deviceSub = MetaWearablesDat.activeDeviceStream().listen((d) {
+        if (d == null) {
+          _connectionState = GlassesConnectionState.disconnected;
+          _lastStatusNote =
+              'Glasses disconnected. Check they are on and nearby.';
+          notifyListeners();
+        } else {
+          _applyDevice(d);
+        }
+      }, onError: (_) {});
+      return true;
+    } on TimeoutException {
+      return _fail(
+        'No glasses found. Open the Meta AI app, check your glasses are '
+        'connected, then try again.',
+      );
+    } on RegistrationError catch (e) {
+      return _fail(switch (e.reason) {
+        RegistrationErrorCase.metaAINotInstalled =>
+          'Install the Meta AI app first.',
+        RegistrationErrorCase.configurationInvalid =>
+          'This build is not set up for Meta glasses. See mobile/README.md.',
+        _ => 'Meta AI could not connect: ${e.message}',
+      });
+    } on DatError catch (e) {
+      return _fail('Glasses error: ${e.message}');
+    } catch (_) {
+      // MissingPluginException on web and in tests.
+      return _fail('Real glasses only work in the Android or iPhone app.');
+    }
+  }
+
+  bool _fail(String reason) {
+    _usingRealGlasses = false;
+    _connectionState = GlassesConnectionState.disconnected;
+    _lastStatusNote = reason;
+    notifyListeners();
+    return false;
+  }
+
+  void _applyDevice(DeviceInfo device) {
+    _deviceUuid = device.uuid;
+    _deviceName = device.name.isNotEmpty ? device.name : 'Your glasses';
+    _batteryLevel = device.batteryLevel ?? _batteryLevel;
+    _donState = device.donState;
+    _hingeState = device.hingeState;
+    _connectionState = device.isConnected
+        ? GlassesConnectionState.connectedHardware
+        : GlassesConnectionState.connecting;
+    _lastStatusNote = device.isConnected
+        ? 'Connected to $_deviceName'
+        : 'Waiting for $_deviceName to connect…';
+    notifyListeners();
+  }
+
   String _modelDisplayName(MockGlassesModel model) {
     return switch (model) {
       MockGlassesModel.rayBanMeta => 'Ray-Ban Meta (Mock Kit)',
@@ -121,6 +275,9 @@ class MetaWearablesDatGlassesService extends GlassesService {
   Future<void> initializeAndPairMockDevice({
     MockGlassesModel model = MockGlassesModel.rayBanMeta,
   }) async {
+    await _deviceSub?.cancel();
+    _deviceSub = null;
+    _usingRealGlasses = false;
     _mockModel = model;
     _deviceName = _modelDisplayName(model);
     _deviceUuid ??= 'mock-dat-${model.name}';
@@ -222,10 +379,19 @@ class MetaWearablesDatGlassesService extends GlassesService {
   }
 
   @override
+  void dispose() {
+    _deviceSub?.cancel();
+    _requestSub?.cancel();
+    super.dispose();
+  }
+
+  @override
   Future<void> disconnect() async {
     await stopPreviewStream();
+    await _deviceSub?.cancel();
+    _deviceSub = null;
     final uuid = _deviceUuid;
-    if (uuid != null) {
+    if (uuid != null && !_usingRealGlasses) {
       try {
         await MetaWearablesDat.mockFold(uuid);
         await MetaWearablesDat.mockPowerOff(uuid);
@@ -235,11 +401,12 @@ class MetaWearablesDatGlassesService extends GlassesService {
     try {
       await MetaWearablesDat.disableMockDevice();
     } catch (_) {}
+    _usingRealGlasses = false;
     _connectionState = GlassesConnectionState.disconnected;
     _deviceUuid = null;
     _donState = DonState.doffed;
     _hingeState = HingeState.closed;
-    _lastStatusNote = 'Mock Device Kit disconnected';
+    _lastStatusNote = 'Glasses disconnected';
     notifyListeners();
   }
 
@@ -249,6 +416,9 @@ class MetaWearablesDatGlassesService extends GlassesService {
     required int stepIndex,
     String? userPrompt,
   }) async {
+    if (_usingRealGlasses) {
+      return _captureFromRealGlasses(recipe, stepIndex, userPrompt);
+    }
     if (!isConnected) {
       await initializeAndPairMockDevice(model: _mockModel);
     }
@@ -274,11 +444,87 @@ class MetaWearablesDatGlassesService extends GlassesService {
       await Future<void>.delayed(const Duration(milliseconds: 220));
     }
 
-    final step = recipe.steps[stepIndex.clamp(0, recipe.steps.length - 1)];
     _isCapturing = false;
-    _lastStatusNote = 'Captured POV snapshot (${step.title})';
+    final capture = _buildCapture(recipe, stepIndex, userPrompt, photoBytes);
     notifyListeners();
+    return capture;
+  }
 
+  Future<VisionCapture> _captureFromRealGlasses(
+    Recipe recipe,
+    int stepIndex,
+    String? userPrompt,
+  ) async {
+    if (_connectionState != GlassesConnectionState.connectedHardware) {
+      throw const GlassesCaptureException(
+        'Your glasses are not connected. Check they are on and nearby.',
+      );
+    }
+    if (_hingeState == HingeState.closed) {
+      throw const GlassesCaptureException(
+        'Unfold your glasses to take a photo.',
+      );
+    }
+
+    _isCapturing = true;
+    _lastStatusNote = 'Taking a photo with $_deviceName…';
+    notifyListeners();
+    try {
+      // Listen before starting so the "streaming" state isn't missed.
+      final streaming = MetaWearablesDat.streamSessionStateStream()
+          .firstWhere((s) => s == StreamSessionState.streaming)
+          .timeout(const Duration(seconds: 8));
+      await MetaWearablesDat.startStreamSession(
+        deviceUUID: _deviceUuid,
+        config: const StreamSessionConfig(
+          frameRate: StreamFrameRate.fps15,
+          quality: StreamQuality.high,
+        ),
+      );
+      await streaming;
+      final photo = await MetaWearablesDat.capturePhoto(
+        format: PhotoFormat.jpeg,
+      ).timeout(const Duration(seconds: 6));
+      if (photo.bytes.isEmpty) {
+        throw const GlassesCaptureException('The glasses sent an empty photo.');
+      }
+      return _buildCapture(recipe, stepIndex, userPrompt, photo.bytes);
+    } on TimeoutException {
+      throw const GlassesCaptureException(
+        'The glasses took too long to take a photo. Try again.',
+      );
+    } on StreamError catch (e) {
+      throw GlassesCaptureException(switch (e.reason) {
+        StreamErrorCase.hingesClosed => 'Unfold your glasses to take a photo.',
+        StreamErrorCase.thermalHot =>
+          'Your glasses are too warm. Let them cool down.',
+        _ => 'The glasses camera could not start: ${e.message}',
+      });
+    } on PermissionError {
+      throw const GlassesCaptureException(
+        'Allow camera access for CookTogether in the Meta AI app.',
+      );
+    } on DatError catch (e) {
+      throw GlassesCaptureException(
+        'The glasses could not take a photo: ${e.message}',
+      );
+    } finally {
+      try {
+        await MetaWearablesDat.stopStreamSession();
+      } catch (_) {}
+      _isCapturing = false;
+      notifyListeners();
+    }
+  }
+
+  VisionCapture _buildCapture(
+    Recipe recipe,
+    int stepIndex,
+    String? userPrompt,
+    Uint8List photoBytes,
+  ) {
+    final step = recipe.steps[stepIndex.clamp(0, recipe.steps.length - 1)];
+    _lastStatusNote = 'Captured POV snapshot (${step.title})';
     return VisionCapture(
       id: 'snap-${DateTime.now().millisecondsSinceEpoch}',
       recipeId: recipe.id,

@@ -91,8 +91,10 @@ class _CookingScreenState extends State<CookingScreen>
 
     widget.voiceController.onFinalUtterance = _handleUserUtterance;
 
-    // Ensure Meta glasses Mock Device Kit is ready
-    if (!widget.glassesService.isConnected) {
+    // Fall back to the Mock Device Kit, unless the user chose real glasses
+    // (those reconnect on their own).
+    if (!widget.glassesService.isConnected &&
+        !widget.glassesService.usingRealGlasses) {
       widget.glassesService.initializeAndPairMockDevice();
     }
 
@@ -305,11 +307,19 @@ class _CookingScreenState extends State<CookingScreen>
     );
 
     final startTime = DateTime.now();
-    final capture = await widget.glassesService.captureFrame(
-      recipe: widget.recipe,
-      stepIndex: _currentStep,
-      userPrompt: promptText,
-    );
+    final VisionCapture capture;
+    try {
+      capture = await widget.glassesService.captureFrame(
+        recipe: widget.recipe,
+        stepIndex: _currentStep,
+        userPrompt: promptText,
+      );
+    } on GlassesCaptureException catch (e) {
+      // Say why instead of sending the assistant a blank photo.
+      widget.voiceController.setActivityState(VoiceActivityState.idle);
+      if (mounted) _appendAiMessage(e.message);
+      return;
+    }
 
     widget.voiceController.setActivityState(
       VoiceActivityState.thinking,

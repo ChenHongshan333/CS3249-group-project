@@ -49,7 +49,8 @@ class _PrepScreenState extends State<PrepScreen> {
   void initState() {
     super.initState();
     _listeningMode = widget.initialListeningMode;
-    if (!widget.glassesService.isConnected) {
+    if (!widget.glassesService.isConnected &&
+        !widget.glassesService.usingRealGlasses) {
       widget.glassesService.initializeAndPairMockDevice();
     }
   }
@@ -67,6 +68,7 @@ class _PrepScreenState extends State<PrepScreen> {
   void _openGlassesSheet() {
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       builder: (_) => _GlassesSheet(
         glassesService: widget.glassesService,
         onShowToast: widget.onShowToast,
@@ -295,10 +297,9 @@ class _GlassesSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
     return ListenableBuilder(
       listenable: glassesService,
-      builder: (context, _) => Padding(
+      builder: (context, _) => SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(
           CookTogetherTheme.gutter,
           0,
@@ -308,52 +309,114 @@ class _GlassesSheet extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Meta glasses', style: textTheme.headlineSmall),
-            const SizedBox(height: 6),
-            Text(
-              'Simulated with the Mock Device Kit. You stay in control of '
-              'the camera and mic.',
-              style: textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 16),
-            RadioGroup<MockGlassesModel>(
-              groupValue: glassesService.mockModel,
-              onChanged: (model) async {
-                if (model == null) return;
-                await glassesService.initializeAndPairMockDevice(model: model);
-                onShowToast('Switched to ${_modelNames[model]}');
-              },
-              child: Column(
-                children: [
-                  for (final MapEntry(key: model, value: name)
-                      in _modelNames.entries)
-                    RadioListTile<MockGlassesModel>(
-                      contentPadding: EdgeInsets.zero,
-                      value: model,
-                      activeColor: CookTogetherTheme.success,
-                      title: Text(name, style: textTheme.bodyLarge),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Battery ${glassesService.batteryLevel}% · worn · hinge open',
-              style: textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () async {
-                await glassesService.simulateTouchpadTap();
-                onShowToast('Touchpad tap simulated');
-              },
-              icon: const Icon(Icons.touch_app_outlined),
-              label: const Text('Test touchpad tap'),
-            ),
-          ],
+          children: glassesService.usingRealGlasses
+              ? _realGlasses(context)
+              : _simulated(context),
         ),
       ),
     );
+  }
+
+  List<Widget> _realGlasses(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final connected =
+        glassesService.connectionState ==
+        GlassesConnectionState.connectedHardware;
+    return [
+      Text(glassesService.deviceName, style: textTheme.headlineSmall),
+      const SizedBox(height: 8),
+      StatusDot(
+        label: glassesService.lastStatusNote ?? '',
+        color: connected
+            ? CookTogetherTheme.success
+            : CookTogetherTheme.warning,
+      ),
+      if (connected) ...[
+        const SizedBox(height: 4),
+        Text(
+          'Battery ${glassesService.batteryLevel}%',
+          style: textTheme.bodyMedium,
+        ),
+      ],
+      const SizedBox(height: 12),
+      Text(
+        'The camera turns on only while a photo is taken.',
+        style: textTheme.bodyMedium,
+      ),
+      const SizedBox(height: 16),
+      TextButton(
+        onPressed: () => glassesService.initializeAndPairMockDevice(),
+        child: const Text('Use simulated glasses instead'),
+      ),
+    ];
+  }
+
+  List<Widget> _simulated(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final connecting =
+        glassesService.connectionState == GlassesConnectionState.connecting;
+    final note = glassesService.lastStatusNote;
+    final failed =
+        glassesService.connectionState == GlassesConnectionState.disconnected;
+    return [
+      Text('Meta glasses', style: textTheme.headlineSmall),
+      const SizedBox(height: 6),
+      Text(
+        'Connect your own glasses through the Meta AI app (Developer Mode '
+        'on), or keep using simulated ones.',
+        style: textTheme.bodyMedium,
+      ),
+      const SizedBox(height: 16),
+      PrimaryButton(
+        label: connecting ? 'Connecting…' : 'Connect my glasses',
+        icon: Icons.link_rounded,
+        onPressed: connecting
+            ? null
+            : () async {
+                if (await glassesService.connectRealGlasses()) {
+                  onShowToast('Connected to ${glassesService.deviceName}');
+                }
+              },
+      ),
+      if (failed && note != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          note,
+          style: textTheme.bodyMedium?.copyWith(
+            color: CookTogetherTheme.warning,
+          ),
+        ),
+      ],
+      const SizedBox(height: 28),
+      Text('Simulated glasses', style: textTheme.titleMedium),
+      const SizedBox(height: 4),
+      RadioGroup<MockGlassesModel>(
+        groupValue: glassesService.mockModel,
+        onChanged: (model) async {
+          if (model == null) return;
+          await glassesService.initializeAndPairMockDevice(model: model);
+          onShowToast('Switched to ${_modelNames[model]}');
+        },
+        child: Column(
+          children: [
+            for (final MapEntry(key: model, value: name) in _modelNames.entries)
+              RadioListTile<MockGlassesModel>(
+                contentPadding: EdgeInsets.zero,
+                value: model,
+                activeColor: CookTogetherTheme.success,
+                title: Text(name, style: textTheme.bodyLarge),
+              ),
+          ],
+        ),
+      ),
+      OutlinedButton.icon(
+        onPressed: () async {
+          await glassesService.simulateTouchpadTap();
+          onShowToast('Touchpad tap simulated');
+        },
+        icon: const Icon(Icons.touch_app_outlined),
+        label: const Text('Test touchpad tap'),
+      ),
+    ];
   }
 }

@@ -74,5 +74,55 @@
 	<string>CookTogether uses camera access to simulate Meta glasses vision or check cooking steps.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>CookTogether connects to your Meta glasses for hands-free vision and audio.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>CookTogether finds and connects to your Meta glasses over Wi-Fi to take step photos.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_bonjour._tcp</string>
+	</array>
+	<!-- Meta Wearables Device Access Toolkit (meta_wearables_dat_flutter). -->
+	<key>MWDAT</key>
+	<dict>
+		<!-- Must end with "://". Meta AI opens it to finish registration. -->
+		<key>AppLinkURLScheme</key>
+		<string>cookalong://</string>
+		<!-- "0" and the placeholder token work in Developer Mode. -->
+		<key>MetaAppID</key>
+		<string>0</string>
+		<key>ClientToken</key>
+		<string>developer-mode-placeholder</string>
+		<key>TeamID</key>
+		<string>$(DEVELOPMENT_TEAM)</string>
+		<!-- Don't send Meta usage analytics from study sessions. -->
+		<key>Analytics</key>
+		<dict>
+			<key>OptOut</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>cookalong</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>fb-viewapp</string>
+	</array>
+	<key>UISupportedExternalAccessoryProtocols</key>
+	<array>
+		<string>com.meta.ar.wearable</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>external-accessory</string>
+		<string>bluetooth-peripheral</string>
+		<string>processing</string>
+	</array>
 </dict>
 </plist>
