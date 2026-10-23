@@ -58,6 +58,9 @@ void main() {
       ),
     );
     await tester.pump(const Duration(seconds: 1));
+    // Check is off during the opening chat; start step 1 first.
+    await tester.tap(find.text('Start'));
+    await tester.pump(const Duration(seconds: 1));
 
     await tester.tap(find.text('Check'));
     await tester.pump(const Duration(milliseconds: 500));

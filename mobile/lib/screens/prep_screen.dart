@@ -208,20 +208,20 @@ class _PrepScreenState extends State<PrepScreen> {
             ],
           ),
         ),
+        // Ticking is optional: CookAlong asks about whatever is unticked in
+        // the opening chat before step 1.
         BottomActionBar(
           hint: _allIngredientsReady
               ? null
-              : 'Tick off $_remaining more ingredient${_remaining == 1 ? '' : 's'} to start',
+              : "I'll ask about the $_remaining you haven't ticked",
           child: PrimaryButton(
             label: 'Start cooking',
             icon: Icons.arrow_forward_rounded,
-            onPressed: _allIngredientsReady
-                ? () => widget.onStartCookingSession(
-                    checkedIngredients: _checkedIngredients,
-                    listeningMode: _listeningMode,
-                    acceptedSwapIds: _acceptedSwapIds,
-                  )
-                : null,
+            onPressed: () => widget.onStartCookingSession(
+              checkedIngredients: _checkedIngredients,
+              listeningMode: _listeningMode,
+              acceptedSwapIds: _acceptedSwapIds,
+            ),
           ),
         ),
       ],

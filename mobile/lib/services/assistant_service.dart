@@ -11,11 +11,59 @@ class AssistantResponse {
   final VisualCheckStatus? visualStatus;
   final VisionCapture? visionCapture;
 
+  /// Something the reply proposes ("Would you like a timer?"). Send it back
+  /// as `pendingOffer` with the next question.
+  final AssistantAction? offer;
+
+  /// Something to do now, because the user accepted an offer.
+  final AssistantAction? action;
+
   const AssistantResponse({
     required this.reply,
     this.visualStatus,
     this.visionCapture,
+    this.offer,
+    this.action,
   });
+}
+
+/// An offer or action from `/ask` (docs/api.md). Unknown types are ignored.
+class AssistantAction {
+  static const knownTypes = {
+    'start_timer',
+    'next_step',
+    'repeat_step',
+    'start_cooking',
+    'tick_ingredient',
+  };
+
+  final String type;
+  final int? seconds;
+  final String? label;
+  final String? name;
+
+  const AssistantAction(this.type, {this.seconds, this.label, this.name});
+
+  static AssistantAction? fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final type = json['type'];
+    if (type is! String || !knownTypes.contains(type)) return null;
+    final seconds = (json['seconds'] as num?)?.toInt();
+    if (type == 'start_timer' && (seconds == null || seconds < 1)) return null;
+    return AssistantAction(
+      type,
+      seconds: seconds,
+      label: json['label'] as String?,
+      name: json['name'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'type': type,
+    'seconds': ?seconds,
+    'label': ?label,
+    'name': ?name,
+  };
 }
 
 /// Pluggable interface for communicating with the LLM & Vision backend
@@ -29,6 +77,9 @@ abstract class AssistantService {
     required List<ChatMessage> history,
     VisionCapture? visionCapture,
     List<String> acceptedSwaps = const [],
+    String phase = 'cooking',
+    Map<String, bool> ingredients = const {},
+    AssistantAction? pendingOffer,
   });
 
   Future<AssistantResponse> checkStepWithVision({
@@ -60,10 +111,41 @@ class MockAssistantService implements AssistantService {
     required List<ChatMessage> history,
     VisionCapture? visionCapture,
     List<String> acceptedSwaps = const [],
+    String phase = 'cooking',
+    Map<String, bool> ingredients = const {},
+    AssistantAction? pendingOffer,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 280));
     final step = recipe.steps[stepIndex.clamp(0, recipe.steps.length - 1)];
     final lower = question.toLowerCase();
+
+    if (phase == 'opening') return _openingReply(lower, ingredients);
+
+    if (pendingOffer != null) {
+      if (_isYes(lower)) {
+        return AssistantResponse(
+          reply: pendingOffer.type == 'start_timer'
+              ? '${(pendingOffer.seconds! / 60).ceil()}-minute timer started.'
+              : 'Okay.',
+          action: pendingOffer,
+        );
+      }
+      if (_isNo(lower)) return const AssistantResponse(reply: 'No problem.');
+    }
+
+    final timerSeconds = step.suggestedTimerSeconds;
+    if (timerSeconds != null &&
+        RegExp(r'how long|how many minutes|time').hasMatch(lower)) {
+      final mins = (timerSeconds / 60).ceil();
+      return AssistantResponse(
+        reply: 'About $mins minutes. Would you like a $mins-minute timer?',
+        offer: AssistantAction(
+          'start_timer',
+          seconds: timerSeconds,
+          label: step.suggestedTimerLabel ?? step.title,
+        ),
+      );
+    }
 
     // If a Meta glasses snapshot was captured alongside a visual question:
     if (visionCapture != null) {
@@ -109,6 +191,52 @@ class MockAssistantService implements AssistantService {
     return AssistantResponse(
       reply:
           'Good question! ${step.tip} When you are ready, ${step.instruction} You can also ask me to look through your glasses to check your progress.',
+    );
+  }
+
+  static bool _isYes(String lower) => RegExp(
+    r"^(yes|yeah|yep|sure|please|ok|okay|go ahead|do it|start it)\b",
+  ).hasMatch(lower.trim());
+
+  static bool _isNo(String lower) =>
+      RegExp(r"^(no|nope|not now|no thanks)\b").hasMatch(lower.trim());
+
+  AssistantResponse _openingReply(
+    String lower,
+    Map<String, bool> ingredients,
+  ) {
+    if (RegExp(
+      r"let'?s (start|go|cook)|ready|that'?s everything|all set",
+    ).hasMatch(lower)) {
+      return const AssistantResponse(
+        reply: "Lovely, let's start.",
+        action: AssistantAction('start_cooking'),
+      );
+    }
+    final missing = ingredients.entries
+        .where((e) => !e.value)
+        .map((e) => e.key)
+        .toList();
+    final mentioned = missing.where((name) => lower.contains(name)).toList();
+    if (mentioned.isNotEmpty &&
+        RegExp(r"don'?t have|no |out of|missing").hasMatch(lower)) {
+      return AssistantResponse(
+        reply:
+            "No problem, it still works without the ${mentioned.first}. "
+            "Say 'let's start' when you're ready.",
+      );
+    }
+    if (mentioned.isNotEmpty) {
+      final left = missing.where((n) => n != mentioned.first).toList();
+      return AssistantResponse(
+        reply: left.isEmpty
+            ? "Great, that's everything. Say 'let's start' when you're ready."
+            : 'Great. What about the ${left.first}?',
+        action: AssistantAction('tick_ingredient', name: mentioned.first),
+      );
+    }
+    return const AssistantResponse(
+      reply: "Okay. Say 'let's start' when you're ready.",
     );
   }
 
@@ -208,6 +336,9 @@ class HttpAssistantService implements AssistantService {
     required List<ChatMessage> history,
     VisionCapture? visionCapture,
     List<String> acceptedSwaps = const [],
+    String phase = 'cooking',
+    Map<String, bool> ingredients = const {},
+    AssistantAction? pendingOffer,
   }) async {
     // If a visual snapshot is attached, route through `/check-step` or hybrid vision flow
     if (visionCapture != null && _cleanBaseUrl.isNotEmpty) {
@@ -228,6 +359,9 @@ class HttpAssistantService implements AssistantService {
         question: question,
         history: history,
         visionCapture: visionCapture,
+        phase: phase,
+        ingredients: ingredients,
+        pendingOffer: pendingOffer,
       );
     }
 
@@ -268,6 +402,12 @@ class HttpAssistantService implements AssistantService {
               'question': question,
               'acceptedSwaps': acceptedSwaps,
               'history': recentTurns,
+              'phase': phase,
+              'ingredients': [
+                for (final e in ingredients.entries)
+                  {'name': e.key, 'ready': e.value},
+              ],
+              'pendingOffer': ?pendingOffer?.toJson(),
             }),
           )
           .timeout(const Duration(seconds: 6));
@@ -276,7 +416,11 @@ class HttpAssistantService implements AssistantService {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final reply = data['reply'] as String?;
         if (reply != null && reply.isNotEmpty) {
-          return AssistantResponse(reply: reply);
+          return AssistantResponse(
+            reply: reply,
+            offer: AssistantAction.fromJson(data['offer']),
+            action: AssistantAction.fromJson(data['action']),
+          );
         }
       }
     } catch (_) {
@@ -290,6 +434,9 @@ class HttpAssistantService implements AssistantService {
       question: question,
       history: history,
       visionCapture: visionCapture,
+      phase: phase,
+      ingredients: ingredients,
+      pendingOffer: pendingOffer,
     );
   }
 
