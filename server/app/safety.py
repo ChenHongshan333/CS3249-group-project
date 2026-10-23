@@ -121,7 +121,13 @@ def parse_ask(raw: str, req: AskRequest) -> tuple[str, Action | None, Action | N
     don't fit the phase or the request are dropped, never passed to the app.
     """
     data = _json_object(raw)
-    reply = data.get("reply") if data else raw
+    if data:
+        reply = data.get("reply")
+    elif raw.lstrip().startswith("{"):
+        # JSON that was cut off: keep the reply text if it got that far.
+        reply = _partial_reply(raw)
+    else:
+        reply = raw
     if not isinstance(reply, str):
         reply = ""
     reply, _ = make_safe(reply)
@@ -129,6 +135,19 @@ def parse_ask(raw: str, req: AskRequest) -> tuple[str, Action | None, Action | N
     offer = _valid_action(data.get("offer"), req)
     action = _valid_action(data.get("action"), req)
     return reply, offer, action
+
+
+def _partial_reply(raw: str) -> str:
+    match = re.search(r'"reply"\s*:\s*"((?:[^"\\]|\\.)*)', raw)
+    if not match:
+        return ""
+    try:
+        text = json.loads(f'"{match.group(1)}"')
+    except json.JSONDecodeError:
+        text = match.group(1)
+    # Drop an unfinished last sentence rather than speak half of it.
+    whole = re.match(r"^(.*[.!?])", text, re.DOTALL)
+    return whole.group(1) if whole else ""
 
 
 def _valid_action(value: object, req: AskRequest) -> Action | None:
@@ -148,6 +167,9 @@ def _valid_action(value: object, req: AskRequest) -> Action | None:
     if action.type == "tick_ingredient":
         # Only ingredients the app sent, spelled the way the app spells them.
         by_lower = {i.name.lower(): i.name for i in req.ingredients}
-        name = by_lower.get((action.name or "").strip().lower())
-        return Action(type="tick_ingredient", name=name) if name else None
+        asked = [action.name or ""] + list(action.names or [])
+        names = list(dict.fromkeys(
+            by_lower[n.strip().lower()] for n in asked if n.strip().lower() in by_lower
+        ))
+        return Action(type="tick_ingredient", name=names[0], names=names) if names else None
     return Action(type=action.type)

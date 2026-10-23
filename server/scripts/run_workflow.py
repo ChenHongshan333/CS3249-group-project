@@ -20,6 +20,7 @@ import base64
 import json
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,7 +41,12 @@ def make_client(url: str | None):
 
     # Calls made by this script aren't study data.
     settings = get_settings().model_copy(update={"log_db_path": ":memory:"})
-    return TestClient(create_app(settings))
+    client = TestClient(create_app(settings))
+    # Entering the client keeps one event loop for every request, as the
+    # real server does. Without it each request gets a new loop, and the
+    # model client, tied to the first one, fails with connection errors.
+    client.__enter__()
+    return client
 
 
 def opening_line(recipe: dict, ingredients: list[dict]) -> str:
@@ -99,6 +105,8 @@ def main() -> None:
         print(wrap("ideal", turn["ideal"]))
 
         if turn.get("check"):
+            # As in the app, a photo check drops any unanswered offer.
+            pending_offer = None
             photo = Path(args.photos) / turn["photo"]
             if not photo.exists():
                 print(f"  (skipped: add {photo.relative_to(ROOT)} to run this photo check)")
@@ -145,7 +153,9 @@ def main() -> None:
                 }
             if pending_offer:
                 request["pendingOffer"] = pending_offer
+            start = time.perf_counter()
             res = client.post("/ask", json=request)
+            ms = (time.perf_counter() - start) * 1000
             body = res.json()
             if res.status_code != 200:
                 print(wrap("ERROR", body.get("error", str(body))))
@@ -153,6 +163,7 @@ def main() -> None:
 
             reply = body["reply"]
             print(wrap("actual", reply))
+            print(f"         {ms:.0f} ms" + ("  (over the app's 6 s limit)" if ms > 6000 else ""))
             pending_offer = body.get("offer")
             action = body.get("action")
             for name, value in (("offer", pending_offer), ("action", action)):
@@ -160,7 +171,7 @@ def main() -> None:
                     print(wrap(name, json.dumps(value)))
             if action and action["type"] == "tick_ingredient":
                 for ingredient in ingredients:
-                    if ingredient["name"] == action["name"]:
+                    if ingredient["name"] in action.get("names", [action.get("name")]):
                         ingredient["ready"] = True
 
             if "expectAction" in turn:

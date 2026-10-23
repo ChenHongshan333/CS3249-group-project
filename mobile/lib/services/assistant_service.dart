@@ -42,7 +42,17 @@ class AssistantAction {
   final String? label;
   final String? name;
 
-  const AssistantAction(this.type, {this.seconds, this.label, this.name});
+  /// For `tick_ingredient`: every ingredient to tick. Older backends send
+  /// only [name].
+  final List<String> names;
+
+  const AssistantAction(
+    this.type, {
+    this.seconds,
+    this.label,
+    this.name,
+    this.names = const [],
+  });
 
   static AssistantAction? fromJson(Object? json) {
     if (json is! Map<String, dynamic>) return null;
@@ -55,6 +65,9 @@ class AssistantAction {
       seconds: seconds,
       label: json['label'] as String?,
       name: json['name'] as String?,
+      names: [
+        for (final n in json['names'] as List? ?? const []) ?(n as String?),
+      ],
     );
   }
 
@@ -63,6 +76,7 @@ class AssistantAction {
     'seconds': ?seconds,
     'label': ?label,
     'name': ?name,
+    if (names.isNotEmpty) 'names': names,
   };
 }
 

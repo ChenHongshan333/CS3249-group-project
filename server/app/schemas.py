@@ -32,6 +32,7 @@ class Action(_Body):
     seconds: int | None = Field(default=None, ge=1, le=3600)
     label: str | None = Field(default=None, max_length=60)
     name: str | None = Field(default=None, max_length=100)
+    names: list[str] | None = Field(default=None, max_length=40)
 
 
 class Ingredient(_Body):

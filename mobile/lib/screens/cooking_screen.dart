@@ -346,6 +346,9 @@ class _CookingScreenState extends State<CookingScreen>
       _appendAiMessage("Let's start the first step, then I can take a look.");
       return;
     }
+    // A photo check changes the subject; a later "sure" isn't an answer
+    // to an offer made before it.
+    _pendingOffer = null;
     if (_isPaused) {
       widget.onShowToast('Resume the session first.');
       return;
@@ -621,10 +624,12 @@ class _CookingScreenState extends State<CookingScreen>
       case 'start_cooking' when _opening:
         _startCooking(lead: lead);
       case 'tick_ingredient' when _opening:
-        final name = action.name;
-        if (name != null && widget.recipe.ingredients.contains(name)) {
-          setState(() => _checkedIngredients.add(name));
-        }
+        final names = {...action.names, ?action.name};
+        setState(
+          () => _checkedIngredients.addAll(
+            names.where(widget.recipe.ingredients.contains),
+          ),
+        );
       default:
         // Doesn't fit the current phase; the backend should not send it.
         if (lead != null) _appendAiMessage(lead);

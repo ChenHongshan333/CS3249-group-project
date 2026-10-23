@@ -61,7 +61,7 @@ Both use the same shape. The app ignores any `type` it does not know.
 | `next_step` | | "Yes, let's move on." |
 | `repeat_step` | | "Say that again?" |
 | `start_cooking` | | Opening only: the user is ready for step 1. |
-| `tick_ingredient` | `name`, one of the request's `ingredients` | Opening only: "I've got the garlic now." |
+| `tick_ingredient` | `names`, a list of the request's `ingredients` (also `name`, the first of them, for older apps) | Opening only: "I've got the garlic and the sauce now." |
 
 Example of an offer, then the user accepting it:
 

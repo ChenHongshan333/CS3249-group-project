@@ -174,6 +174,29 @@ void main() {
     await _finish(tester);
   });
 
+  testWidgets('a photo check drops an unanswered offer', (tester) async {
+    final assistant = _ScriptedAssistant([
+      const AssistantResponse(
+        reply: 'Would you like a two-minute timer?',
+        offer: AssistantAction('start_timer', seconds: 120, label: 'Pasta'),
+      ),
+      const AssistantResponse(reply: 'Enjoy the cheese.'),
+    ]);
+    await _openCooking(tester, assistant);
+    await tester.tap(find.text('Start'));
+    await tester.pump(const Duration(seconds: 1));
+
+    await _say(tester, 'The pasta is still firm.');
+    await tester.tap(find.text('Check'));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+    // "Sure" is about the photo reply, not the earlier timer.
+    await _say(tester, "Sure, I'm a cheese fan.");
+    expect(assistant.asked.last['pendingOffer'], isNull);
+    await _finish(tester);
+  });
+
   testWidgets('the built-in demo assistant handles the opening too', (
     tester,
   ) async {
@@ -182,6 +205,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.textContaining('What about the'), findsOneWidget);
     await _finish(tester);
+  });
+
+  test('tick_ingredient reads every name', () {
+    final action = AssistantAction.fromJson({
+      'type': 'tick_ingredient',
+      'name': 'garlic',
+      'names': ['garlic', 'cucumber'],
+    });
+    expect(action?.names, ['garlic', 'cucumber']);
   });
 
   test('unknown action types are ignored', () {

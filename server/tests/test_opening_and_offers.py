@@ -118,7 +118,20 @@ def test_opening_start_cooking(client, fake_llm):
 def test_tick_ingredient_uses_the_apps_spelling(client, fake_llm):
     fake_llm.next_reply = reply_json(action={"type": "tick_ingredient", "name": "Garlic "})
     body = client.post("/ask", json={**OPENING_BODY, "question": "Found the garlic."}).json()
-    assert body["action"] == {"type": "tick_ingredient", "name": "garlic"}
+    assert body["action"] == {"type": "tick_ingredient", "name": "garlic", "names": ["garlic"]}
+
+
+def test_tick_several_ingredients_at_once(client, fake_llm):
+    fake_llm.next_reply = reply_json(
+        action={"type": "tick_ingredient", "names": ["Cherry tomatoes", "garlic", "saffron"]}
+    )
+    body = client.post("/ask", json={**OPENING_BODY, "question": "Got both now."}).json()
+    # Unknown names are dropped; "name" keeps older apps working.
+    assert body["action"] == {
+        "type": "tick_ingredient",
+        "name": "cherry tomatoes",
+        "names": ["cherry tomatoes", "garlic"],
+    }
 
 
 def test_tick_unknown_ingredient_is_dropped(client, fake_llm):
@@ -177,3 +190,18 @@ def test_check_step_keeps_the_description_of_meat(client, fake_llm, jpeg_b64):
     body = client.post("/check-step", json=check_body(jpeg_b64)).json()
     assert body["status"] == "unsure"
     assert body["say"].startswith("The centre looks opaque.")
+
+
+# Cut-off model output
+
+
+def test_cut_off_json_keeps_whole_sentences(client, fake_llm):
+    fake_llm.next_reply = '{"reply": "Nice work. Next is seasoning the chicken, so let'
+    assert client.post("/ask", json=ASK_BODY).json() == {"reply": "Nice work."}
+
+
+def test_cut_off_json_is_never_read_aloud(client, fake_llm):
+    fake_llm.next_reply = '{"re'
+    res = client.post("/ask", json=ASK_BODY)
+    assert res.status_code == 502
+    assert "{" not in res.text.replace('{"error"', "")
