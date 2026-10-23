@@ -7,7 +7,9 @@ Owners:
 
 One Flutter codebase builds the Android app, the iPhone app, and a web version for quick UI checks. The screens talk to the glasses through one interface, `GlassesService`, so glasses code and screen code meet in one place.
 
-The backend contract the app calls is in [`docs/api.md`](../docs/api.md). Enter the backend URL under Profile → Developer. With no URL, the app uses built-in demo answers.
+The backend contract the app calls is in [`docs/api.md`](../docs/api.md). The app uses the team's deployed backend (`https://cookalong-backend.onrender.com`) by default; change it under Profile → Developer. Clear the URL to use built-in demo answers instead. When the backend can't answer, the app says "Sorry, I couldn't reach the assistant…" rather than giving a demo answer.
+
+The backend runs on Render's free plan, which sleeps after 15 idle minutes and takes up to a minute to wake. The app wakes it when it opens and when you reach Get ready, so it is usually awake by the first question.
 
 ## Run
 
