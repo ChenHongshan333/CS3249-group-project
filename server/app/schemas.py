@@ -16,13 +16,22 @@ class Turn(_Body):
     text: str = Field(max_length=2000)
 
 
-ActionType = Literal["start_timer", "next_step", "repeat_step", "start_cooking", "tick_ingredient"]
+ActionType = Literal[
+    "start_timer", "next_step", "repeat_step", "start_cooking", "tick_ingredient", "adapt_steps"
+]
 
 # Which actions make sense in each phase. Anything else from the model is dropped.
 PHASE_ACTIONS: dict[str, set[str]] = {
-    "opening": {"start_cooking", "tick_ingredient"},
+    "opening": {"start_cooking", "tick_ingredient", "adapt_steps"},
     "cooking": {"start_timer", "next_step", "repeat_step"},
 }
+
+
+class StepChange(_Body):
+    """One step rewritten for a missing ingredient (adapt_steps)."""
+
+    step: int = Field(ge=0)
+    text: str = Field(min_length=1, max_length=600)
 
 
 class Action(_Body):
@@ -33,11 +42,19 @@ class Action(_Body):
     label: str | None = Field(default=None, max_length=60)
     name: str | None = Field(default=None, max_length=100)
     names: list[str] | None = Field(default=None, max_length=40)
+    steps: list[StepChange] | None = Field(default=None, max_length=20)
 
 
 class Ingredient(_Body):
     name: str = Field(max_length=100)
     ready: bool = False
+
+
+class RecipeStep(_Body):
+    """A step as the user will see it, sent in the opening (docs/api.md)."""
+
+    title: str = Field(default="", max_length=200)
+    text: str = Field(max_length=2000)
 
 
 class AskRequest(_Body):
@@ -54,6 +71,8 @@ class AskRequest(_Body):
     ingredients: list[Ingredient] = Field(default_factory=list, max_length=40)
     history: list[Turn] = Field(default_factory=list, max_length=50)
     pending_offer: Action | None = None
+    # Opening only: every step, so CookAlong can adapt them (adapt_steps).
+    steps: list[RecipeStep] = Field(default_factory=list, max_length=40)
 
     @model_validator(mode="after")
     def _cooking_needs_step_text(self):
