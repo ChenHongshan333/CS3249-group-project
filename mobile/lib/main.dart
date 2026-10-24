@@ -59,9 +59,22 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
 
   late AppScreen _screen = widget.initialScreen;
   bool _welcomeOpen = false;
+
+  /// Where Back from Get ready goes: Recipes, or Home after "Cook again".
+  AppScreen _prepReturnScreen = AppScreen.recipes;
   UserPreferences _preferences = const UserPreferences();
   List<CookingHistoryItem> _history = const [];
   String _selectedRecipeId = kStarterRecipes.first.id;
+
+  /// The recipe of the cooking session, kept while it's paused and left so
+  /// it can be resumed from Home. Null when no session is open.
+  /// Tests and the screenshot harness can open straight on cooking.
+  late Recipe? _sessionRecipe = widget.initialScreen == AppScreen.cook
+      ? _selectedRecipe
+      : null;
+
+  /// A new key for each session, so starting one never reuses the last.
+  Key _sessionKey = UniqueKey();
 
   Set<String> _sessionCheckedIngredients = {};
   Set<String> _sessionAcceptedSwapIds = {};
@@ -140,9 +153,33 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
 
   /// Get ready comes a minute or two before the first question, which is
   /// about how long a sleeping backend takes to wake.
-  void _openPrep() {
-    setState(() => _screen = AppScreen.prep);
+  void _openPrep({AppScreen returnTo = AppScreen.recipes}) {
+    setState(() {
+      _prepReturnScreen = returnTo;
+      _screen = AppScreen.prep;
+    });
     _assistantService.warmUp();
+  }
+
+  /// The screen the system back gesture goes to, the same as each screen's
+  /// own Back button. Null on Home, where back leaves the app, and while
+  /// cooking, where the cooking screen asks first.
+  AppScreen? get _backTarget => switch (_screen) {
+    AppScreen.home || AppScreen.cook => null,
+    AppScreen.prep => _prepReturnScreen,
+    AppScreen.recipes ||
+    AppScreen.finish ||
+    AppScreen.history ||
+    AppScreen.profile => AppScreen.home,
+  };
+
+  void _handleSystemBack() {
+    if (_welcomeOpen) {
+      setState(() => _welcomeOpen = false);
+      return;
+    }
+    final target = _backTarget;
+    if (target != null) setState(() => _screen = target);
   }
 
   Future<void> _recordCompletedSession({
@@ -167,11 +204,12 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
     ];
     final formattedDate = '${now.day} ${months[now.month - 1]} ${now.year}';
 
+    final recipe = _sessionRecipe ?? _selectedRecipe;
     final item = CookingHistoryItem(
       id: 'hist-${now.millisecondsSinceEpoch}',
-      recipeId: _selectedRecipe.id,
-      recipeName: _selectedRecipe.name,
-      recipeIcon: _selectedRecipe.icon,
+      recipeId: recipe.id,
+      recipeName: recipe.name,
+      recipeIcon: recipe.icon,
       date: formattedDate,
       durationSeconds: elapsedSeconds,
       stepsCompleted: stepsCompleted,
@@ -180,6 +218,8 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
 
     final nextHistory = [item, ..._history];
     setState(() {
+      _selectedRecipeId = recipe.id;
+      _sessionRecipe = null;
       _lastElapsedSeconds = elapsedSeconds;
       _lastVisualChecksCount = visualChecksCount;
       _history = nextHistory;
@@ -240,19 +280,25 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
                   bottom: false,
                   // Builder gives the overlays a context below MaterialApp,
                   // so they pick up the app theme.
-                  child: Builder(
-                    builder: (context) => Stack(
-                      children: [
-                        Column(
-                          children: [
-                            Expanded(child: _buildCurrentScreen()),
-                            if (_showBottomNav) _buildBottomNav(),
-                          ],
-                        ),
-                        if (_welcomeOpen) _buildWelcomeModal(context),
-                        if (_toastMessage.isNotEmpty)
-                          _buildToastBanner(context),
-                      ],
+                  child: PopScope(
+                    canPop: _screen == AppScreen.home && !_welcomeOpen,
+                    onPopInvokedWithResult: (didPop, _) {
+                      if (!didPop) _handleSystemBack();
+                    },
+                    child: Builder(
+                      builder: (context) => Stack(
+                        children: [
+                          Column(
+                            children: [
+                              Expanded(child: _buildScreens()),
+                              if (_showBottomNav) _buildBottomNav(),
+                            ],
+                          ),
+                          if (_welcomeOpen) _buildWelcomeModal(context),
+                          if (_toastMessage.isNotEmpty)
+                            _buildToastBanner(context),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -261,6 +307,50 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           ),
         ),
       ),
+    );
+  }
+
+  /// The current screen, with the cooking session underneath it while it's
+  /// paused and left, so it keeps its chat, step and timers.
+  Widget _buildScreens() {
+    final session = _sessionRecipe;
+    final cooking = _screen == AppScreen.cook;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (!cooking) _buildCurrentScreen(),
+        if (session != null)
+          Offstage(
+            offstage: !cooking,
+            child: TickerMode(
+              enabled: cooking,
+              child: _buildCookingScreen(session, visible: cooking),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCookingScreen(Recipe recipe, {required bool visible}) {
+    return CookingScreen(
+      key: _sessionKey,
+      isVisible: visible,
+      recipe: recipe,
+      preferences: _preferences,
+      glassesService: _glassesService,
+      assistantService: _assistantService,
+      voiceController: _voiceController,
+      phoneCamera: _phoneCamera,
+      initialCheckedIngredients: _sessionCheckedIngredients,
+      initialListeningMode: _sessionListeningMode,
+      acceptedSwapIds: _sessionAcceptedSwapIds,
+      onFinishCooking: _recordCompletedSession,
+      onExitToHome: () => setState(() {
+        _sessionRecipe = null;
+        _screen = AppScreen.home;
+      }),
+      onPauseAndLeave: () => setState(() => _screen = AppScreen.home),
+      onShowToast: _showToast,
     );
   }
 
@@ -274,8 +364,10 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           onOpenWelcomeOverview: () => setState(() => _welcomeOpen = true),
           onCookAgain: (recipeId) {
             _selectedRecipeId = recipeId;
-            _openPrep();
+            _openPrep(returnTo: AppScreen.home);
           },
+          pausedRecipe: _sessionRecipe,
+          onResumeSession: () => setState(() => _screen = AppScreen.cook),
         );
 
       case AppScreen.recipes:
@@ -303,32 +395,25 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
                 required VoiceListeningMode listeningMode,
                 required Set<String> acceptedSwapIds,
               }) {
+                if (_sessionRecipe != null) {
+                  _showToast('Your paused session was ended');
+                }
                 setState(() {
+                  _sessionRecipe = _selectedRecipe;
+                  _sessionKey = UniqueKey();
                   _sessionCheckedIngredients = checkedIngredients;
                   _sessionAcceptedSwapIds = acceptedSwapIds;
                   _sessionListeningMode = listeningMode;
                   _screen = AppScreen.cook;
                 });
               },
-          onBack: () => setState(() => _screen = AppScreen.recipes),
+          onBack: () => setState(() => _screen = _prepReturnScreen),
           onShowToast: _showToast,
         );
 
       case AppScreen.cook:
-        return CookingScreen(
-          recipe: _selectedRecipe,
-          preferences: _preferences,
-          glassesService: _glassesService,
-          assistantService: _assistantService,
-          voiceController: _voiceController,
-          phoneCamera: _phoneCamera,
-          initialCheckedIngredients: _sessionCheckedIngredients,
-          initialListeningMode: _sessionListeningMode,
-          acceptedSwapIds: _sessionAcceptedSwapIds,
-          onFinishCooking: _recordCompletedSession,
-          onExitToHome: () => setState(() => _screen = AppScreen.home),
-          onShowToast: _showToast,
-        );
+        // Drawn by _buildScreens, so it survives leaving the screen.
+        return const SizedBox.shrink();
 
       case AppScreen.finish:
         return FinishScreen(
