@@ -33,8 +33,13 @@ class VoiceController extends ChangeNotifier {
   /// sent after this much silence, so a pause doesn't cut it in two.
   static const Duration _sentenceGap = Duration(milliseconds: 1500);
 
-  final SpeechToText _speech = SpeechToText();
-  final FlutterTts _tts = FlutterTts();
+  /// Tests pass their own [speech] and [tts]; the app uses the plugins'.
+  VoiceController({SpeechToText? speech, FlutterTts? tts})
+    : _speech = speech ?? SpeechToText(),
+      _tts = tts ?? FlutterTts();
+
+  final SpeechToText _speech;
+  final FlutterTts _tts;
   final AudioRoute _audioRoute = const AudioRoute();
 
   /// Name of the Bluetooth headset (the glasses) speech is recorded from, or
@@ -373,10 +378,13 @@ class VoiceController extends ChangeNotifier {
   }
 
   /// Handles a tap on the microphone: starts listening, or in tap-to-speak
-  /// mode stops it and sends what was heard. A tap always retries, even after errors stopped the
-  /// automatic restarts. It never makes up an utterance.
+  /// mode stops it and sends what was heard. A tap while CookTogether is
+  /// speaking cuts it off and listens; the words stay on screen. A tap
+  /// always retries, even after errors stopped the automatic restarts. It
+  /// never makes up an utterance.
   Future<MicTapResult> tapMic() async {
     if (_isPaused) return MicTapResult.stopped;
+    if (_activityState == VoiceActivityState.speaking) await _stopSpeaking();
     if (_activityState == VoiceActivityState.listening &&
         _speechAvailable &&
         _speech.isListening) {
@@ -395,6 +403,19 @@ class VoiceController extends ChangeNotifier {
     if (!await _ensureSpeechInitialized()) return MicTapResult.unavailable;
     await _startListeningLoop(forceSingleTurn: true);
     return MicTapResult.listening;
+  }
+
+  Future<void> _stopSpeaking() async {
+    _ttsSafetyTimer?.cancel();
+    _ttsSafetyTimer = null;
+    // The user is about to talk, so don't also listen for an answer.
+    _awaitingAnswer = false;
+    _activityState = VoiceActivityState.idle;
+    try {
+      await _tts.stop();
+    } catch (_) {}
+    // Stopping fires the TTS cancel handler, which may schedule a restart.
+    _restartListenTimer?.cancel();
   }
 
   Future<void> _startListeningLoop({bool forceSingleTurn = false}) async {
