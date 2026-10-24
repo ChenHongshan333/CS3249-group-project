@@ -102,15 +102,15 @@ void main() {
       await tester.tap(find.text('Rainbow salad bowl'));
       await tester.pumpAndSettle();
 
-      // 3. Prep: unticked ingredients are checked later, in the opening chat
+      // 3. Prep: every ingredient is ticked or marked missing first (#31)
       expect(find.text('Get ready'), findsOneWidget);
       expect(
-        find.text("I'll ask about the 5 you haven't ticked"),
+        find.text("Tick each ingredient, or tap Don't have"),
         findsOneWidget,
       );
       await tester.tap(find.text('Mark all'));
       await tester.pumpAndSettle();
-      expect(find.textContaining("you haven't ticked"), findsNothing);
+      expect(find.textContaining('Tick each ingredient'), findsNothing);
 
       // Connecting glasses lives in a sheet, away from the main flow
       await tester.dragUntilVisible(
