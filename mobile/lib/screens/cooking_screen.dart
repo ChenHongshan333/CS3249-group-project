@@ -71,6 +71,7 @@ class _CookingScreenState extends State<CookingScreen>
   bool _isPaused = false;
   bool _composerOpen = false;
   bool _confirmEndOpen = false;
+  bool _waitingForReply = false;
 
   // The short chat before step 1 (docs/api.md, "The opening conversation").
   bool _opening = true;
@@ -105,6 +106,7 @@ class _CookingScreenState extends State<CookingScreen>
     )..repeat(reverse: true);
 
     widget.voiceController.onFinalUtterance = _handleUserUtterance;
+    widget.voiceController.addListener(_onVoiceChanged);
 
     // Fall back to the Mock Device Kit, unless the user chose real glasses
     // (those reconnect on their own).
@@ -226,6 +228,7 @@ class _CookingScreenState extends State<CookingScreen>
     _orbPulseController.dispose();
     _textController.dispose();
     _scrollController.dispose();
+    widget.voiceController.removeListener(_onVoiceChanged);
     widget.voiceController.onFinalUtterance = null;
     widget.voiceController.shutdownSession();
     super.dispose();
@@ -241,6 +244,15 @@ class _CookingScreenState extends State<CookingScreen>
         );
       }
     });
+  }
+
+  void _onVoiceChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (widget.voiceController.partialTranscript.isNotEmpty ||
+        widget.voiceController.activityState == VoiceActivityState.thinking) {
+      _scrollToBottom();
+    }
   }
 
   void _appendUserMessage(String text) {
@@ -682,6 +694,7 @@ class _CookingScreenState extends State<CookingScreen>
   };
 
   Future<void> _askAssistant(String text) async {
+    setState(() => _waitingForReply = true);
     widget.voiceController.setActivityState(
       VoiceActivityState.thinking,
       hint: 'Thinking…',
@@ -704,7 +717,9 @@ class _CookingScreenState extends State<CookingScreen>
           i: _checkedIngredients.contains(i),
       },
       pendingOffer: offer,
-    );
+    ).whenComplete(() {
+      if (mounted) setState(() => _waitingForReply = false);
+    });
     if (!mounted) return;
     if (_opening) _openingTurns++;
     // After an error the question was never answered, so the offer stands.
@@ -1236,6 +1251,8 @@ class _CookingScreenState extends State<CookingScreen>
   /// is shown.
   Widget _buildConversation() {
     final textTheme = Theme.of(context).textTheme;
+    final transcript = widget.voiceController.partialTranscript;
+    final thinking = _waitingForReply;
     final replies = _messages.where((m) => !m.isStepAnnouncement).toList();
     final items = widget.preferences.showCaptions
         ? replies
@@ -1267,7 +1284,39 @@ class _CookingScreenState extends State<CookingScreen>
       ),
       children: [
         ...children,
-        if (items.isEmpty)
+        if (transcript.isNotEmpty)
+          KeyedSubtree(
+            key: const ValueKey('live-transcript'),
+            child: _buildBubble(
+              ChatMessage(
+                id: 'live-transcript',
+                sender: MessageSender.user,
+                text: transcript,
+                timestamp: DateTime.now(),
+                stepIndex: _opening ? null : _currentStep,
+              ),
+            ),
+          ),
+        if (thinking)
+          Padding(
+            key: const ValueKey('chat-thinking'),
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Semantics(
+              liveRegion: true,
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('Thinking…', style: textTheme.bodyMedium),
+                ],
+              ),
+            ),
+          ),
+        if (items.isEmpty && transcript.isEmpty && !thinking)
           Padding(
             padding: const EdgeInsets.only(top: 16),
             child: Text(
@@ -1414,7 +1463,6 @@ class _CookingScreenState extends State<CookingScreen>
       builder: (context, _) {
         final state = widget.voiceController.activityState;
         final mode = widget.voiceController.listeningMode;
-        final partial = widget.voiceController.partialTranscript;
 
         final orbColor = switch (state) {
           VoiceActivityState.listening => CookTogetherTheme.success,
@@ -1424,9 +1472,7 @@ class _CookingScreenState extends State<CookingScreen>
           VoiceActivityState.idle => const Color(0xFF55664F),
         };
 
-        final statusLabel = partial.isNotEmpty
-            ? '"$partial…"'
-            : _isPaused
+        final statusLabel = _isPaused
             ? 'Paused'
             : switch (state) {
                 VoiceActivityState.listening => 'Listening…',
@@ -1463,9 +1509,7 @@ class _CookingScreenState extends State<CookingScreen>
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: partial.isNotEmpty ? CookTogetherTheme.ink : null,
-                  ),
+                  style: textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 10),
                 Row(
