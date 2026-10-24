@@ -10,11 +10,13 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/camera/phone_camera.dart';
 import 'package:mobile/main.dart';
 import 'package:mobile/models/user_preferences.dart';
 import 'package:mobile/services/assistant_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'fake_phone_camera.dart';
 import 'fonts.dart';
 
 final String? _outDir = Platform.environment['SCREENSHOT_DIR'];
@@ -68,6 +70,7 @@ Future<void> _pumpScreen(
   AppScreen screen, {
   bool welcome = false,
   bool withHistory = true,
+  PhoneCamera? phoneCamera,
 }) async {
   SharedPreferences.setMockInitialValues({
     'cooktogether.seen': !welcome,
@@ -84,6 +87,7 @@ Future<void> _pumpScreen(
       child: CookTogetherApp(
         initialScreen: screen,
         assistantService: const MockAssistantService(),
+        phoneCamera: phoneCamera,
       ),
     ),
   );
@@ -132,6 +136,27 @@ void main() {
     await tester.tap(find.text('Change'));
     await settle(tester);
     await _capture(tester, '03c-prep-glasses-sheet');
+  }, skip: skip);
+
+  testWidgets('prep-camera-test', (tester) async {
+    await _pumpScreen(
+      tester,
+      AppScreen.prep,
+      phoneCamera: FakePhoneCamera(photo: FakePhoneCamera.pngPhoto),
+    );
+    await tester.drag(find.byType(ListView), const Offset(0, -2000));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Test camera'));
+    await settle(tester);
+    // Images decode outside the fake clock.
+    await tester.runAsync(
+      () => precacheImage(
+        MemoryImage(FakePhoneCamera.pngPhoto),
+        tester.element(find.text('Camera test')),
+      ),
+    );
+    await settle(tester);
+    await _capture(tester, '03d-prep-camera-test');
   }, skip: skip);
 
   testWidgets('cook-active', (tester) async {

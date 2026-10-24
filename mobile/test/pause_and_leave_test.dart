@@ -43,6 +43,9 @@ void main() {
   ) async {
     await _openStep1(tester);
     await tester.tap(find.text('Next'));
+    await tester.pump();
+    // Step 1 wasn't checked, so CookTogether asks first.
+    await tester.tap(find.text('Skip'));
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('Step 2 of 4'), findsOneWidget);
 
@@ -60,6 +63,29 @@ void main() {
     // Same step, and running again.
     expect(find.text('Step 2 of 4'), findsOneWidget);
     expect(find.byTooltip('Pause'), findsOneWidget);
+    await _finish(tester);
+  });
+
+  testWidgets('back while a session is paused is for the screen on top', (
+    tester,
+  ) async {
+    await _openStep1(tester);
+    await _openLeaveQuestion(tester);
+    await tester.tap(find.text('Pause and leave for now'));
+    await tester.pump(const Duration(seconds: 1));
+
+    // The hidden cooking screen must not catch the back gesture.
+    await tester.tap(find.text('Recipes'));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.binding.handlePopRoute();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Resume cooking'), findsOneWidget);
+
+    await tester.tap(find.text('Resume cooking'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Step 1 of 4'), findsOneWidget);
+    expect(find.text('Leave this session?'), findsNothing);
     await _finish(tester);
   });
 

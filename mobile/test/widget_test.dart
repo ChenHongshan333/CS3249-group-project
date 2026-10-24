@@ -166,6 +166,10 @@ void main() {
       expect(find.text('Step 4 of 4'), findsOneWidget);
       await tester.tap(find.text('Finish'));
       await tester.pump();
+      // Step 4 wasn't checked, so Finish asks first.
+      expect(find.text('Skip this step without checking?'), findsOneWidget);
+      await tester.tap(find.text('Skip'));
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 600));
 
       // 5. Finish screen & History
