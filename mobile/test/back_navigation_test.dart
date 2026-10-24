@@ -116,5 +116,9 @@ void main() {
     await tester.pump();
     expect(find.text('Leave this session?'), findsNothing);
     expect(find.text('Before we start'), findsOneWidget);
+
+    // Let toasts and plugin timeouts finish before the test ends.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 5));
   });
 }
