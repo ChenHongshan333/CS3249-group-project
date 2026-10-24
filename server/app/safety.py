@@ -46,6 +46,20 @@ ALLERGY_FALLBACK = (
     "so please check the labels yourself."
 )
 
+# Match start announcements, while leaving quoted instructions, questions
+# and conditional invitations in the opening chat.
+_OPENING_START = re.compile(
+    r"(?:^|[,;:]\s*)(?:let'?s\s+(?:start|begin|cook|get\s+(?:started|cooking))"
+    r"|we(?:'re|\s+are)\s+(?:starting|beginning)"
+    r"|i(?:'ll|\s+will)\s+(?:start|begin))\b",
+    re.IGNORECASE,
+)
+_DEFERRED_START = re.compile(
+    r"\b(?:say|tell|when|whenever|once|if|before|after|until|unless|"
+    r"not|don't|never|can't|cannot|won't)\b|\?",
+    re.IGNORECASE,
+)
+
 
 def _claims(sentence: str, patterns: list[re.Pattern]) -> bool:
     for clause in re.split(r"[,;:—–]|\bbut\b|\bthough\b|\balthough\b", sentence):
@@ -134,6 +148,11 @@ def parse_ask(raw: str, req: AskRequest) -> tuple[str, Action | None, Action | N
 
     offer = _valid_action(data.get("offer"), req)
     action = _valid_action(data.get("action"), req)
+    if req.phase == "opening" and action is None:
+        sentences = re.split(r"(?<=[.!?])\s+", reply.replace("\u2019", "'"))
+        if any(_OPENING_START.search(s) and not _DEFERRED_START.search(s) for s in sentences):
+            action = Action(type="start_cooking")
+            offer = None
     return reply, offer, action
 
 

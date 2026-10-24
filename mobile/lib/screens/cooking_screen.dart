@@ -496,10 +496,10 @@ class _CookingScreenState extends State<CookingScreen>
     );
 
     if (_opening && !_worksInOpening.contains(intent.type)) {
-      final lower = text.toLowerCase();
+      final lower = text.toLowerCase().replaceAll('’', "'");
       if (intent.type == VoiceIntentType.nextStep ||
           RegExp(
-            r"^(let'?s (start|go|cook)|start( cooking)?|i'?m ready|ready)[.!?]*$",
+            r"^(let'?s (start|go|cook)|start( cooking)?|i'?m ready|ready|i have everything|that'?s everything|got it all|yes|yes,? all set)[.!?]*$",
           ).hasMatch(lower)) {
         _startCooking();
       } else {
