@@ -154,7 +154,8 @@ def _add_routes(app: FastAPI) -> None:
             system=prompts.OPENING_SYSTEM if opening else prompts.ASK_SYSTEM,
             text=prompts.opening_context(req) if opening else prompts.ask_context(req),
             json_output=True,
-            max_tokens=200,
+            # Room for rewritten steps (adapt_steps) in the opening.
+            max_tokens=600 if opening else 200,
             timeout=s.ask_timeout_s,
         )
         reply, offer, action = safety.parse_ask(raw, req)
