@@ -67,25 +67,33 @@ class VoiceIntentParser {
     final trimmed = input.trim();
     final lower = trimmed.toLowerCase();
 
-    // 1. Timer cancellation / pause
-    if (RegExp(
-      r'\b(cancel|clear|remove|delete|reset)\b.*\btimer\b',
-    ).hasMatch(lower)) {
-      return ParsedVoiceIntent(type: VoiceIntentType.cancelTimer, rawText: trimmed);
-    }
-    if (RegExp(r'\b(pause|stop)\b.*\btimer\b').hasMatch(lower)) {
-      return ParsedVoiceIntent(type: VoiceIntentType.pauseTimer, rawText: trimmed);
-    }
-
-    // 2. Timer creation ("set a timer for 5 minutes", "start timer", "3 minute timer")
-    if (lower.contains('timer')) {
-      final parsedSeconds = _extractDurationSeconds(lower);
-      return ParsedVoiceIntent(
-        type: VoiceIntentType.startTimer,
-        rawText: trimmed,
-        timerSeconds: parsedSeconds ?? defaultStepTimerSeconds ?? 180,
-        timerLabel: defaultStepTimerLabel ?? 'Cooking timer',
-      );
+    // 1-2. Timer commands. A question that mentions a timer ("what do I do
+    // if it's sticky before the timer hits 3 minutes?") goes to the AI;
+    // only a request ("can you set a timer…") counts as a command.
+    if (lower.contains('timer') && (!_isQuestion(lower) || _isRequest(lower))) {
+      if (RegExp(
+        r'\b(cancel|clear|remove|delete|reset|stop|end|turn off)\b.*\btimer\b',
+      ).hasMatch(lower)) {
+        return ParsedVoiceIntent(
+          type: VoiceIntentType.cancelTimer,
+          rawText: trimmed,
+        );
+      }
+      if (RegExp(r'\bpause\b.*\btimer\b').hasMatch(lower)) {
+        return ParsedVoiceIntent(
+          type: VoiceIntentType.pauseTimer,
+          rawText: trimmed,
+        );
+      }
+      if (_isTimerRequest(lower)) {
+        final parsedSeconds = _extractDurationSeconds(lower);
+        return ParsedVoiceIntent(
+          type: VoiceIntentType.startTimer,
+          rawText: trimmed,
+          timerSeconds: parsedSeconds ?? defaultStepTimerSeconds ?? 180,
+          timerLabel: defaultStepTimerLabel ?? 'Cooking timer',
+        );
+      }
     }
 
     // 3. Explicit step check ("check this step", "check my progress", "verify step")
@@ -176,6 +184,28 @@ class VoiceIntentParser {
       requiresVision: false,
     );
   }
+
+  /// Asks something rather than tells CookTogether to do something.
+  static bool _isQuestion(String lower) =>
+      lower.contains('?') ||
+      RegExp(
+        r"^(what|how|why|when|where|which|who|should|shall|do|does|did|is|are|was|were|will|would|can|could|if|am)\b",
+      ).hasMatch(lower);
+
+  /// A polite command phrased as a question: "can you set a timer…".
+  static bool _isRequest(String lower) => RegExp(
+    r"^(can|could|would|will) you\b|^please\b",
+  ).hasMatch(lower);
+
+  /// Asks for a timer: "set / start / put on a timer…", or a short command
+  /// such as "timer", "3 minute timer" or "timer for 5 minutes".
+  static bool _isTimerRequest(String lower) =>
+      RegExp(
+        r'\b(set|start|begin|put on|put|add|make|run)\b[^.?!]*\btimer\b',
+      ).hasMatch(lower) ||
+      RegExp(
+        r"^(a |the )?([\w-]+[ -](minute|min|second|sec)s?[ -])?timer( for [^.?!]*)?[.!?]*$",
+      ).hasMatch(lower);
 
   static bool _hasVisualIntent(String lower) {
     final visualPatterns = [
