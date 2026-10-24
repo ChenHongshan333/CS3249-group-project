@@ -11,6 +11,10 @@ class UserPreferences {
   final bool voiceGuidance;
   final bool showCaptions;
   final bool handsFreeListening;
+
+  /// Saying "hold on" while CookTogether speaks cuts it off. Some phones
+  /// beep when listening starts, so it can be turned off.
+  final bool voiceInterrupt;
   final String serverBaseUrl;
 
   /// Developer only: take step photos from the Mock Device Kit instead of
@@ -28,6 +32,7 @@ class UserPreferences {
     this.voiceGuidance = true,
     this.showCaptions = true,
     this.handsFreeListening = true,
+    this.voiceInterrupt = true,
     this.serverBaseUrl = kDefaultBackendUrl,
     this.simulatedGlassesPhotos = false,
     this.forcedCheckResult = '',
@@ -39,6 +44,7 @@ class UserPreferences {
     bool? voiceGuidance,
     bool? showCaptions,
     bool? handsFreeListening,
+    bool? voiceInterrupt,
     String? serverBaseUrl,
     bool? simulatedGlassesPhotos,
     String? forcedCheckResult,
@@ -49,6 +55,7 @@ class UserPreferences {
       voiceGuidance: voiceGuidance ?? this.voiceGuidance,
       showCaptions: showCaptions ?? this.showCaptions,
       handsFreeListening: handsFreeListening ?? this.handsFreeListening,
+      voiceInterrupt: voiceInterrupt ?? this.voiceInterrupt,
       serverBaseUrl: serverBaseUrl ?? this.serverBaseUrl,
       simulatedGlassesPhotos:
           simulatedGlassesPhotos ?? this.simulatedGlassesPhotos,
@@ -62,6 +69,7 @@ class UserPreferences {
     'voiceGuidance': voiceGuidance,
     'showCaptions': showCaptions,
     'handsFreeListening': handsFreeListening,
+    'voiceInterrupt': voiceInterrupt,
     'serverBaseUrl': serverBaseUrl,
     'simulatedGlassesPhotos': simulatedGlassesPhotos,
     'forcedCheckResult': forcedCheckResult,
@@ -74,6 +82,7 @@ class UserPreferences {
       voiceGuidance: json['voiceGuidance'] as bool? ?? true,
       showCaptions: json['showCaptions'] as bool? ?? true,
       handsFreeListening: json['handsFreeListening'] as bool? ?? true,
+      voiceInterrupt: json['voiceInterrupt'] as bool? ?? true,
       serverBaseUrl: json['serverBaseUrl'] as String? ?? kDefaultBackendUrl,
       simulatedGlassesPhotos: json['simulatedGlassesPhotos'] as bool? ?? false,
       forcedCheckResult: json['forcedCheckResult'] as String? ?? '',
