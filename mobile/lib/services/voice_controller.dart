@@ -54,6 +54,10 @@ class VoiceController extends ChangeNotifier {
   /// Words heard in earlier listens of the sentence the user is still saying.
   String _sentence = '';
   Timer? _sentenceGapTimer;
+
+  /// True while CookTogether is asking the user something, so it listens
+  /// for the answer as soon as it finishes speaking, in either mode.
+  bool _awaitingAnswer = false;
   bool _isSessionActive = false;
   bool _isPaused = false;
   bool _audioMuted = false;
@@ -271,11 +275,32 @@ class VoiceController extends ChangeNotifier {
       _activityState = VoiceActivityState.idle;
       notifyListeners();
     }
+    if (_awaitingAnswer && !_isPaused) {
+      _listenForAnswer();
+      return;
+    }
     if (_listeningMode == VoiceListeningMode.handsFree &&
         !_isPaused &&
         !_autoRestartPaused) {
       _scheduleListeningRestart(delayMs: 650);
     }
+  }
+
+  /// Listens once for the answer to a question CookTogether just asked,
+  /// without needing a tap, even in tap-to-speak mode or after errors
+  /// paused automatic restarts.
+  void _listenForAnswer() {
+    _awaitingAnswer = false;
+    _autoRestartPaused = false;
+    _fastFailures = 0;
+    _restartListenTimer?.cancel();
+    _restartListenTimer = Timer(const Duration(milliseconds: 400), () {
+      if (_isSessionActive &&
+          !_isPaused &&
+          _activityState == VoiceActivityState.idle) {
+        _startListeningLoop(forceSingleTurn: true);
+      }
+    });
   }
 
   void _scheduleListeningRestart({int delayMs = 800}) {
@@ -450,9 +475,12 @@ class VoiceController extends ChangeNotifier {
   Future<void> speak(String text, {required bool voiceGuidanceEnabled}) async {
     _restartListenTimer?.cancel();
     _ttsSafetyTimer?.cancel();
+    _awaitingAnswer = text.contains('?');
 
     if (!_isSessionActive || _audioMuted || !voiceGuidanceEnabled) {
-      if (_listeningMode == VoiceListeningMode.handsFree && !_isPaused) {
+      if (_awaitingAnswer && !_isPaused) {
+        _listenForAnswer();
+      } else if (_listeningMode == VoiceListeningMode.handsFree && !_isPaused) {
         await _startListeningLoop();
       } else {
         _activityState = VoiceActivityState.idle;
