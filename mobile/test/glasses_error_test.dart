@@ -58,4 +58,23 @@ void main() {
       'Unfold your glasses to take a photo.',
     );
   });
+
+  test('the device ending a photo suggests updating the glasses (#86)', () {
+    const error = DeviceSessionError(
+      reason: DeviceSessionErrorCase.sessionEndedByDevice,
+      message: metaText,
+    );
+    expect(explainGlassesError(error), contains('Developer mode'));
+    expect(suggestsGlassesUpdate(error), isTrue);
+  });
+
+  test('a dropped link during a photo says the glasses disconnected', () {
+    const error = CaptureError(
+      reason: CaptureErrorCase.deviceDisconnected,
+      message: metaText,
+    );
+    expect(explainGlassesError(error), contains('disconnected'));
+    expect(explainGlassesError(error), isNot(contains('too long')));
+    expect(suggestsGlassesUpdate(error), isFalse);
+  });
 }
