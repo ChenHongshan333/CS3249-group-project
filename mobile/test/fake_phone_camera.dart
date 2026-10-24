@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:mobile/camera/phone_camera.dart';
@@ -10,6 +11,11 @@ class FakePhoneCamera implements PhoneCamera {
   /// A few bytes are enough; the demo assistant doesn't decode them.
   static final Uint8List samplePhoto = Uint8List.fromList(
     List<int>.generate(300, (i) => i % 256),
+  );
+
+  /// A tiny 4×3 colour PNG, for screens that decode and show the photo.
+  static final Uint8List pngPhoto = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAH0lEQVR4nGO4luD74URFxaqoqKYFDHAWUJQBzgKKAgCJ2BQCEgDZJQAAAABJRU5ErkJggg==',
   );
 
   final Uint8List? photo;
