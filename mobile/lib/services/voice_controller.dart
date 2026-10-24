@@ -92,6 +92,11 @@ class VoiceController extends ChangeNotifier {
   String _speakingText = '';
   DateTime? _interruptListenStart;
 
+  /// What CookTogether was saying when "hold on" cut it off, so "we can
+  /// continue" can say it again.
+  String? _heldReply;
+  String _speakingReply = '';
+
   static final _stopPhrase = RegExp(
     r"^(?:hold on|hang on|wait|stop|pause|one (?:moment|sec(?:ond)?)|"
     r"quiet|be quiet|shush|stop (?:talking|speaking))\b",
@@ -576,11 +581,19 @@ class VoiceController extends ChangeNotifier {
   /// "Hold on": stop talking and listen, as a mic tap does. The user may
   /// just want a moment, so silence after it doesn't ask again.
   Future<void> _interruptBySpeech() async {
+    _heldReply = _speakingReply;
     await _stopInterruptListen();
     await _stopSpeaking();
     _autoRestartPaused = false;
     _fastFailures = 0;
     await _startListeningLoop(forceSingleTurn: true, expectSpeech: false);
+  }
+
+  /// The reply "hold on" cut off, if any; reading it forgets it.
+  String? takeHeldReply() {
+    final reply = _heldReply;
+    _heldReply = null;
+    return reply;
   }
 
   /// The listen for "hold on" ended on its own; listen again while
@@ -798,6 +811,7 @@ class VoiceController extends ChangeNotifier {
         Duration(milliseconds: timeoutMs),
         _onTtsFinished,
       );
+      _speakingReply = text;
       _speakingText = text.toLowerCase();
       if (interruptByVoice) await _startInterruptListen();
     } catch (_) {
@@ -810,6 +824,7 @@ class VoiceController extends ChangeNotifier {
     _interruptListening = false;
     _bluetoothMic = null;
     _keepGlassesMic = false;
+    _heldReply = null;
     _audioRoute.clear();
     _clearSentence();
     _isSessionActive = false;

@@ -60,14 +60,15 @@ Write **Pass**, **Fail**, or what happened.
 | G3 | Close the app fully and reopen it | It reconnects to the real glasses by itself, not the "Mock Kit" | |
 | G4 | Turn the glasses off → on **Get ready**, check the status. Turn them on → **Reconnect** → **Reconnect glasses** | "Glasses disconnected", then "Connected to …". No simulated glasses are offered | |
 | **Opening chat** | | | |
-| O1 | On Get ready, leave **two ingredients unticked** → **Start cooking** | You hear "Today we're making …, right? Have you got the …?" naming those two | |
+| O1 | On Get ready, tap **Don't have** on two ingredients and tick the rest → **Start cooking** | **Start cooking** stays off until every ingredient is ticked or marked. Then you hear "Today we're making …, right? You said you don't have the …" naming those two | |
 | O2 | Say "I don't have *(one of them)*" | A short, sensible reply (it works without it, or a swap) | |
 | O3 | Say "I've got the *(other one)*" | It gets ticked on screen | |
+| O3b | Suggest your own swap, e.g. "Could I use lemon instead of some of the oil?" | One sentence on whether it is healthier and fits the dish. If it is, it says which step it changed and "Changed for you" appears in the chat | |
 | O4 | Say "Let's start" | Step 1 is read out | |
 | **Voice through the glasses** | | | |
 | V1 | Wear the glasses; say "next step" | The app moves on. Note whether the glasses mic or the phone mic heard you | |
 | V2 | Listen to a step being read | Note whether the sound comes from the glasses or the phone | |
-| V3 | While it is talking, say "hold on" (also try "wait" and "stop") | It stops talking at once and listens. Note whether the phone beeps while it talks, and whether it ever stops by itself without you speaking. If the beeps are annoying, turn off **Profile → Say "hold on" to interrupt** | |
+| V3 | While it is talking, say "hold on" (also try "wait" and "stop"). Then say "we can continue" | It stops talking at once and listens. After "we can continue", it says the cut-off line again from the start. Note whether the phone beeps while it talks, and whether it ever stops by itself without you speaking. If the beeps are annoying, turn off **Profile → Say "hold on" to interrupt** | |
 | **Questions and offers** | | | |
 | Q1 | On a step, ask "How small should the pieces be?" | One or two sentences about this step, not a demo answer | |
 | Q2 | On a step with waiting time, ask "How long does this take?" | It answers and asks "Would you like a … timer?" | |

@@ -102,8 +102,9 @@ def test_opening_uses_its_own_prompt_and_context(client, fake_llm):
     assert res.status_code == 200
     call = fake_llm.calls[0]
     assert "short chat before step 1" in call["system"]
-    assert "Ingredients already ticked: chicken thigh" in call["text"]
-    assert "Ingredients not ticked yet: cherry tomatoes, garlic" in call["text"]
+    assert "Ingredients the cook has: chicken thigh" in call["text"]
+    assert "Ingredients the cook doesn't have: cherry tomatoes, garlic" in call["text"]
+    assert "You said you don't have the <missing ingredients>" in call["system"]
 
 
 def test_opening_needs_no_step_text(client, fake_llm):
@@ -304,3 +305,63 @@ def test_opening_has_room_for_rewritten_steps(client, fake_llm):
     client.post("/ask", json=ADAPT_BODY)
     client.post("/ask", json=ASK_BODY)
     assert fake_llm.calls[0]["max_tokens"] > fake_llm.calls[1]["max_tokens"]
+
+
+# The cook's own healthier swap (#22)
+
+SWAP_BODY = {**OPENING_BODY, "question": "Could I use less oil and a squeeze of lemon?", "steps": STEPS}
+
+
+def custom(healthier=True, fits=True, *changes, swap="Lemon instead of some oil") -> dict:
+    action = {"type": "custom_swap", "swap": swap, "healthier": healthier, "fits": fits}
+    if changes:
+        action["steps"] = [{"step": s, "text": t} for s, t in changes]
+    return action
+
+
+def test_custom_swap_is_in_the_opening_prompt(client, fake_llm):
+    client.post("/ask", json=SWAP_BODY)
+    assert "custom_swap" in fake_llm.calls[0]["system"]
+
+
+def test_custom_swap_with_steps_is_returned(client, fake_llm):
+    fake_llm.next_reply = reply_json(
+        reply="Yes, that's lighter and still tasty. I've changed step 2.",
+        action=custom(True, True, (1, "Pan-fry the chicken thigh in a teaspoon of oil.")),
+    )
+    body = client.post("/ask", json=SWAP_BODY).json()
+    assert body["action"] == custom(True, True, (1, "Pan-fry the chicken thigh in a teaspoon of oil."))
+
+
+@pytest.mark.parametrize("healthier, fits", [(False, True), (True, False)])
+def test_custom_swap_that_doesnt_work_changes_no_steps(client, fake_llm, healthier, fits):
+    fake_llm.next_reply = reply_json(
+        reply="That isn't really healthier.",
+        action=custom(healthier, fits, (1, "Deep-fry the chicken thigh.")),
+    )
+    assert client.post("/ask", json=SWAP_BODY).json()["action"] == custom(healthier, fits)
+
+
+@pytest.mark.parametrize("missing", ["swap", "healthier", "fits"])
+def test_custom_swap_needs_a_name_and_a_verdict(client, fake_llm, missing):
+    action = custom()
+    del action[missing]
+    fake_llm.next_reply = reply_json(action=action)
+    assert "action" not in client.post("/ask", json=SWAP_BODY).json()
+
+
+def test_custom_swap_is_opening_only(client, fake_llm):
+    fake_llm.next_reply = reply_json(action=custom())
+    assert "action" not in client.post("/ask", json={**ASK_BODY, "steps": STEPS}).json()
+
+
+def test_custom_swap_is_logged_on_its_own(client):
+    res = client.post(
+        "/log",
+        json={
+            "sessionId": "a1",
+            "type": "custom_swap",
+            "data": {"swap": "Lemon instead of some oil", "healthier": True, "fits": True, "applied": True},
+        },
+    )
+    assert res.json() == {"ok": True}
