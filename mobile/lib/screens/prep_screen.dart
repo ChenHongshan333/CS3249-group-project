@@ -83,6 +83,25 @@ class _PrepScreenState extends State<PrepScreen> {
     });
   }
 
+  /// Marks an ingredient missing, and turns off swaps that need it.
+  void _markMissing(String ingredient) {
+    setState(() {
+      _missingIngredients.add(ingredient);
+      _acceptedSwapIds.removeWhere(
+        (id) => widget.recipe.swaps.any(
+          (s) => s.id == id && s.needs.contains(ingredient),
+        ),
+      );
+    });
+  }
+
+  /// Why a swap can't be chosen, or null when it can.
+  String? _swapUnavailable(HealthySwap swap) {
+    final missing = swap.needs.where(_missingIngredients.contains).toList();
+    if (missing.isEmpty) return null;
+    return "Needs ${missing.join(' and ')}, which you don't have";
+  }
+
   /// A tap ticks or unticks; a missing ingredient that turns up is ticked.
   void _toggleIngredient(String ingredient) {
     setState(() {
@@ -178,9 +197,7 @@ class _PrepScreenState extends State<PrepScreen> {
                             foregroundColor: CookTogetherTheme.inkMuted,
                             textStyle: textTheme.bodyMedium,
                           ),
-                          onPressed: () => setState(
-                            () => _missingIngredients.add(ingredient),
-                          ),
+                          onPressed: () => _markMissing(ingredient),
                           child: const Text("Don't have"),
                         ),
                   onTap: () => _toggleIngredient(ingredient),
@@ -195,6 +212,7 @@ class _PrepScreenState extends State<PrepScreen> {
                   _SwapRow(
                     swap: swap,
                     accepted: _acceptedSwapIds.contains(swap.id),
+                    unavailable: _swapUnavailable(swap),
                     onChanged: (accepted) => setState(() {
                       if (accepted) {
                         _acceptedSwapIds.add(swap.id);
@@ -320,20 +338,25 @@ class _PrepScreenState extends State<PrepScreen> {
 class _SwapRow extends StatelessWidget {
   final HealthySwap swap;
   final bool accepted;
+
+  /// Why the swap can't be chosen, shown under a greyed-out title.
+  final String? unavailable;
   final ValueChanged<bool> onChanged;
 
   const _SwapRow({
     required this.swap,
     required this.accepted,
+    this.unavailable,
     required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final enabled = unavailable == null;
     return MergeSemantics(
       child: InkWell(
-        onTap: () => onChanged(!accepted),
+        onTap: enabled ? () => onChanged(!accepted) : null,
         borderRadius: BorderRadius.circular(CookTogetherTheme.radiusControl),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
@@ -343,7 +366,18 @@ class _SwapRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(swap.title, style: textTheme.bodyLarge),
+                    Text(
+                      swap.title,
+                      style: enabled
+                          ? textTheme.bodyLarge
+                          : textTheme.bodyLarge?.copyWith(
+                              color: CookTogetherTheme.inkMuted,
+                            ),
+                    ),
+                    if (unavailable case final reason?) ...[
+                      const SizedBox(height: 2),
+                      Text(reason, style: textTheme.bodyMedium),
+                    ],
                     // The title says enough to decide; the how-to shows
                     // once the swap is chosen.
                     if (accepted) ...[
@@ -354,7 +388,7 @@ class _SwapRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              Switch(value: accepted, onChanged: onChanged),
+              Switch(value: accepted, onChanged: enabled ? onChanged : null),
             ],
           ),
         ),

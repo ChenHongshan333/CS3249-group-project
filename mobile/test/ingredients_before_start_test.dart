@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/main.dart';
+import 'package:mobile/models/recipe.dart';
 import 'package:mobile/services/assistant_service.dart';
 import 'package:mobile/theme/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -124,5 +125,56 @@ void main() {
     expect(tester.widget<CheckRow>(row('Cucumber')).checked, isTrue);
     expect(find.text("I'll help with the 1 you don't have"), findsOneWidget);
     await finish(tester);
+  });
+
+  // A swap that needs a missing ingredient is greyed out, but still listed
+  // so every participant sees the same swaps.
+  Switch swapSwitch(WidgetTester tester, String title) => tester.widget<Switch>(
+    find.descendant(
+      of: find.ancestor(of: find.text(title), matching: find.byType(InkWell)),
+      matching: find.byType(Switch),
+    ),
+  );
+
+  testWidgets('a swap that needs a missing ingredient is greyed out', (
+    tester,
+  ) async {
+    await openGetReady(tester);
+    expect(swapSwitch(tester, 'Add more chickpeas').onChanged, isNotNull);
+
+    await dontHave(tester, 'Chickpeas');
+    expect(swapSwitch(tester, 'Add more chickpeas').onChanged, isNull);
+    expect(find.text("Needs chickpeas, which you don't have"), findsOneWidget);
+    // Other swaps are unaffected.
+    expect(
+      swapSwitch(tester, 'Lemon instead of extra oil').onChanged,
+      isNotNull,
+    );
+
+    // Found it after all.
+    await tick(tester, 'Chickpeas');
+    expect(swapSwitch(tester, 'Add more chickpeas').onChanged, isNotNull);
+    await finish(tester);
+  });
+
+  testWidgets('marking an ingredient missing turns off its chosen swap', (
+    tester,
+  ) async {
+    await openGetReady(tester);
+    await tester.tap(find.text('Add more chickpeas'));
+    await tester.pump();
+    expect(swapSwitch(tester, 'Add more chickpeas').value, isTrue);
+
+    await dontHave(tester, 'Chickpeas');
+    expect(swapSwitch(tester, 'Add more chickpeas').value, isFalse);
+    await finish(tester);
+  });
+
+  test("every swap's needs are ingredients of its recipe", () {
+    for (final recipe in kStarterRecipes) {
+      for (final swap in recipe.swaps) {
+        expect(recipe.ingredients, containsAll(swap.needs), reason: swap.id);
+      }
+    }
   });
 }

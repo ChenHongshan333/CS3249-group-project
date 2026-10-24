@@ -36,10 +36,16 @@ class HealthySwap {
   final String title;
   final String detail;
 
+  /// Recipe ingredients this swap uses. When one is marked "Don't have" on
+  /// Get ready, the swap is greyed out but still listed, so every
+  /// participant sees the same swaps.
+  final List<String> needs;
+
   const HealthySwap({
     required this.id,
     required this.title,
     required this.detail,
+    this.needs = const [],
   });
 }
 
@@ -100,12 +106,14 @@ const List<Recipe> kStarterRecipes = [
       HealthySwap(
         id: 'salad-lemon-dressing',
         title: 'Lemon instead of extra oil',
+        needs: ['olive oil'],
         detail:
             'Dress with one teaspoon of olive oil plus a squeeze of lemon instead of two tablespoons of oil.',
       ),
       HealthySwap(
         id: 'salad-more-chickpeas',
         title: 'Add more chickpeas',
+        needs: ['chickpeas'],
         detail:
             'Use the whole can of chickpeas for extra protein and fibre, so the bowl keeps you full for longer.',
       ),
@@ -169,12 +177,14 @@ const List<Recipe> kStarterRecipes = [
       HealthySwap(
         id: 'noodles-less-soy',
         title: 'Half the soy sauce',
+        needs: ['soy sauce'],
         detail:
             'Start with half the soy sauce and add a squeeze of lime for flavour, which cuts the salt.',
       ),
       HealthySwap(
         id: 'noodles-extra-veg',
         title: 'Double the vegetables',
+        needs: ['carrot', 'bell pepper'],
         detail:
             'Use two carrots and a whole pepper, and slightly fewer noodles, for a lighter bowl.',
       ),
@@ -321,6 +331,7 @@ const List<Recipe> kStarterRecipes = [
       HealthySwap(
         id: 'wrap-more-spinach',
         title: 'Extra spinach, fewer eggs',
+        needs: ['spinach'],
         detail:
             'Use two eggs per two wraps instead of three, and add an extra handful of spinach.',
       ),
