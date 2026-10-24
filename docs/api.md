@@ -64,6 +64,7 @@ Both use the same shape. The app ignores any `type` it does not know.
 | `start_cooking` | | Opening only: the user is ready for step 1. |
 | `tick_ingredient` | `names`, a list of the request's `ingredients` (also `name`, the first of them, for older apps) | Opening only: "I've got the garlic and the sauce now." |
 | `adapt_steps` | `steps`, the changed steps only: `[{ "step": 0, "text": "Rinse the greens and cucumber." }]`. `step` indexes the request's `steps`; `text` is the whole new instruction | Opening only (added 24 Oct): the cook has decided how to manage without a missing ingredient, by leaving it out or using a substitute. The app replaces those steps and shows the changes in the chat. |
+| `custom_swap` | `swap`, the cook's idea in a few words; `healthier` and `fits`, both true or false; `steps` as in `adapt_steps`, only when both are true | Opening only (added 24 Oct): the cook suggests their own healthier swap, such as "Can I use Greek yoghurt instead of mayo?". `reply` says in one sentence whether it is healthier and fits the dish, and why. When both are true, the app changes `steps` as for `adapt_steps`. Either way the app logs it as `custom_swap`. |
 
 Example of an offer, then the user accepting it:
 
@@ -114,6 +115,26 @@ When an ingredient is missing, CookAlong says whether the recipe still works wit
 ```
 
 From then on the app sends the adapted text as `stepText`, so answers while cooking match the changed steps.
+
+The cook can also suggest their own healthier swap before step 1, for an ingredient they have. CookAlong judges it and returns `custom_swap`:
+
+```json
+// Request (phase "opening", with "steps")
+{ "question": "Could I use Greek yoghurt instead of the mayo?", "...": "..." }
+// Response
+{
+  "reply": "Yes, Greek yoghurt has far less fat and works well in the dressing. I've changed step 3.",
+  "action": {
+    "type": "custom_swap",
+    "swap": "Greek yoghurt instead of mayo",
+    "healthier": true,
+    "fits": true,
+    "steps": [{ "step": 2, "text": "Stir two tablespoons of Greek yoghurt into the dressing." }]
+  }
+}
+```
+
+If it isn't healthier or doesn't fit, `healthier` or `fits` is false, there are no `steps`, and the reply says why in a few words.
 
 ## `POST /check-step`
 
@@ -175,6 +196,7 @@ Request:
 | `question` | `{ "step": 1, "question": "...", "reply": "...", "ms": 1840 }` |
 | `check` | `{ "step": 1, "status": "not_yet", "ms": 2650 }` |
 | `swap` | `{ "swapId": "yoghurt-instead-of-mayo", "accepted": true }` |
+| `custom_swap` | `{ "swap": "Greek yoghurt instead of mayo", "healthier": true, "fits": true, "applied": true, "reason": "Yes, Greek yoghurt has far less fat…" }`: a swap the cook suggested (added 24 Oct). Kept apart from `swap`, so the fixed swaps stay the same for every participant. `applied` is true when steps changed; `reason` is CookAlong's reply |
 | `misheard` | `{ "heard": "next step", "meant": "repeat" }` |
 | `opening_end` | `{ "ms": 41200, "turns": 3, "missing": ["cherry tomatoes"] }`: how long the opening took, how many user replies, and what was still unticked at step 1 |
 | `session_end` | `{ "completed": true }` |
@@ -203,5 +225,6 @@ Agreed by team poll on 23 Oct.
 
 - **Recipes live in the app.** The app sends the current step's text with each request, so the backend never holds a second copy that could drift. If the backend later turns recipe links into recipes, recipes move to the backend and the app loads them from a new `GET /recipes`.
 - **The opening conversation confirms, it does not choose.** Agreed 23 Oct: the user picks the recipe in the app, and CookAlong opens with "Today we're making …, right?". The Get ready checklist stays; the opening only asks about ingredients that are not ticked.
+- **Cooks may suggest their own swaps** (#22, team poll 24 Oct). The study needs the same fixed swaps for every participant, so suggestions are allowed but logged as `custom_swap`, apart from the fixed `swap` events.
 - **Offers are confirmed through `/ask`.** When CookAlong proposes something ("Would you like a timer?"), the app sends the offer back with the user's next words, so "please" or "no thanks" is understood without the app parsing it.
 - **No streaming for now.** `/ask` returns the whole reply in one response. Reply times are measured from the log (`ms`); streaming is reconsidered later if replies are too slow after trying a faster model and shorter prompts.
