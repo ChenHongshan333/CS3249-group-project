@@ -46,6 +46,8 @@ jobs:
           channel: stable
           flutter-version: 3.47.7
           cache: true
+      # Roboto from the SDK, which the text-fit and screenshot tests use.
+      - run: flutter precache --universal
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test

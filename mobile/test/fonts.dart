@@ -21,6 +21,12 @@ Future<void> loadRealFonts() async {
   // flutter_tester lives in <sdk>/bin/cache/artifacts/engine/<platform>/.
   final engineDir = File(Platform.resolvedExecutable).parent;
   final fontDir = '${engineDir.parent.parent.path}/material_fonts';
+  // Without Roboto, tests would quietly measure with the square test font.
+  if (!File('$fontDir/roboto-regular.ttf').existsSync()) {
+    throw StateError(
+      'Roboto not found in $fontDir. Run "flutter precache --universal".',
+    );
+  }
   await _loadFont('Roboto', [
     for (final w in ['light', 'regular', 'medium', 'bold', 'black'])
       '$fontDir/roboto-$w.ttf',
