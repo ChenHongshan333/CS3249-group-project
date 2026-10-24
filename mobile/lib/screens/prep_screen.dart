@@ -169,6 +169,11 @@ class _PrepScreenState extends State<PrepScreen> {
                       }
                     }),
                   ),
+                const SizedBox(height: 8),
+                Text(
+                  'Have your own idea? Tell me before step 1.',
+                  style: textTheme.bodyMedium,
+                ),
               ],
               const SizedBox(height: 32),
               const SectionTitle('How I listen'),
