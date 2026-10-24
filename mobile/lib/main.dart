@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -57,6 +59,10 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
   static const String _kPrefsKey = 'cooktogether.preferences';
   static const String _kHistoryKey = 'cooktogether.history';
 
+  /// Each dish photo is stored under its own key (this prefix plus the
+  /// history item's id), so the history list stays small.
+  static const String _kPhotoKeyPrefix = 'cooktogether.photo.';
+
   late AppScreen _screen = widget.initialScreen;
   bool _welcomeOpen = false;
 
@@ -64,6 +70,9 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
   AppScreen _prepReturnScreen = AppScreen.recipes;
   UserPreferences _preferences = const UserPreferences();
   List<CookingHistoryItem> _history = const [];
+
+  /// Photos of finished dishes, by history item id.
+  Map<String, Uint8List> _dishPhotos = const {};
   String _selectedRecipeId = kStarterRecipes.first.id;
 
   /// The recipe of the cooking session, kept while it's paused and left so
@@ -119,11 +128,20 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
       final savedHistory = CookingHistoryItem.decodeList(
         prefs.getString(_kHistoryKey),
       );
+      final savedPhotos = <String, Uint8List>{};
+      for (final item in savedHistory) {
+        final raw = prefs.getString('$_kPhotoKeyPrefix${item.id}');
+        if (raw == null) continue;
+        try {
+          savedPhotos[item.id] = base64Decode(raw);
+        } catch (_) {}
+      }
       if (!mounted) return;
       setState(() {
         _welcomeOpen = widget.showInitialWelcome && !seen;
         _preferences = savedPrefs;
         _history = savedHistory;
+        _dishPhotos = savedPhotos;
       });
     } catch (_) {}
     // Wake the backend now, so it's ready by the time the cook asks.
@@ -232,6 +250,17 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
         _kHistoryKey,
         CookingHistoryItem.encodeList(nextHistory),
       );
+    } catch (_) {}
+  }
+
+  /// Saves the photo of the dish just finished with its history item.
+  Future<void> _saveDishPhoto(Uint8List photo) async {
+    if (_history.isEmpty) return;
+    final id = _history.first.id;
+    setState(() => _dishPhotos = {..._dishPhotos, id: photo});
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('$_kPhotoKeyPrefix$id', base64Encode(photo));
     } catch (_) {}
   }
 
@@ -421,11 +450,18 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           elapsedSeconds: _lastElapsedSeconds,
           visualChecksCount: _lastVisualChecksCount,
           onBackToHome: () => setState(() => _screen = AppScreen.home),
+          glassesService: _glassesService,
+          phoneCamera: _phoneCamera,
+          allowSimulatedGlasses: _preferences.simulatedGlassesPhotos,
+          dishPhoto: _history.isEmpty ? null : _dishPhotos[_history.first.id],
+          onDishPhoto: _saveDishPhoto,
+          onShowToast: _showToast,
         );
 
       case AppScreen.history:
         return HistoryScreen(
           history: _history,
+          dishPhotos: _dishPhotos,
           onChooseRecipe: () => setState(() => _screen = AppScreen.recipes),
           onBack: () => setState(() => _screen = AppScreen.home),
         );

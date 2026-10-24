@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../models/recipe.dart';
@@ -8,12 +10,16 @@ import '../theme/widgets.dart';
 /// Completed cooking sessions, newest first.
 class HistoryScreen extends StatelessWidget {
   final List<CookingHistoryItem> history;
+
+  /// Photos of finished dishes, by history item id.
+  final Map<String, Uint8List> dishPhotos;
   final VoidCallback onChooseRecipe;
   final VoidCallback onBack;
 
   const HistoryScreen({
     super.key,
     required this.history,
+    this.dishPhotos = const {},
     required this.onChooseRecipe,
     required this.onBack,
   });
@@ -71,14 +77,35 @@ class HistoryScreen extends StatelessWidget {
                     final recipe = kStarterRecipes.where(
                       (r) => r.id == item.recipeId,
                     );
+                    final photo = dishPhotos[item.id];
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Row(
                         children: [
-                          EmojiTile(
-                            emoji: item.recipeIcon,
-                            tone: recipe.isEmpty ? 'green' : recipe.first.tone,
-                          ),
+                          if (photo != null)
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                CookTogetherTheme.radiusCard,
+                              ),
+                              child: Image.memory(
+                                photo,
+                                width: 56,
+                                height: 56,
+                                fit: BoxFit.cover,
+                                semanticLabel: 'Photo of ${item.recipeName}',
+                                errorBuilder: (_, _, _) => EmojiTile(
+                                  emoji: item.recipeIcon,
+                                  tone: 'green',
+                                ),
+                              ),
+                            )
+                          else
+                            EmojiTile(
+                              emoji: item.recipeIcon,
+                              tone: recipe.isEmpty
+                                  ? 'green'
+                                  : recipe.first.tone,
+                            ),
                           const SizedBox(width: 14),
                           Expanded(
                             child: Column(
