@@ -159,16 +159,27 @@ void main() {
     await tester.pump();
     expect(find.text(words), findsOneWidget);
     expect(find.byKey(const ValueKey('live-transcript')), findsNothing);
-    expect(find.byKey(const ValueKey('chat-thinking')), findsOneWidget);
+    // The chat scrolls, so look beyond what's on screen.
+    expect(
+      find.byKey(const ValueKey('chat-thinking'), skipOffstage: false),
+      findsOneWidget,
+    );
     expect(assistant.asked.single['question'], words);
 
     assistant.pendingReply!.complete(
       const AssistantResponse(reply: 'You can use chopped bell pepper.'),
     );
     await tester.pump();
-    expect(find.byKey(const ValueKey('chat-thinking')), findsNothing);
-    expect(find.text('You can use chopped bell pepper.'), findsOneWidget);
-    expect(find.text(words), findsOneWidget);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('chat-thinking'), skipOffstage: false),
+      findsNothing,
+    );
+    expect(
+      find.text('You can use chopped bell pepper.', skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(find.text(words, skipOffstage: false), findsOneWidget);
     await _finish(tester);
   });
 
