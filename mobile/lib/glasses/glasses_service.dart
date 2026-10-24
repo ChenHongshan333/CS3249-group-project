@@ -466,6 +466,30 @@ class MetaWearablesDatGlassesService extends GlassesService {
       );
     }
 
+    try {
+      return await _takeGlassesPhoto(recipe, stepIndex, userPrompt);
+    } on DatError catch (e) {
+      // Meta's recommended fix for a missing camera permission: ask for it
+      // (Meta AI shows the prompt), then try once more.
+      if (e.recoveryAction == DatRecoveryAction.grantPermission &&
+          await _askForCameraPermission()) {
+        try {
+          return await _takeGlassesPhoto(recipe, stepIndex, userPrompt);
+        } on DatError catch (retryError) {
+          throw GlassesCaptureException(explainGlassesError(retryError));
+        }
+      }
+      throw GlassesCaptureException(explainGlassesError(e));
+    }
+  }
+
+  /// Starts the camera stream only for one photo, then stops it, so the
+  /// glasses' capture light is on only while the photo is taken.
+  Future<VisionCapture> _takeGlassesPhoto(
+    Recipe recipe,
+    int stepIndex,
+    String? userPrompt,
+  ) async {
     _isCapturing = true;
     _lastStatusNote = 'Taking a photo with $_deviceName…';
     notifyListeners();
@@ -493,27 +517,23 @@ class MetaWearablesDatGlassesService extends GlassesService {
       throw const GlassesCaptureException(
         'The glasses took too long to take a photo. Try again.',
       );
-    } on StreamError catch (e) {
-      throw GlassesCaptureException(switch (e.reason) {
-        StreamErrorCase.hingesClosed => 'Unfold your glasses to take a photo.',
-        StreamErrorCase.thermalHot =>
-          'Your glasses are too warm. Let them cool down.',
-        _ => 'The glasses camera could not start: ${e.message}',
-      });
-    } on PermissionError {
-      throw const GlassesCaptureException(
-        'Allow camera access for CookTogether in the Meta AI app.',
-      );
-    } on DatError catch (e) {
-      throw GlassesCaptureException(
-        'The glasses could not take a photo: ${e.message}',
-      );
     } finally {
       try {
         await MetaWearablesDat.stopStreamSession();
       } catch (_) {}
       _isCapturing = false;
       notifyListeners();
+    }
+  }
+
+  Future<bool> _askForCameraPermission() async {
+    try {
+      final status = await MetaWearablesDat.requestPermission(
+        Permission.camera,
+      );
+      return status.isGranted;
+    } on DatError {
+      return false;
     }
   }
 
@@ -540,4 +560,43 @@ class MetaWearablesDatGlassesService extends GlassesService {
       userQuestion: userPrompt,
     );
   }
+}
+
+/// A short instruction for a glasses error that a user can act on. Meta's own
+/// message is only logged: it can name screens that don't exist in the
+/// user's version of the Meta AI app.
+String explainGlassesError(DatError error) {
+  debugPrint('Glasses photo failed: $error');
+  if (error is StreamError) {
+    switch (error.reason) {
+      case StreamErrorCase.hingesClosed:
+        return 'Unfold your glasses to take a photo.';
+      case StreamErrorCase.thermalHot:
+        return 'Your glasses are too warm. Let them cool down, then try again.';
+      case StreamErrorCase.batteryLow:
+        return 'Your glasses are low on battery. Charge them, then try again.';
+      default:
+        break;
+    }
+  }
+  return switch (error.recoveryAction) {
+    DatRecoveryAction.grantPermission =>
+      'CookTogether needs camera access on your glasses. Allow it in the '
+          'Meta AI app, then try again.',
+    DatRecoveryAction.openDatGlassesAppUpdate =>
+      'Your glasses need an update for CookTogether. Open the Meta AI app, '
+          'go to your glasses and install it, then try again.',
+    DatRecoveryAction.openFirmwareUpdate =>
+      'Your glasses need a software update. Update them in the Meta AI app, '
+          'then try again.',
+    DatRecoveryAction.updateHostApp =>
+      'This version of CookTogether is too old for your glasses. Install the '
+          'latest build.',
+    DatRecoveryAction.checkMetaAiAndRetry =>
+      'Check your glasses in the Meta AI app, then try again.',
+    DatRecoveryAction.connectGlasses =>
+      'Turn on, unfold and wear your glasses, then try again.',
+    DatRecoveryAction.suggestUpdate ||
+    DatRecoveryAction.none => "Your glasses couldn't take a photo. Try again.",
+  };
 }
