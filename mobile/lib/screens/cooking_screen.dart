@@ -217,7 +217,8 @@ class _CookingScreenState extends State<CookingScreen>
     final listed = missing.length == 1
         ? missing.first
         : '${missing.sublist(0, missing.length - 1).join(', ')} and ${missing.last}';
-    return "Today we're making $name, right? Have you got the $listed?";
+    return "Today we're making $name, right? You said you don't have the "
+        '$listed. Shall we sort that out first?';
   }
 
   /// Leaves the opening, once, and records how it went.
@@ -943,7 +944,11 @@ class _CookingScreenState extends State<CookingScreen>
         }.contains(action.type);
     if (!leadsIn) _appendAiMessage(response.reply, stepIndex: askedOnStep);
     if (action != null) {
-      _runAction(action, lead: leadsIn ? response.reply : null);
+      _runAction(
+        action,
+        lead: leadsIn ? response.reply : null,
+        reply: response.reply,
+      );
     }
 
     widget.assistantService.logEvent(
@@ -959,7 +964,7 @@ class _CookingScreenState extends State<CookingScreen>
   }
 
   /// Does what the assistant asked, the same way the buttons would.
-  void _runAction(AssistantAction action, {String? lead}) {
+  void _runAction(AssistantAction action, {String? lead, String? reply}) {
     switch (action.type) {
       case 'start_timer' when !_opening:
         _startOrUpdateTimer(
@@ -983,6 +988,8 @@ class _CookingScreenState extends State<CookingScreen>
         _startCooking(lead: lead);
       case 'adapt_steps' when _opening:
         _adaptSteps(action.steps);
+      case 'custom_swap' when _opening:
+        _customSwap(action, reason: reply ?? '');
       case 'tick_ingredient' when _opening:
         final names = {...action.names, ?action.name};
         setState(
@@ -998,12 +1005,15 @@ class _CookingScreenState extends State<CookingScreen>
 
   /// Replaces steps for a missing ingredient, and notes the changes in the
   /// chat. The reply already said so aloud, so the note isn't spoken.
-  void _adaptSteps(Map<int, String> changes) {
+  /// Returns whether any step changed.
+  ///
+  /// The cook's own swaps log as `custom_swap` instead of `swap` (#22).
+  bool _adaptSteps(Map<int, String> changes, {bool logAsSwap = true}) {
     final valid = {
       for (final e in changes.entries)
         if (e.key >= 0 && e.key < _recipe.steps.length) e.key: e.value,
     };
-    if (valid.isEmpty) return;
+    if (valid.isEmpty) return false;
     final steps = [
       for (final (i, step) in _recipe.steps.indexed)
         valid.containsKey(i) ? step.copyWith(instruction: valid[i]) : step,
@@ -1026,11 +1036,33 @@ class _CookingScreenState extends State<CookingScreen>
       );
     });
     _scrollToBottom();
+    if (logAsSwap) {
+      widget.assistantService.logEvent(
+        sessionId: _sessionId,
+        type: 'swap',
+        data: {
+          'adaptedSteps': [for (final i in valid.keys) i],
+        },
+      );
+    }
+    return true;
+  }
+
+  /// A swap the cook suggested (#22). Steps change only when CookAlong
+  /// judged it healthier and a fit. It is logged apart from the fixed
+  /// swaps, so they stay the same for every participant.
+  void _customSwap(AssistantAction action, {required String reason}) {
+    final works = action.healthier == true && action.fits == true;
+    final applied = works && _adaptSteps(action.steps, logAsSwap: false);
     widget.assistantService.logEvent(
       sessionId: _sessionId,
-      type: 'swap',
+      type: 'custom_swap',
       data: {
-        'adaptedSteps': [for (final i in valid.keys) i],
+        'swap': action.swap,
+        'healthier': action.healthier,
+        'fits': action.fits,
+        'applied': applied,
+        'reason': reason,
       },
     );
   }
@@ -1346,7 +1378,8 @@ class _CookingScreenState extends State<CookingScreen>
               style: textTheme.bodyLarge,
             )
           else ...[
-            Text('Still to check', style: textTheme.titleSmall),
+            // Tick one if it turns up after all.
+            Text("You don't have", style: textTheme.titleSmall),
             for (final ingredient in _openingAsked)
               CheckRow(
                 label: ingredient[0].toUpperCase() + ingredient.substring(1),
@@ -1870,22 +1903,35 @@ class _CookingScreenState extends State<CookingScreen>
                 Row(
                   children: [
                     Expanded(
-                      child: SizedBox(
-                        height: 56,
-                        child: OutlinedButton.icon(
-                          // Nothing to check before step 1.
-                          onPressed: _isPaused || _opening
-                              ? null
-                              : () => _triggerVisualCheck(),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                          ),
-                          icon: const Icon(Icons.visibility_outlined),
-                          // Shrink rather than wrap on narrow phones with
-                          // large text.
-                          label: const FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text('Check', maxLines: 1),
+                      // A tap on the disabled button says why it is off.
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _isPaused || _opening
+                            ? () => widget.onShowToast(
+                                _isPaused
+                                    ? 'Resume the session first.'
+                                    : 'Check works once you start step 1.',
+                              )
+                            : null,
+                        child: SizedBox(
+                          height: 56,
+                          child: OutlinedButton.icon(
+                            // Nothing to check before step 1.
+                            onPressed: _isPaused || _opening
+                                ? null
+                                : () => _triggerVisualCheck(),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                            ),
+                            icon: const Icon(Icons.visibility_outlined),
+                            // Shrink rather than wrap on narrow phones with
+                            // large text.
+                            label: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Check', maxLines: 1),
+                            ),
                           ),
                         ),
                       ),

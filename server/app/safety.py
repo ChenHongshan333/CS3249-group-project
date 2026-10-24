@@ -192,11 +192,30 @@ def _valid_action(value: object, req: AskRequest) -> Action | None:
         ))
         return Action(type="tick_ingredient", name=names[0], names=names) if names else None
     if action.type == "adapt_steps":
-        return _valid_adapt_steps(action, req)
+        steps = _valid_step_changes(action, req)
+        return Action(type="adapt_steps", steps=steps) if steps else None
+    if action.type == "custom_swap":
+        return _valid_custom_swap(action, req)
     return Action(type=action.type)
 
 
-def _valid_adapt_steps(action: Action, req: AskRequest) -> Action | None:
+def _valid_custom_swap(action: Action, req: AskRequest) -> Action | None:
+    """The cook's own swap needs a name and a verdict. Steps change only
+    when it is both healthier and fits the dish."""
+    swap = (action.swap or "").strip()
+    if not swap or action.healthier is None or action.fits is None:
+        return None
+    steps = _valid_step_changes(action, req) if action.healthier and action.fits else None
+    return Action(
+        type="custom_swap",
+        swap=swap,
+        healthier=action.healthier,
+        fits=action.fits,
+        steps=steps or None,
+    )
+
+
+def _valid_step_changes(action: Action, req: AskRequest) -> list[StepChange]:
     """Keeps changes to steps the app sent that really change them. The new
     text is read aloud later, so it gets the same safety pass as replies."""
     changes: dict[int, str] = {}
@@ -206,9 +225,4 @@ def _valid_adapt_steps(action: Action, req: AskRequest) -> Action | None:
         text, _ = make_safe(change.text.strip())
         if text and text != req.steps[change.step].text.strip():
             changes[change.step] = text
-    if not changes:
-        return None
-    return Action(
-        type="adapt_steps",
-        steps=[StepChange(step=i, text=t) for i, t in sorted(changes.items())],
-    )
+    return [StepChange(step=i, text=t) for i, t in sorted(changes.items())]
