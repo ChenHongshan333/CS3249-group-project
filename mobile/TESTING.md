@@ -81,6 +81,8 @@ Write **Pass**, **Fail**, or what happened.
 | P5 | Turn the glasses off → **Check** | It says the glasses couldn't take the photo, then the phone camera opens. Take a photo: you get a reply about it | |
 | P6 | **Check**, then close the phone camera without taking a photo | It says no photo was taken. Nothing is sent to the AI | |
 | P7 | On **Get ready**, tap **Test camera**. Then fold the glasses and tap **Try again** | The glasses photo is shown with "Your camera works". Folded, it says to unfold them and that the phone camera will be used instead | |
+| **Finish** | | | |
+| F1 | Finish a recipe → **Take a photo of your dish** → **With my glasses**. Then **Retake photo** → **With my phone** | Each photo shows on the Finish screen. Under **History**, the meal shows the last photo instead of the emoji, also after closing and reopening the app | |
 | **Timing** | | | |
 | T1 | Note roughly how long Q1 and P1 take from asking to hearing the answer | Under 6 s and 8 s | |
 
