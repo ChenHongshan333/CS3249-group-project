@@ -10,6 +10,7 @@ import '../models/conversation.dart';
 import '../models/recipe.dart';
 import '../models/user_preferences.dart';
 import '../services/assistant_service.dart';
+import '../services/cue_sounds.dart';
 import '../services/voice_controller.dart';
 import '../services/voice_intent_parser.dart';
 import '../theme/app_theme.dart';
@@ -30,6 +31,7 @@ class CookingScreen extends StatefulWidget {
   final AssistantService assistantService;
   final VoiceController voiceController;
   final PhoneCamera? phoneCamera;
+  final CueSounds? cueSounds;
   final Set<String> initialCheckedIngredients;
   final VoiceListeningMode initialListeningMode;
   final Set<String> acceptedSwapIds;
@@ -58,6 +60,7 @@ class CookingScreen extends StatefulWidget {
     required this.assistantService,
     required this.voiceController,
     this.phoneCamera,
+    this.cueSounds,
     required this.initialCheckedIngredients,
     required this.initialListeningMode,
     this.acceptedSwapIds = const {},
@@ -105,6 +108,11 @@ class _CookingScreenState extends State<CookingScreen>
   late Set<String> _checkedIngredients;
   final List<ChatMessage> _messages = [];
   final List<CookingTimer> _timers = [];
+
+  /// Finished timers fade out on their own after [_finishedTimerShown].
+  static const _finishedTimerShown = Duration(seconds: 8);
+  final Set<String> _fadingTimerIds = {};
+  final Map<String, Timer> _fadeTimers = {};
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -140,6 +148,8 @@ class _CookingScreenState extends State<CookingScreen>
 
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || _isPaused) return;
+      final finished = <CookingTimer>[];
+      final reminders = <String>[];
       setState(() {
         _elapsedSeconds++;
         for (int i = 0; i < _timers.length; i++) {
@@ -150,17 +160,18 @@ class _CookingScreenState extends State<CookingScreen>
               remainingSeconds: nextRemaining,
               isRunning: nextRemaining > 0,
             );
-            if (nextRemaining == 0) {
-              widget.onShowToast(
-                'Timer finished: ${t.label} — check your food!',
-              );
-              _appendAiMessage(
-                'Your ${t.label.toLowerCase()} timer just finished! Take a look or say "check this step" so we can inspect it together.',
-              );
-            }
+            if (nextRemaining == 0) finished.add(t);
+            final reminder = _timerReminder(t, nextRemaining);
+            if (reminder != null) reminders.add(reminder);
           }
         }
       });
+      for (final t in finished) {
+        _onTimerFinished(t);
+      }
+      for (final reminder in reminders) {
+        _speakOnly(reminder);
+      }
     });
 
     // A fixed first line, so every participant hears the same opening.
@@ -261,6 +272,9 @@ class _CookingScreenState extends State<CookingScreen>
   @override
   void dispose() {
     _clockTimer?.cancel();
+    for (final t in _fadeTimers.values) {
+      t.cancel();
+    }
     _orbPulseController.dispose();
     _textController.dispose();
     _scrollController.dispose();
@@ -349,6 +363,53 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
+  /// Spoken reminders for timers of 3 minutes or more: halfway (when that
+  /// isn't close to the end) and 1 minute before the end.
+  String? _timerReminder(CookingTimer t, int remaining) {
+    if (t.totalSeconds < 180) return null;
+    final name = t.label.toLowerCase();
+    if (remaining == 60) return '1 minute left on your $name timer.';
+    final half = t.totalSeconds ~/ 2;
+    if (remaining == half && half - 60 >= 30) {
+      final minutes = (half / 60).round();
+      return 'Halfway there: $minutes minutes left on your $name timer.';
+    }
+    return null;
+  }
+
+  /// A ding, then CookTogether says so; the row fades out a little later.
+  void _onTimerFinished(CookingTimer t) {
+    widget.cueSounds?.play(Cue.timerDone);
+    widget.onShowToast('Timer finished: ${t.label} — check your food!');
+    // After the ding, so the two don't talk over each other.
+    Timer(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
+      _appendAiMessage(
+        'Your ${t.label.toLowerCase()} timer just finished! Take a look or say "check this step" so we can inspect it together.',
+      );
+    });
+    _fadeTimers[t.id]?.cancel();
+    _fadeTimers[t.id] = Timer(_finishedTimerShown, () {
+      if (mounted) setState(() => _fadingTimerIds.add(t.id));
+    });
+  }
+
+  void _removeTimer(String id) {
+    _fadeTimers.remove(id)?.cancel();
+    _fadingTimerIds.remove(id);
+    setState(() => _timers.removeWhere((t) => t.id == id));
+  }
+
+  /// Says [text] without adding it to the chat: the timer row already
+  /// shows the time left.
+  void _speakOnly(String text) {
+    if (_isPaused) return;
+    widget.voiceController.speak(
+      text,
+      voiceGuidanceEnabled: widget.preferences.voiceGuidance,
+    );
+  }
+
   void _startOrUpdateTimer({required int seconds, required String label}) {
     setState(() {
       // One timer per step: a new one for this step replaces the old one,
@@ -371,6 +432,7 @@ class _CookingScreenState extends State<CookingScreen>
         _timers.add(timer);
       }
     });
+    widget.cueSounds?.play(Cue.timerStart);
     final mins = (seconds / 60).ceil();
     widget.onShowToast('$label started ($mins min)');
   }
@@ -929,8 +991,9 @@ class _CookingScreenState extends State<CookingScreen>
   /// Ends this step's timer without a "finished" announcement, for when the
   /// user says the step is done or moves on.
   void _endTimerForStep(int step) {
-    if (!_timers.any((t) => t.stepIndex == step)) return;
-    setState(() => _timers.removeWhere((t) => t.stepIndex == step));
+    for (final t in _timers.where((t) => t.stepIndex == step).toList()) {
+      _removeTimer(t.id);
+    }
   }
 
   bool get _isLastStep => _currentStep == widget.recipe.steps.length - 1;
@@ -1253,7 +1316,15 @@ class _CookingScreenState extends State<CookingScreen>
           ),
           for (final timer in _timers) ...[
             const SizedBox(height: 12),
-            _buildTimerRow(timer),
+            AnimatedOpacity(
+              key: ValueKey(timer.id),
+              opacity: _fadingTimerIds.contains(timer.id) ? 0 : 1,
+              duration: const Duration(milliseconds: 600),
+              onEnd: () {
+                if (_fadingTimerIds.contains(timer.id)) _removeTimer(timer.id);
+              },
+              child: _buildTimerRow(timer),
+            ),
           ],
           if (showSuggestion) ...[
             const SizedBox(height: 12),
@@ -1329,8 +1400,7 @@ class _CookingScreenState extends State<CookingScreen>
             ),
           IconButton(
             tooltip: 'Dismiss timer',
-            onPressed: () =>
-                setState(() => _timers.removeWhere((t) => t.id == timer.id)),
+            onPressed: () => _removeTimer(timer.id),
             icon: const Icon(Icons.close_rounded, size: 20),
           ),
         ],

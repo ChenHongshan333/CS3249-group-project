@@ -72,6 +72,7 @@ Write **Pass**, **Fail**, or what happened.
 | Q1 | On a step, ask "How small should the pieces be?" | One or two sentences about this step, not a demo answer | |
 | Q2 | On a step with waiting time, ask "How long does this take?" | It answers and asks "Would you like a … timer?" | |
 | Q3 | Say "Yes please" | A timer appears on screen and counts down | |
+| Q4 | Say "set a timer for 4 minutes", and let it run | A short sound when it starts; spoken reminders at 2 minutes and 1 minute left; a ding and "…timer just finished" at the end; the timer row disappears by itself a few seconds later. Note whether the sounds cut off speech or listening | |
 | **Photo check** | | | |
 | P1 | Point at the food → tap **Check** (or say "check this") | The glasses take a photo (capture light comes on briefly), then a reply that describes what's in front of you | |
 | P2 | Fold the glasses → **Check** | It says to unfold them. It does not give a food verdict | |
