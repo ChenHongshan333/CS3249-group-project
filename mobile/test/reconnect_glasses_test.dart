@@ -129,6 +129,8 @@ void main() {
     await pumpApp(tester, AppScreen.profile);
     expect(find.text('Test touchpad tap'), findsNothing);
 
+    // Clear of the Save bar.
+    await scrollToEnd(tester);
     await tester.tap(find.text('Developer'));
     await tester.pumpAndSettle();
     await scrollToEnd(tester);
