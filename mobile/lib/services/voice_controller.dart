@@ -372,14 +372,19 @@ class VoiceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Handles a tap on the microphone: stops listening if it is listening,
-  /// otherwise starts. A tap always retries, even after errors stopped the
+  /// Handles a tap on the microphone: starts listening, or in tap-to-speak
+  /// mode stops it and sends what was heard. A tap always retries, even after errors stopped the
   /// automatic restarts. It never makes up an utterance.
   Future<MicTapResult> tapMic() async {
     if (_isPaused) return MicTapResult.stopped;
     if (_activityState == VoiceActivityState.listening &&
         _speechAvailable &&
         _speech.isListening) {
+      // Hands-free is already listening: a tap means "listen to me", so
+      // keep going rather than cutting off what the user is saying.
+      if (_listeningMode == VoiceListeningMode.handsFree) {
+        return MicTapResult.listening;
+      }
       _keepHeardWords();
       await stopListening();
       _sendSentence();
@@ -387,7 +392,6 @@ class VoiceController extends ChangeNotifier {
     }
     _autoRestartPaused = false;
     _fastFailures = 0;
-    if (_bluetoothMic == null) await _routeToBluetoothMic();
     if (!await _ensureSpeechInitialized()) return MicTapResult.unavailable;
     await _startListeningLoop(forceSingleTurn: true);
     return MicTapResult.listening;
