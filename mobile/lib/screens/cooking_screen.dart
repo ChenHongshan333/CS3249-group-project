@@ -1858,22 +1858,35 @@ class _CookingScreenState extends State<CookingScreen>
                 Row(
                   children: [
                     Expanded(
-                      child: SizedBox(
-                        height: 56,
-                        child: OutlinedButton.icon(
-                          // Nothing to check before step 1.
-                          onPressed: _isPaused || _opening
-                              ? null
-                              : () => _triggerVisualCheck(),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                          ),
-                          icon: const Icon(Icons.visibility_outlined),
-                          // Shrink rather than wrap on narrow phones with
-                          // large text.
-                          label: const FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text('Check', maxLines: 1),
+                      // A tap on the disabled button says why it is off.
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _isPaused || _opening
+                            ? () => widget.onShowToast(
+                                _isPaused
+                                    ? 'Resume the session first.'
+                                    : 'Check works once you start step 1.',
+                              )
+                            : null,
+                        child: SizedBox(
+                          height: 56,
+                          child: OutlinedButton.icon(
+                            // Nothing to check before step 1.
+                            onPressed: _isPaused || _opening
+                                ? null
+                                : () => _triggerVisualCheck(),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                            ),
+                            icon: const Icon(Icons.visibility_outlined),
+                            // Shrink rather than wrap on narrow phones with
+                            // large text.
+                            label: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Check', maxLines: 1),
+                            ),
                           ),
                         ),
                       ),
