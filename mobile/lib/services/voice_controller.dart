@@ -31,7 +31,7 @@ class VoiceController extends ChangeNotifier {
   /// Android ends a listen at the first short pause. Words heard before a
   /// pause are kept and listening restarts at once; the sentence is only
   /// sent after this much silence, so a pause doesn't cut it in two.
-  static const Duration _sentenceGap = Duration(milliseconds: 2500);
+  static const Duration _sentenceGap = Duration(milliseconds: 1500);
 
   final SpeechToText _speech = SpeechToText();
   final FlutterTts _tts = FlutterTts();
