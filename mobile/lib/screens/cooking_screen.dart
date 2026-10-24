@@ -71,6 +71,10 @@ class _CookingScreenState extends State<CookingScreen>
   bool _isPaused = false;
   bool _composerOpen = false;
   bool _confirmEndOpen = false;
+  bool _confirmSkipOpen = false;
+
+  /// Steps the user has checked with a photo, so Next doesn't ask again.
+  final Set<int> _checkedSteps = {};
 
   // The short chat before step 1 (docs/api.md, "The opening conversation").
   bool _opening = true;
@@ -472,6 +476,7 @@ class _CookingScreenState extends State<CookingScreen>
     }
 
     final startTime = DateTime.now();
+    final checkedStep = _currentStep;
     final forced = widget.preferences.forcedCheckResult.isEmpty
         ? null
         : VisualCheckStatus.fromWire(widget.preferences.forcedCheckResult);
@@ -509,7 +514,10 @@ class _CookingScreenState extends State<CookingScreen>
       _appendAiMessage(response.reply);
       return;
     }
-    setState(() => _visualChecksCount++);
+    setState(() {
+      _visualChecksCount++;
+      _checkedSteps.add(checkedStep);
+    });
 
     _appendAiMessage(
       response.reply,
@@ -556,6 +564,18 @@ class _CookingScreenState extends State<CookingScreen>
       return;
     }
 
+    // An answer to "Skip this step without checking?". Anything else closes
+    // the question and is handled as usual ("check" takes the photo).
+    if (_confirmSkipOpen) {
+      setState(() => _confirmSkipOpen = false);
+      if (RegExp(
+        r"^(yes|yeah|yep|ok(ay)?|sure|skip( it)?|next( step)?|move on|go ahead)\b",
+      ).hasMatch(text.toLowerCase())) {
+        _moveOn(fromVoice: true);
+        return;
+      }
+    }
+
     // "It's done" ends the step's timer quietly, so it doesn't announce
     // later; the reply carries on as usual.
     if (RegExp(
@@ -569,11 +589,7 @@ class _CookingScreenState extends State<CookingScreen>
 
     switch (intent.type) {
       case VoiceIntentType.nextStep:
-        if (_currentStep == widget.recipe.steps.length - 1) {
-          _completeSession();
-        } else {
-          _goToStep(_currentStep + 1, fromVoice: true);
-        }
+        _nextOrFinish(fromVoice: true);
         return;
 
       case VoiceIntentType.previousStep:
@@ -832,11 +848,27 @@ class _CookingScreenState extends State<CookingScreen>
 
   bool get _isLastStep => _currentStep == widget.recipe.steps.length - 1;
 
-  void _nextOrFinish() {
+  /// Next and "next step" ask first when this step hasn't been checked.
+  /// Users can always skip; this only confirms.
+  void _nextOrFinish({bool fromVoice = false}) {
+    if (!_isPaused && !_checkedSteps.contains(_currentStep)) {
+      setState(() => _confirmSkipOpen = true);
+      if (fromVoice) {
+        _appendAiMessage(
+          "You haven't checked this step yet. Say skip to move on, or check "
+          'and I will take a look.',
+        );
+      }
+      return;
+    }
+    _moveOn(fromVoice: fromVoice);
+  }
+
+  void _moveOn({bool fromVoice = false}) {
     if (_isLastStep) {
       _completeSession();
     } else {
-      _goToStep(_currentStep + 1);
+      _goToStep(_currentStep + 1, fromVoice: fromVoice);
     }
   }
 
@@ -873,6 +905,7 @@ class _CookingScreenState extends State<CookingScreen>
             _buildDock(),
           ],
         ),
+        if (_confirmSkipOpen) _buildConfirmSkipModal(),
         if (_confirmEndOpen) _buildConfirmEndModal(),
       ],
     );
@@ -1600,6 +1633,56 @@ class _CookingScreenState extends State<CookingScreen>
               color: Colors.white,
               size: 32,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConfirmSkipModal() {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      color: const Color(0x8A263023),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(24),
+      child: Material(
+        color: CookTogetherTheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Skip this step without checking?',
+                style: textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Check takes a photo and tells you if it looks ready.',
+                style: textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 24),
+              PrimaryButton(
+                label: 'Check first',
+                onPressed: () {
+                  setState(() => _confirmSkipOpen = false);
+                  _triggerVisualCheck();
+                },
+              ),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () {
+                    setState(() => _confirmSkipOpen = false);
+                    _moveOn();
+                  },
+                  child: const Text('Skip'),
+                ),
+              ),
+            ],
           ),
         ),
       ),
