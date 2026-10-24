@@ -21,6 +21,10 @@ class UserPreferences {
   /// the phone camera when no real glasses are connected.
   final bool simulatedGlassesPhotos;
 
+  /// Developer only: record speech with the phone's mic even when the
+  /// glasses are connected, for when their mic link keeps dropping (#40).
+  final bool phoneMicOnly;
+
   /// Developer only: every step check gives this result (a
   /// VisualCheckStatus wire value) without a photo or the backend, so demos
   /// and tests work without a camera. Empty means off.
@@ -35,6 +39,7 @@ class UserPreferences {
     this.voiceInterrupt = true,
     this.serverBaseUrl = kDefaultBackendUrl,
     this.simulatedGlassesPhotos = false,
+    this.phoneMicOnly = false,
     this.forcedCheckResult = '',
   });
 
@@ -47,6 +52,7 @@ class UserPreferences {
     bool? voiceInterrupt,
     String? serverBaseUrl,
     bool? simulatedGlassesPhotos,
+    bool? phoneMicOnly,
     String? forcedCheckResult,
   }) {
     return UserPreferences(
@@ -59,6 +65,7 @@ class UserPreferences {
       serverBaseUrl: serverBaseUrl ?? this.serverBaseUrl,
       simulatedGlassesPhotos:
           simulatedGlassesPhotos ?? this.simulatedGlassesPhotos,
+      phoneMicOnly: phoneMicOnly ?? this.phoneMicOnly,
       forcedCheckResult: forcedCheckResult ?? this.forcedCheckResult,
     );
   }
@@ -72,6 +79,7 @@ class UserPreferences {
     'voiceInterrupt': voiceInterrupt,
     'serverBaseUrl': serverBaseUrl,
     'simulatedGlassesPhotos': simulatedGlassesPhotos,
+    'phoneMicOnly': phoneMicOnly,
     'forcedCheckResult': forcedCheckResult,
   };
 
@@ -85,6 +93,7 @@ class UserPreferences {
       voiceInterrupt: json['voiceInterrupt'] as bool? ?? true,
       serverBaseUrl: json['serverBaseUrl'] as String? ?? kDefaultBackendUrl,
       simulatedGlassesPhotos: json['simulatedGlassesPhotos'] as bool? ?? false,
+      phoneMicOnly: json['phoneMicOnly'] as bool? ?? false,
       forcedCheckResult: json['forcedCheckResult'] as String? ?? '',
     );
   }

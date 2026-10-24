@@ -271,6 +271,7 @@ class _CookingScreenState extends State<CookingScreen>
 
   Future<void> _initializeVoiceAndAnnounce(String openingText) async {
     widget.voiceController.interruptByVoice = widget.preferences.voiceInterrupt;
+    widget.voiceController.useGlassesMic = !widget.preferences.phoneMicOnly;
     await widget.voiceController.initialize(
       initialMode: widget.initialListeningMode,
       initialMuted: !widget.preferences.voiceGuidance,
