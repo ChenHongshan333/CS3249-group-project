@@ -10,7 +10,6 @@ class FinishScreen extends StatelessWidget {
   final int elapsedSeconds;
   final int visualChecksCount;
   final VoidCallback onBackToHome;
-  final VoidCallback onViewHistory;
 
   const FinishScreen({
     super.key,
@@ -18,7 +17,6 @@ class FinishScreen extends StatelessWidget {
     required this.elapsedSeconds,
     required this.visualChecksCount,
     required this.onBackToHome,
-    required this.onViewHistory,
   });
 
   @override
@@ -71,16 +69,7 @@ class FinishScreen extends StatelessWidget {
           ),
         ),
         BottomActionBar(
-          child: Column(
-            children: [
-              PrimaryButton(label: 'Done', onPressed: onBackToHome),
-              const SizedBox(height: 4),
-              TextButton(
-                onPressed: onViewHistory,
-                child: const Text('View cooking history'),
-              ),
-            ],
-          ),
+          child: PrimaryButton(label: 'Done', onPressed: onBackToHome),
         ),
       ],
     );

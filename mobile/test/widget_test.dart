@@ -170,7 +170,10 @@ void main() {
 
       // 5. Finish screen & History
       expect(find.text('You made it!'), findsOneWidget);
-      await tester.tap(find.text('View cooking history'));
+      expect(find.text('View cooking history'), findsNothing);
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('History'));
       await tester.pumpAndSettle();
 
       expect(find.text('Cooking history'), findsOneWidget);
