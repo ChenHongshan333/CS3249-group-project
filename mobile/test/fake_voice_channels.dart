@@ -21,6 +21,9 @@ class FakeVoiceChannels {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
   void install() {
+    speechCalls.clear();
+    ttsCalls.clear();
+    spoken.clear();
     _messenger.setMockMethodCallHandler(_speech, (call) async {
       speechCalls.add(call.method);
       return switch (call.method) {

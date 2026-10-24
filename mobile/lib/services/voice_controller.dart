@@ -24,9 +24,12 @@ enum MicTapResult {
 /// Manages on-device Speech-to-Text (`speech_to_text`) and Text-to-Speech (`flutter_tts`)
 /// for the Cooking screen, supporting both Hands-Free Continuous Listening and Tap-to-Speak.
 class VoiceController extends ChangeNotifier {
-  /// Automatic restarts stop after this many listens in a row end almost
-  /// immediately with nothing heard. A tap on the microphone always retries.
-  static const int _maxFastFailures = 3;
+  /// Listens that end almost at once with nothing heard (kitchen noise,
+  /// Android's quick "no match") are retried at once at first, then after
+  /// a growing wait from this many in a row, and automatic restarts stop
+  /// after [_maxFastFailures]. A tap on the microphone always retries.
+  static const int _backOffAfter = 3;
+  static const int _maxFastFailures = 6;
 
   /// Android ends a listen at the first short pause. Words heard before a
   /// pause are kept and listening restarts at once; the sentence is only
@@ -63,6 +66,15 @@ class VoiceController extends ChangeNotifier {
   /// True while CookTogether is asking the user something, so it listens
   /// for the answer as soon as it finishes speaking, in either mode.
   bool _awaitingAnswer = false;
+
+  /// True for a listen the user is expecting to be heard in: after a mic
+  /// tap or a question. If it hears nothing, CookTogether asks once more.
+  bool _expectingSpeech = false;
+  bool _askedAgain = false;
+
+  /// Android often reports both an error and "done" for one listen; only
+  /// the first counts, so one failed listen isn't counted twice.
+  bool _listenEndHandled = true;
   bool _isSessionActive = false;
   bool _isPaused = false;
   bool _audioMuted = false;
@@ -78,6 +90,18 @@ class VoiceController extends ChangeNotifier {
   String? _statusHint;
 
   void Function(String transcript)? onFinalUtterance;
+
+  /// A listen the user expected to be heard in heard nothing. Called once;
+  /// the next time, listening stops instead.
+  VoidCallback? onNothingHeard;
+
+  /// Listening stopped and won't restart on its own; the user has to tap
+  /// the mic.
+  VoidCallback? onListeningStopped;
+
+  /// True when hands-free listening gave up after repeated failures.
+  bool get listeningStopped =>
+      _autoRestartPaused && _listeningMode == VoiceListeningMode.handsFree;
 
   VoiceListeningMode get listeningMode => _listeningMode;
   VoiceActivityState get activityState => _activityState;
@@ -179,41 +203,75 @@ class VoiceController extends ChangeNotifier {
   /// words already heard and listens again so the sentence can continue;
   /// otherwise restarts listening in hands-free mode.
   void _onListenEnded() {
-    final heardSomething = _partialTranscript.trim().isNotEmpty;
+    if (_listenEndHandled) return;
+    _listenEndHandled = true;
+    // Words kept from a final result earlier in this listen count too.
+    final heardSomething =
+        _partialTranscript.trim().isNotEmpty || _turnDelivered;
     _keepHeardWords();
+    final expectedSpeech = _expectingSpeech;
+    _expectingSpeech = false;
+    if (heardSomething) _askedAgain = false;
 
     final startedAt = _lastListenStartTime;
     final elapsedMs = startedAt != null
         ? DateTime.now().difference(startedAt).inMilliseconds
         : 9999;
+    var gaveUp = false;
     if (heardSomething || elapsedMs >= 2000) {
       _fastFailures = 0;
-    } else if (++_fastFailures >= _maxFastFailures) {
+    } else if (++_fastFailures >= _maxFastFailures &&
+        _listeningMode == VoiceListeningMode.handsFree) {
       // Listens keep ending at once with nothing heard (for example
       // Code=203 on the iOS Simulator). Stop restarting on our own so the
       // audio engine isn't reallocated in a loop; a mic tap still works.
       _autoRestartPaused = true;
       _restartListenTimer?.cancel();
+      gaveUp = true;
     }
 
     if (_activityState == VoiceActivityState.listening) {
       _activityState = VoiceActivityState.idle;
       notifyListeners();
     }
+    if (_isPaused || !_isSessionActive) return;
 
-    if (_sentence.isNotEmpty && !_isPaused) {
+    if (_sentence.isNotEmpty) {
       // Mid-sentence: listen again straight away for the rest of it.
       _startListeningLoop(forceSingleTurn: true);
       return;
     }
 
+    if (expectedSpeech && !heardSomething) {
+      if (!_askedAgain) {
+        // Ask once more ("Sorry, I didn't catch that…"); the question
+        // makes CookTogether listen again when it finishes speaking.
+        _askedAgain = true;
+        onNothingHeard?.call();
+        return;
+      }
+      _askedAgain = false;
+      if (_listeningMode == VoiceListeningMode.tapToSpeak) {
+        onListeningStopped?.call();
+        return;
+      }
+    }
+
+    if (gaveUp) {
+      onListeningStopped?.call();
+      return;
+    }
     if (_listeningMode == VoiceListeningMode.handsFree &&
-        !_isPaused &&
         !_autoRestartPaused &&
         _activityState == VoiceActivityState.idle) {
-      _scheduleListeningRestart();
+      _scheduleListeningRestart(delayMs: _restartDelayMs);
     }
   }
+
+  /// 0.8 s normally; after repeated quick failures 2, 4, then 8 s.
+  int get _restartDelayMs => _fastFailures < _backOffAfter
+      ? 800
+      : 2000 << (_fastFailures - _backOffAfter);
 
   /// Adds the words of the listen that just ended to the sentence, so
   /// nothing is lost, and waits [_sentenceGap] for more before sending it.
@@ -442,6 +500,9 @@ class VoiceController extends ChangeNotifier {
       // Show "listening" only once the recognizer is really starting.
       _partialTranscript = '';
       _turnDelivered = false;
+      // Not when continuing a sentence: words were already heard.
+      _expectingSpeech = forceSingleTurn && _sentence.isEmpty;
+      _listenEndHandled = false;
       _activityState = VoiceActivityState.listening;
       _statusHint =
           _listeningMode == VoiceListeningMode.handsFree && !forceSingleTurn
