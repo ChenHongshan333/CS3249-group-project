@@ -853,7 +853,7 @@ class _CookingScreenState extends State<CookingScreen>
               children: [
                 Text(
                   widget.recipe.name,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: textTheme.titleSmall,
                 ),
@@ -1410,7 +1410,8 @@ class _CookingScreenState extends State<CookingScreen>
               children: [
                 Text(
                   statusLabel,
-                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: textTheme.bodyMedium?.copyWith(
                     color: partial.isNotEmpty ? CookTogetherTheme.ink : null,
@@ -1427,8 +1428,16 @@ class _CookingScreenState extends State<CookingScreen>
                           onPressed: _isPaused || _opening
                               ? null
                               : () => _triggerVisualCheck(),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
                           icon: const Icon(Icons.visibility_outlined),
-                          label: const Text('Check'),
+                          // Shrink rather than wrap on narrow phones with
+                          // large text.
+                          label: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Check', maxLines: 1),
+                          ),
                         ),
                       ),
                     ),
@@ -1451,14 +1460,16 @@ class _CookingScreenState extends State<CookingScreen>
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Flexible(
-                                child: Text(
-                                  _opening
-                                      ? 'Start'
-                                      : _isLastStep
-                                      ? 'Finish'
-                                      : 'Next',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    _opening
+                                        ? 'Start'
+                                        : _isLastStep
+                                        ? 'Finish'
+                                        : 'Next',
+                                    maxLines: 1,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 6),
