@@ -17,18 +17,24 @@ class Turn(_Body):
 
 
 ActionType = Literal[
-    "start_timer", "next_step", "repeat_step", "start_cooking", "tick_ingredient", "adapt_steps"
+    "start_timer",
+    "next_step",
+    "repeat_step",
+    "start_cooking",
+    "tick_ingredient",
+    "adapt_steps",
+    "custom_swap",
 ]
 
 # Which actions make sense in each phase. Anything else from the model is dropped.
 PHASE_ACTIONS: dict[str, set[str]] = {
-    "opening": {"start_cooking", "tick_ingredient", "adapt_steps"},
+    "opening": {"start_cooking", "tick_ingredient", "adapt_steps", "custom_swap"},
     "cooking": {"start_timer", "next_step", "repeat_step"},
 }
 
 
 class StepChange(_Body):
-    """One step rewritten for a missing ingredient (adapt_steps)."""
+    """One step rewritten for a missing ingredient or the cook's own swap."""
 
     step: int = Field(ge=0)
     text: str = Field(min_length=1, max_length=600)
@@ -43,6 +49,10 @@ class Action(_Body):
     name: str | None = Field(default=None, max_length=100)
     names: list[str] | None = Field(default=None, max_length=40)
     steps: list[StepChange] | None = Field(default=None, max_length=20)
+    # custom_swap: the cook's idea and CookAlong's verdict on it.
+    swap: str | None = Field(default=None, max_length=100)
+    healthier: bool | None = None
+    fits: bool | None = None
 
 
 class Ingredient(_Body):
@@ -120,6 +130,7 @@ EventType = Literal[
     "question",
     "check",
     "swap",
+    "custom_swap",
     "misheard",
     "opening_end",
     "session_end",

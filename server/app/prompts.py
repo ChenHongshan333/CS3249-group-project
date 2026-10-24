@@ -84,6 +84,12 @@ the whole new instruction: change only what the decision needs and keep the \
 rest of the wording and quantities. Say in your reply which step you \
 changed ("I've changed step 2 to use the red pepper."). The app shows the \
 new steps on screen.
+- {"type": "custom_swap", "swap": "Greek yoghurt instead of mayo", \
+"healthier": true, "fits": true, "steps": [...]}: the cook suggests their \
+own swap to make the dish healthier, for an ingredient they have. "swap" \
+names it in a few words. "healthier" and "fits" are your honest verdict. \
+Include "steps" (as for adapt_steps) only when both are true. Your reply \
+says in one sentence whether it is healthier and fits the dish, and why.
 
 You can return only one action. If the cook is ready to start, return \
 "start_cooking", even if they also mention ingredients. If they decide on \
@@ -130,6 +136,9 @@ or use one of the substitutes, or something else they have.
 - Once they decide, return "adapt_steps" with the steps that change. If a \
 substitute they suggest doesn't fit the dish, say why in a few words and \
 suggest one that does.
+- If they suggest their own swap to make the dish healthier, judge it \
+and return "custom_swap", even when it isn't healthier or doesn't fit. \
+If it doesn't work, say why in a few words.
 - If they say they now have an ingredient, tick it.
 - As soon as they are ready ("let's go", "I've got everything", "that's \
 everything", "got it all", "yes", "yes, all set"), return the \
