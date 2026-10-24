@@ -14,6 +14,10 @@ class HomeScreen extends StatelessWidget {
   final VoidCallback onOpenWelcomeOverview;
   final ValueChanged<String> onCookAgain;
 
+  /// A session the user paused and left, if any.
+  final Recipe? pausedRecipe;
+  final VoidCallback? onResumeSession;
+
   const HomeScreen({
     super.key,
     required this.glassesService,
@@ -21,6 +25,8 @@ class HomeScreen extends StatelessWidget {
     required this.onStartCooking,
     required this.onOpenWelcomeOverview,
     required this.onCookAgain,
+    this.pausedRecipe,
+    this.onResumeSession,
   });
 
   @override
@@ -44,6 +50,10 @@ class HomeScreen extends StatelessWidget {
             ),
           ],
         ),
+        if (pausedRecipe != null) ...[
+          const SizedBox(height: 24),
+          _PausedSessionCard(recipe: pausedRecipe!, onResume: onResumeSession),
+        ],
         const SizedBox(height: 48),
         const Text(
           '🍳',
@@ -92,6 +102,52 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _PausedSessionCard extends StatelessWidget {
+  final Recipe recipe;
+  final VoidCallback? onResume;
+
+  const _PausedSessionCard({required this.recipe, required this.onResume});
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Material(
+      color: CookTogetherTheme.surface,
+      borderRadius: BorderRadius.circular(CookTogetherTheme.radiusCard),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                EmojiTile(emoji: recipe.icon, tone: recipe.tone),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(recipe.name, style: textTheme.titleMedium),
+                      const SizedBox(height: 2),
+                      Text('Paused', style: textTheme.bodyMedium),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            PrimaryButton(
+              label: 'Resume cooking',
+              icon: Icons.play_arrow_rounded,
+              onPressed: onResume,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

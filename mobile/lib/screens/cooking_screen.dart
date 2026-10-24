@@ -39,8 +39,16 @@ class CookingScreen extends StatefulWidget {
     required int visualChecksCount,
   })
   onFinishCooking;
+
+  /// Ends the session without saving it.
   final VoidCallback onExitToHome;
+
+  /// Leaves the session paused, to resume later from Home.
+  final VoidCallback onPauseAndLeave;
   final ValueChanged<String> onShowToast;
+
+  /// False while the session is paused and left. Coming back resumes it.
+  final bool isVisible;
 
   const CookingScreen({
     super.key,
@@ -55,7 +63,9 @@ class CookingScreen extends StatefulWidget {
     this.acceptedSwapIds = const {},
     required this.onFinishCooking,
     required this.onExitToHome,
+    required this.onPauseAndLeave,
     required this.onShowToast,
+    this.isVisible = true,
   });
 
   @override
@@ -75,6 +85,10 @@ class _CookingScreenState extends State<CookingScreen>
 
   /// Steps the user has checked with a photo, so Next doesn't ask again.
   final Set<int> _checkedSteps = {};
+
+  /// Paused by "Pause and leave for now", not by the Pause button, so coming
+  /// back resumes.
+  bool _pausedByLeaving = false;
 
   // The short chat before step 1 (docs/api.md, "The opening conversation").
   bool _opening = true;
@@ -225,13 +239,29 @@ class _CookingScreenState extends State<CookingScreen>
   }
 
   @override
+  void didUpdateWidget(CookingScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isVisible && !oldWidget.isVisible && _pausedByLeaving) {
+      _pausedByLeaving = false;
+      // After this frame: resuming updates the app's toast too.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _isPaused) _togglePause(forcePause: false);
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _clockTimer?.cancel();
     _orbPulseController.dispose();
     _textController.dispose();
     _scrollController.dispose();
-    widget.voiceController.onFinalUtterance = null;
-    widget.voiceController.shutdownSession();
+    // A new session may already have taken over the voice controller (it
+    // starts in the same frame that ends a paused one), so leave it alone.
+    if (widget.voiceController.onFinalUtterance == _handleUserUtterance) {
+      widget.voiceController.onFinalUtterance = null;
+      widget.voiceController.shutdownSession();
+    }
     super.dispose();
   }
 
@@ -287,6 +317,9 @@ class _CookingScreenState extends State<CookingScreen>
       );
     });
     _scrollToBottom();
+    // A paused session stays quiet, also when a reply arrives after the
+    // user paused and left; the message is still in the chat.
+    if (_isPaused) return;
     widget.voiceController.speak(
       text,
       voiceGuidanceEnabled: widget.preferences.voiceGuidance,
@@ -889,10 +922,12 @@ class _CookingScreenState extends State<CookingScreen>
   Widget build(BuildContext context) {
     // The back gesture asks before leaving, like the close button; with a
     // question open, back answers "stay" (or "don't skip").
+    // While paused and left, the screen is kept but hidden; back is then
+    // for the screen on top.
     return PopScope(
-      canPop: false,
+      canPop: !widget.isVisible,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
+        if (didPop || !widget.isVisible) return;
         setState(() {
           if (_confirmSkipOpen) {
             _confirmSkipOpen = false;
@@ -1722,20 +1757,35 @@ class _CookingScreenState extends State<CookingScreen>
               Text('Leave this session?', style: textTheme.headlineSmall),
               const SizedBox(height: 8),
               Text(
-                'Your progress on this recipe won\'t be saved.',
+                'Pause it to pick up where you left off from Home. '
+                'Ending it doesn\'t save your progress.',
                 style: textTheme.bodyLarge,
               ),
               const SizedBox(height: 24),
-              PrimaryButton(label: 'Leave', onPressed: widget.onExitToHome),
+              PrimaryButton(
+                label: 'Pause and leave for now',
+                onPressed: () {
+                  setState(() => _confirmEndOpen = false);
+                  if (!_isPaused) {
+                    _togglePause(forcePause: true);
+                    _pausedByLeaving = true;
+                  }
+                  widget.onPauseAndLeave();
+                },
+              ),
               const SizedBox(height: 4),
               SizedBox(
                 width: double.infinity,
                 child: TextButton(
-                  onPressed: () {
-                    setState(() => _confirmEndOpen = false);
-                    _togglePause(forcePause: true);
-                  },
-                  child: const Text('Stay and pause'),
+                  onPressed: widget.onExitToHome,
+                  child: const Text('End session'),
+                ),
+              ),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => setState(() => _confirmEndOpen = false),
+                  child: const Text('Stay'),
                 ),
               ),
             ],
