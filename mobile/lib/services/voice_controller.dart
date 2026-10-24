@@ -6,6 +6,7 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import '../models/conversation.dart';
+import 'audio_route.dart';
 
 /// What happened when the user tapped the microphone.
 enum MicTapResult {
@@ -34,6 +35,12 @@ class VoiceController extends ChangeNotifier {
 
   final SpeechToText _speech = SpeechToText();
   final FlutterTts _tts = FlutterTts();
+  final AudioRoute _audioRoute = const AudioRoute();
+
+  /// Name of the Bluetooth headset (the glasses) speech is recorded from, or
+  /// null when the phone's own mic is used.
+  String? _bluetoothMic;
+  String? get bluetoothMic => _bluetoothMic;
 
   bool _speechInitialized = false;
   bool _speechAvailable = false;
@@ -88,6 +95,7 @@ class VoiceController extends ChangeNotifier {
     _autoRestartPaused = false;
     _fastFailures = 0;
     _isAudioBusy = false;
+    await _routeToBluetoothMic();
 
     try {
       await _tts.setSharedInstance(true);
@@ -123,6 +131,14 @@ class VoiceController extends ChangeNotifier {
       _activityState = VoiceActivityState.idle;
       notifyListeners();
     }
+  }
+
+  /// Records through the glasses' Bluetooth mic when they are connected, so
+  /// the user doesn't have to talk to the phone. The link must be up before
+  /// listening starts: the recognizer keeps the mic it started with.
+  Future<void> _routeToBluetoothMic() async {
+    _bluetoothMic = await _audioRoute.useBluetoothMic();
+    notifyListeners();
   }
 
   Future<bool> _ensureSpeechInitialized() async {
@@ -346,6 +362,7 @@ class VoiceController extends ChangeNotifier {
     }
     _autoRestartPaused = false;
     _fastFailures = 0;
+    if (_bluetoothMic == null) await _routeToBluetoothMic();
     if (!await _ensureSpeechInitialized()) return MicTapResult.unavailable;
     await _startListeningLoop(forceSingleTurn: true);
     return MicTapResult.listening;
@@ -380,6 +397,9 @@ class VoiceController extends ChangeNotifier {
           _listeningMode == VoiceListeningMode.handsFree && !forceSingleTurn
           ? 'Listening hands-free… say a command or ask a question'
           : 'Listening… speak now';
+      if (_bluetoothMic != null) {
+        _statusHint = '$_statusHint (through $_bluetoothMic)';
+      }
       notifyListeners();
 
       _lastListenStartTime = DateTime.now();
@@ -467,6 +487,8 @@ class VoiceController extends ChangeNotifier {
   }
 
   Future<void> shutdownSession() async {
+    _bluetoothMic = null;
+    _audioRoute.clear();
     _clearSentence();
     _isSessionActive = false;
     _cancelTimers();

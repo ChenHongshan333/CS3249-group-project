@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   const speechChannel = MethodChannel('plugin.csdcorp.com/speech_to_text');
+  const audioRouteChannel = MethodChannel('cooktogether/audio_route');
 
   setUp(() {
     SharedPreferences.setMockInitialValues({'cooktogether.seen': true});
@@ -16,11 +17,16 @@ void main() {
           if (call.method == 'initialize') return false;
           return null;
         });
+    // No Bluetooth headset: the phone's own mic stays in use.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(audioRouteChannel, (call) async => null);
   });
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(speechChannel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(audioRouteChannel, null);
   });
 
   testWidgets(
