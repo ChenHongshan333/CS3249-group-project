@@ -96,8 +96,10 @@ void main() {
     await tapCheck(tester);
 
     expect(
+      // The chat scrolls, so look beyond what's on screen.
       find.text(
         "Unfold your glasses to take a photo. Let's use your phone camera instead.",
+        skipOffstage: false,
       ),
       findsOneWidget,
     );

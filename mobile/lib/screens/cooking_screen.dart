@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../camera/phone_camera.dart';
 import '../glasses/glasses_service.dart';
@@ -101,6 +102,15 @@ class _CookingScreenState extends State<CookingScreen>
   AssistantAction? _pendingOffer;
 
   late Set<String> _checkedIngredients;
+
+  /// The step panel flashes briefly when the step changes, so a new step
+  /// isn't mistaken for part of the chat.
+  bool _stepHighlighted = false;
+  Timer? _stepHighlightTimer;
+
+  /// A one-time hint on first use: "Your current step is always here".
+  static const _kStepHintSeenKey = 'cooktogether.stepHintSeen';
+  bool _stepHintSeen = true;
   final List<ChatMessage> _messages = [];
   final List<CookingTimer> _timers = [];
   final TextEditingController _textController = TextEditingController();
@@ -130,6 +140,8 @@ class _CookingScreenState extends State<CookingScreen>
         !widget.glassesService.usingRealGlasses) {
       widget.glassesService.initializeAndPairMockDevice();
     }
+
+    _loadStepHintSeen();
 
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || _isPaused) return;
@@ -205,6 +217,30 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
+  Future<void> _loadStepHintSeen() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final seen = prefs.getBool(_kStepHintSeenKey) ?? false;
+      if (mounted) setState(() => _stepHintSeen = seen);
+    } catch (_) {}
+  }
+
+  Future<void> _dismissStepHint() async {
+    setState(() => _stepHintSeen = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kStepHintSeenKey, true);
+    } catch (_) {}
+  }
+
+  void _highlightStep() {
+    _stepHighlightTimer?.cancel();
+    setState(() => _stepHighlighted = true);
+    _stepHighlightTimer = Timer(const Duration(milliseconds: 900), () {
+      if (mounted) setState(() => _stepHighlighted = false);
+    });
+  }
+
   void _startCooking({String? lead}) {
     if (!_opening) return;
     _goToStep(0, lead: lead);
@@ -253,6 +289,7 @@ class _CookingScreenState extends State<CookingScreen>
   @override
   void dispose() {
     _clockTimer?.cancel();
+    _stepHighlightTimer?.cancel();
     _orbPulseController.dispose();
     _textController.dispose();
     _scrollController.dispose();
@@ -366,9 +403,12 @@ class _CookingScreenState extends State<CookingScreen>
     final clamped = targetStep.clamp(0, widget.recipe.steps.length - 1);
     // Moving on means the step is done, so its timer ends quietly.
     if (clamped > _currentStep) _endTimerForStep(_currentStep);
+    // The hint has done its job once the cook moves past step 1.
+    if (clamped > 0 && !_stepHintSeen) _dismissStepHint();
     setState(() {
       _currentStep = clamped;
     });
+    _highlightStep();
     final nextStepObj = widget.recipe.steps[clamped];
     final announcement =
         'Step ${clamped + 1}: ${nextStepObj.title}. ${nextStepObj.instruction}';
@@ -1049,20 +1089,60 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
+  /// The pinned panel above the chat. Its raised background and shadow set
+  /// it apart from the chat below; it flashes amber when the step changes.
+  Widget _panel({required Widget child, bool highlighted = false}) {
+    return Material(
+      color: Colors.transparent,
+      elevation: 3,
+      shadowColor: CookTogetherTheme.ink.withValues(alpha: 0.25),
+      child: AnimatedContainer(
+        key: const ValueKey('step-panel'),
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOut,
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(
+          CookTogetherTheme.gutter,
+          8,
+          CookTogetherTheme.gutter,
+          16,
+        ),
+        color: highlighted
+            ? CookTogetherTheme.warningSoft
+            : CookTogetherTheme.surface,
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildStepHint() {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.arrow_downward_rounded,
+            size: 18,
+            color: CookTogetherTheme.inkMuted,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Your current step is always here.',
+              style: textTheme.bodyMedium,
+            ),
+          ),
+          TextButton(onPressed: _dismissStepHint, child: const Text('Got it')),
+        ],
+      ),
+    );
+  }
+
   /// Before step 1: the recipe and any ingredients not ticked on Get ready.
   Widget _buildOpeningPanel() {
     final textTheme = Theme.of(context).textTheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        CookTogetherTheme.gutter,
-        8,
-        CookTogetherTheme.gutter,
-        16,
-      ),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: CookTogetherTheme.line)),
-      ),
+    return _panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1118,17 +1198,8 @@ class _CookingScreenState extends State<CookingScreen>
     final showSuggestion =
         suggestedSecs != null && !_hasActiveTimerForCurrentStep;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        CookTogetherTheme.gutter,
-        8,
-        CookTogetherTheme.gutter,
-        16,
-      ),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: CookTogetherTheme.line)),
-      ),
+    return _panel(
+      highlighted: _stepHighlighted,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1175,6 +1246,7 @@ class _CookingScreenState extends State<CookingScreen>
             ],
           ),
           if (_isPaused) ...[_buildPausedBanner(), const SizedBox(height: 12)],
+          if (!_stepHintSeen) _buildStepHint(),
           Text(_step.title, style: textTheme.headlineSmall),
           const SizedBox(height: 8),
           Text(
@@ -1386,7 +1458,10 @@ class _CookingScreenState extends State<CookingScreen>
 
   Widget _buildBubble(ChatMessage msg) {
     final isUser = msg.sender == MessageSender.user;
-    final style = Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 15);
+    // Quieter than the step panel: page-coloured replies, smaller text.
+    final style = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(color: CookTogetherTheme.ink);
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -1394,7 +1469,9 @@ class _CookingScreenState extends State<CookingScreen>
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: isUser ? const Color(0xFFEFEADF) : CookTogetherTheme.surface,
+          color: isUser
+              ? const Color(0xFFEFEADF)
+              : CookTogetherTheme.background,
           border: isUser ? null : Border.all(color: CookTogetherTheme.line),
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
