@@ -3,51 +3,24 @@
 // Skipped unless SCREENSHOT_DIR is set:
 //   SCREENSHOT_DIR=../build/screens flutter test test/screenshot_test.dart
 //
-// Fonts come from the Flutter SDK (Roboto, Material Icons). Emoji use
-// Segoe UI Emoji on Windows or Noto Color Emoji on Linux when present.
+// Fonts come from the Flutter SDK; see fonts.dart.
 import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/main.dart';
 import 'package:mobile/models/user_preferences.dart';
 import 'package:mobile/services/assistant_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'fonts.dart';
+
 final String? _outDir = Platform.environment['SCREENSHOT_DIR'];
 
 // iPhone 17 logical size, matching the web prototype frame.
 const Size _phone = Size(402, 874);
-
-Future<void> _loadFont(String family, List<String> paths) async {
-  final loader = FontLoader(family);
-  for (final path in paths) {
-    final file = File(path);
-    if (file.existsSync()) {
-      final bytes = file.readAsBytesSync();
-      loader.addFont(Future.value(ByteData.sublistView(bytes)));
-    }
-  }
-  await loader.load();
-}
-
-Future<void> _loadFonts() async {
-  // flutter_tester lives in <sdk>/bin/cache/artifacts/engine/<platform>/.
-  final engineDir = File(Platform.resolvedExecutable).parent;
-  final fontDir = '${engineDir.parent.parent.path}/material_fonts';
-  await _loadFont('Roboto', [
-    for (final w in ['light', 'regular', 'medium', 'bold', 'black'])
-      '$fontDir/roboto-$w.ttf',
-  ]);
-  await _loadFont('MaterialIcons', ['$fontDir/materialicons-regular.otf']);
-  await _loadFont('Noto Color Emoji', [
-    'C:/Windows/Fonts/seguiemj.ttf',
-    '/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf',
-  ]);
-}
 
 final List<CookingHistoryItem> _sampleHistory = [
   const CookingHistoryItem(
@@ -120,7 +93,7 @@ Future<void> _pumpScreen(
 
 void main() {
   setUpAll(() async {
-    if (_outDir != null) await _loadFonts();
+    if (_outDir != null) await loadRealFonts();
   });
 
   final skip = _outDir == null;
