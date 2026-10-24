@@ -386,7 +386,6 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           elapsedSeconds: _lastElapsedSeconds,
           visualChecksCount: _lastVisualChecksCount,
           onBackToHome: () => setState(() => _screen = AppScreen.home),
-          onViewHistory: () => setState(() => _screen = AppScreen.history),
         );
 
       case AppScreen.history:

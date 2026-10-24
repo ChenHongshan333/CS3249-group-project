@@ -23,8 +23,9 @@ class ScreenHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-      child: SizedBox(
-        height: 56,
+      // At least 56 tall; a long title on large text wraps to a second line.
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 56),
         child: Row(
           children: [
             if (onBack != null)
@@ -39,7 +40,7 @@ class ScreenHeader extends StatelessWidget {
             Expanded(
               child: Text(
                 title,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
@@ -74,8 +75,12 @@ class PrimaryButton extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Shrink a long label to fit rather than cut it off.
             Flexible(
-              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(label, maxLines: 1),
+              ),
             ),
             if (icon != null) ...[
               const SizedBox(width: 8),
@@ -272,7 +277,8 @@ class CheckRow extends StatelessWidget {
   }
 }
 
-/// Small coloured dot with a short label, for connection states.
+/// Small coloured dot with a short label, for connection states. Long
+/// labels wrap rather than being cut off, with the dot beside the first line.
 class StatusDot extends StatelessWidget {
   final String label;
   final Color color;
@@ -281,23 +287,27 @@ class StatusDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodyMedium!;
+    // Centre the dot on the first line, whatever the text scale.
+    final lineHeight = MediaQuery.textScalerOf(
+      context,
+    ).scale(style.fontSize! * (style.height ?? 1.2));
     return Row(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium,
+        SizedBox(
+          height: lineHeight,
+          child: Center(
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
           ),
         ),
+        const SizedBox(width: 6),
+        Flexible(child: Text(label, style: style)),
       ],
     );
   }

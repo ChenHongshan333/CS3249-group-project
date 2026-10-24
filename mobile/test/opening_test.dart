@@ -146,6 +146,43 @@ void main() {
     await _finish(tester);
   });
 
+  for (final phrase in [
+    'I have everything.',
+    "That's everything!",
+    'Got it all.',
+    'Yes.',
+    'I’m ready.',
+  ]) {
+    testWidgets('opening readiness "$phrase" starts without the backend', (
+      tester,
+    ) async {
+      final assistant = _ScriptedAssistant([]);
+      await _openCooking(tester, assistant);
+      await _say(tester, phrase);
+      expect(find.text('Step 1 of 4'), findsOneWidget);
+      expect(assistant.asked, isEmpty);
+      await _finish(tester);
+    });
+  }
+
+  for (final phrase in [
+    'I have everything except garlic.',
+    "Yes, but I'm not ready.",
+  ]) {
+    testWidgets('opening qualification "$phrase" still goes to the assistant', (
+      tester,
+    ) async {
+      final assistant = _ScriptedAssistant([
+        const AssistantResponse(reply: "Say 'let's start' when you're ready."),
+      ]);
+      await _openCooking(tester, assistant);
+      await _say(tester, phrase);
+      expect(find.text('Before we start'), findsOneWidget);
+      expect(assistant.asked.single['question'], phrase);
+      await _finish(tester);
+    });
+  }
+
   testWidgets('an offer is sent back once and its action runs', (tester) async {
     const timer = AssistantAction('start_timer', seconds: 60, label: 'Toss');
     final assistant = _ScriptedAssistant([

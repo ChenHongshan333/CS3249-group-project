@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/conversation.dart';
 import '../models/user_preferences.dart';
 import '../theme/app_theme.dart';
 import '../theme/widgets.dart';
@@ -172,8 +173,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       style: textTheme.bodyLarge,
                       decoration: const InputDecoration(
                         labelText: 'Backend URL',
-                        helperText:
-                            'Leave empty to use built-in demo answers.',
+                        helperText: 'Leave empty to use built-in demo answers.',
                       ),
                     ),
                     _SwitchRow(
@@ -182,6 +182,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onChanged: (v) => setState(
                         () =>
                             _draft = _draft.copyWith(simulatedGlassesPhotos: v),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: _draft.forcedCheckResult,
+                      // Fill the row so long labels shorten instead of
+                      // overflowing on narrow phones.
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Step check result',
+                        helperText:
+                            'Skips the photo and the AI. For demos without a '
+                            'camera.',
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: '',
+                          child: Text(
+                            'Real check (photo + AI)',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        for (final status in VisualCheckStatus.values)
+                          DropdownMenuItem(
+                            value: status.wireValue,
+                            child: Text(
+                              'Always "${status.badgeLabel}"',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (v) => setState(
+                        () => _draft = _draft.copyWith(
+                          forcedCheckResult: v ?? '',
+                        ),
                       ),
                     ),
                   ],

@@ -318,13 +318,19 @@ class _CookingScreenState extends State<CookingScreen>
 
   void _startOrUpdateTimer({required int seconds, required String label}) {
     setState(() {
-      final existingIdx = _timers.indexWhere((t) => t.label == label);
+      // One timer per step: a new one for this step replaces the old one,
+      // whatever it's called (the button, voice and the AI name it
+      // differently).
+      final existingIdx = _timers.indexWhere(
+        (t) => t.stepIndex == _currentStep,
+      );
       final timer = CookingTimer(
         id: 'tmr-${DateTime.now().millisecondsSinceEpoch}',
         label: label,
         totalSeconds: seconds,
         remainingSeconds: seconds,
         isRunning: true,
+        stepIndex: _currentStep,
       );
       if (existingIdx >= 0) {
         _timers[existingIdx] = timer;
@@ -348,6 +354,8 @@ class _CookingScreenState extends State<CookingScreen>
       return;
     }
     final clamped = targetStep.clamp(0, widget.recipe.steps.length - 1);
+    // Moving on means the step is done, so its timer ends quietly.
+    if (clamped > _currentStep) _endTimerForStep(_currentStep);
     setState(() {
       _currentStep = clamped;
     });
@@ -454,6 +462,25 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
+  /// A stand-in for a photo when the Developer option forces the result.
+  VisionCapture _forcedCapture(String promptText, VisualCheckStatus status) {
+    final step = widget.recipe.steps[_currentStep];
+    return VisionCapture(
+      id: 'forced-${DateTime.now().millisecondsSinceEpoch}',
+      recipeId: widget.recipe.id,
+      stepIndex: _currentStep,
+      source: 'developer',
+      deviceName: 'Developer option',
+      sceneDescription: step.visionSceneDescription,
+      recipeIcon: widget.recipe.icon,
+      recipeTone: widget.recipe.tone,
+      base64Jpeg: '',
+      capturedAt: DateTime.now(),
+      status: status,
+      userQuestion: promptText,
+    );
+  }
+
   Future<void> _triggerVisualCheck({String? userQuestion}) async {
     if (_opening) {
       _appendAiMessage("Let's start the first step, then I can take a look.");
@@ -472,7 +499,12 @@ class _CookingScreenState extends State<CookingScreen>
     }
 
     final startTime = DateTime.now();
-    final capture = await _takeStepPhoto(promptText);
+    final forced = widget.preferences.forcedCheckResult.isEmpty
+        ? null
+        : VisualCheckStatus.fromWire(widget.preferences.forcedCheckResult);
+    final capture = forced != null
+        ? _forcedCapture(promptText, forced)
+        : await _takeStepPhoto(promptText);
     if (capture == null) {
       widget.voiceController.setActivityState(VoiceActivityState.idle);
       return;
@@ -483,13 +515,21 @@ class _CookingScreenState extends State<CookingScreen>
       hint: 'Analyzing visual view with CookTogether AI…',
     );
 
-    final response = await widget.assistantService.checkStepWithVision(
-      sessionId: _sessionId,
-      recipe: widget.recipe,
-      stepIndex: _currentStep,
-      visionCapture: capture,
-      userQuestion: userQuestion,
-    );
+    final response = forced != null
+        ? AssistantResponse(
+            reply:
+                '${forced.badgeLabel}. ${forced.subtitle}. '
+                '(Set under Profile → Developer.)',
+            visualStatus: forced,
+            visionCapture: capture,
+          )
+        : await widget.assistantService.checkStepWithVision(
+            sessionId: _sessionId,
+            recipe: widget.recipe,
+            stepIndex: _currentStep,
+            visionCapture: capture,
+            userQuestion: userQuestion,
+          );
 
     if (!mounted) return;
     if (response.isError) {
@@ -511,6 +551,8 @@ class _CookingScreenState extends State<CookingScreen>
         'step': _currentStep,
         'status': (response.visualStatus ?? VisualCheckStatus.done).wireValue,
         'ms': elapsedMs,
+        // So study data can leave out results nobody actually saw.
+        if (forced != null) 'forced': true,
       },
     );
   }
@@ -529,16 +571,24 @@ class _CookingScreenState extends State<CookingScreen>
     );
 
     if (_opening && !_worksInOpening.contains(intent.type)) {
-      final lower = text.toLowerCase();
+      final lower = text.toLowerCase().replaceAll('’', "'");
       if (intent.type == VoiceIntentType.nextStep ||
           RegExp(
-            r"^(let'?s (start|go|cook)|start( cooking)?|i'?m ready|ready)[.!?]*$",
+            r"^(let'?s (start|go|cook)|start( cooking)?|i'?m ready|ready|i have everything|that'?s everything|got it all|yes|yes,? all set)[.!?]*$",
           ).hasMatch(lower)) {
         _startCooking();
       } else {
         await _askAssistant(text);
       }
       return;
+    }
+
+    // "It's done" ends the step's timer quietly, so it doesn't announce
+    // later; the reply carries on as usual.
+    if (RegExp(
+      r"\b(it'?s|they'?re|that'?s|i'?m|we'?re|it is|they are) (all )?(done|finished|ready|cooked)\b",
+    ).hasMatch(text.toLowerCase())) {
+      _endTimerForStep(_currentStep);
     }
 
     // A command the app handles itself replaces any open offer.
@@ -605,8 +655,15 @@ class _CookingScreenState extends State<CookingScreen>
         return;
 
       case VoiceIntentType.cancelTimer:
-        setState(() => _timers.clear());
-        _appendAiMessage('I cleared your kitchen timer.');
+        if (_timers.isEmpty) {
+          _appendAiMessage('There is no timer running right now.');
+        } else if (_hasActiveTimerForCurrentStep) {
+          _endTimerForStep(_currentStep);
+          _appendAiMessage('I stopped the timer.');
+        } else {
+          setState(() => _timers.clear());
+          _appendAiMessage('I stopped your timers.');
+        }
         return;
 
       case VoiceIntentType.pauseSession:
@@ -788,9 +845,14 @@ class _CookingScreenState extends State<CookingScreen>
     return '$mins:${secs.toString().padLeft(2, '0')}';
   }
 
-  bool get _hasActiveTimerForCurrentStep {
-    final label = _step.suggestedTimerLabel ?? _step.title;
-    return _timers.any((t) => t.label == label);
+  bool get _hasActiveTimerForCurrentStep =>
+      _timers.any((t) => t.stepIndex == _currentStep);
+
+  /// Ends this step's timer without a "finished" announcement, for when the
+  /// user says the step is done or moves on.
+  void _endTimerForStep(int step) {
+    if (!_timers.any((t) => t.stepIndex == step)) return;
+    setState(() => _timers.removeWhere((t) => t.stepIndex == step));
   }
 
   bool get _isLastStep => _currentStep == widget.recipe.steps.length - 1;
@@ -858,7 +920,7 @@ class _CookingScreenState extends State<CookingScreen>
               children: [
                 Text(
                   widget.recipe.name,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: textTheme.titleSmall,
                 ),
@@ -1415,7 +1477,8 @@ class _CookingScreenState extends State<CookingScreen>
               children: [
                 Text(
                   statusLabel,
-                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: textTheme.bodyMedium?.copyWith(
                     color: partial.isNotEmpty ? CookTogetherTheme.ink : null,
@@ -1432,8 +1495,16 @@ class _CookingScreenState extends State<CookingScreen>
                           onPressed: _isPaused || _opening
                               ? null
                               : () => _triggerVisualCheck(),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
                           icon: const Icon(Icons.visibility_outlined),
-                          label: const Text('Check'),
+                          // Shrink rather than wrap on narrow phones with
+                          // large text.
+                          label: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Check', maxLines: 1),
+                          ),
                         ),
                       ),
                     ),
@@ -1456,14 +1527,16 @@ class _CookingScreenState extends State<CookingScreen>
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Flexible(
-                                child: Text(
-                                  _opening
-                                      ? 'Start'
-                                      : _isLastStep
-                                      ? 'Finish'
-                                      : 'Next',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    _opening
+                                        ? 'Start'
+                                        : _isLastStep
+                                        ? 'Finish'
+                                        : 'Next',
+                                    maxLines: 1,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 6),
@@ -1493,20 +1566,18 @@ class _CookingScreenState extends State<CookingScreen>
       button: true,
       label: _isPaused ? 'Resume session' : 'Talk to CookTogether',
       child: GestureDetector(
-        onTap: () {
+        onTap: () async {
           if (_isPaused) {
             _togglePause(forcePause: false);
             return;
           }
-          if (widget.voiceController.speechAvailable) {
-            widget.voiceController.toggleTapToSpeak();
-          } else {
-            // Simulator, web, or tests without a mic: send a sample question
-            // so the conversation flow can still be demonstrated.
-            _handleUserUtterance(
-              _opening
-                  ? "Let's start."
-                  : 'Does this look chopped small enough?',
+          final result = await widget.voiceController.tapMic();
+          // Never stand in for the user with a made-up phrase: say why the
+          // microphone can't be used and point to typing instead.
+          if (result == MicTapResult.unavailable && mounted) {
+            widget.onShowToast(
+              "I can't use the microphone. Check microphone permission for "
+              'CookTogether, or type below.',
             );
           }
         },
