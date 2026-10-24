@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
 import '../models/recipe.dart';
+import 'step_adapter.dart';
 
 /// Response returned by [AssistantService] for a conversational or visual turn.
 class AssistantResponse {
@@ -167,7 +168,9 @@ class MockAssistantService implements AssistantService {
     final step = recipe.steps[stepIndex.clamp(0, recipe.steps.length - 1)];
     final lower = question.toLowerCase();
 
-    if (phase == 'opening') return _openingReply(lower, ingredients);
+    if (phase == 'opening') {
+      return _openingReply(lower, ingredients, recipe, history);
+    }
 
     if (pendingOffer != null) {
       if (_isYes(lower)) {
@@ -252,6 +255,8 @@ class MockAssistantService implements AssistantService {
   AssistantResponse _openingReply(
     String lower,
     Map<String, bool> ingredients,
+    Recipe recipe,
+    List<ChatMessage> history,
   ) {
     if (RegExp(
       r"let'?s (start|go|cook)|ready|that'?s everything|all set",
@@ -265,13 +270,25 @@ class MockAssistantService implements AssistantService {
         .where((e) => !e.value)
         .map((e) => e.key)
         .toList();
+
+    // An answer to "leave it out, or use …?" adapts the steps.
+    final asked = _askedAbout(missing, history);
+    if (asked != null) {
+      final adapted = _adaptTo(lower, asked, recipe);
+      if (adapted != null) return adapted;
+    }
+
     final mentioned = missing.where((name) => lower.contains(name)).toList();
     if (mentioned.isNotEmpty &&
         RegExp(r"don'?t have|no |out of|missing").hasMatch(lower)) {
+      final name = mentioned.first;
+      final swap = StepAdapter.substitutes[name];
       return AssistantResponse(
-        reply:
-            "No problem, it still works without the ${mentioned.first}. "
-            "Say 'let's start' when you're ready.",
+        reply: swap == null
+            ? 'No problem, it still works without the $name. '
+                  'Shall I leave it out of the steps?'
+            : 'No problem, it still works without the $name, or you could '
+                  'use $swap. Would you like to leave it out, or use $swap?',
       );
     }
     if (mentioned.isNotEmpty) {
@@ -285,6 +302,71 @@ class MockAssistantService implements AssistantService {
     }
     return const AssistantResponse(
       reply: "Okay. Say 'let's start' when you're ready.",
+    );
+  }
+
+  /// The missing ingredient CookAlong just asked about ("…it still works
+  /// without the X…"), if its last reply was that question.
+  static String? _askedAbout(List<String> missing, List<ChatMessage> history) {
+    final lastReply = history.lastWhere(
+      (m) => m.sender == MessageSender.ai,
+      orElse: () => ChatMessage(
+        id: '',
+        sender: MessageSender.ai,
+        text: '',
+        timestamp: DateTime(0),
+      ),
+    );
+    if (!lastReply.text.contains('?')) return null;
+    for (final name in missing) {
+      if (lastReply.text.contains('without the $name')) return name;
+    }
+    return null;
+  }
+
+  /// Leaves [name] out, or uses what the cook says instead, and says which
+  /// steps changed. Null when the answer is neither.
+  static AssistantResponse? _adaptTo(String lower, String name, Recipe recipe) {
+    final swap = StepAdapter.substitutes[name];
+    String? replacement;
+    if (swap != null && lower.contains(swap)) {
+      replacement = swap;
+    } else {
+      final said = RegExp(
+        r"\buse (?:the |some |a |an )?(.+?)(?: instead.*)?[.!?]*$",
+      ).firstMatch(lower);
+      replacement = said?[1]?.trim();
+    }
+    final leaveOut =
+        replacement == null &&
+        RegExp(r'\b(leave|skip|without|yes|sure|ok|okay)\b').hasMatch(lower);
+    if (replacement == null && !leaveOut) return null;
+
+    final changes = replacement != null
+        ? StepAdapter.substitute(recipe, name, replacement)
+        : StepAdapter.leaveOut(recipe, name);
+    final what = replacement != null
+        ? 'use the $replacement'
+        : 'leave out the $name';
+    if (changes.isEmpty) {
+      return AssistantResponse(
+        reply:
+            "Okay, we'll $what. None of the "
+            "steps need to change. Say 'let's start' when you're ready.",
+      );
+    }
+    final numbers = (changes.keys.toList()..sort())
+        .map((i) => '${i + 1}')
+        .toList();
+    final steps = numbers.length == 1
+        ? 'step ${numbers.first}'
+        : 'steps ${numbers.sublist(0, numbers.length - 1).join(', ')} '
+              'and ${numbers.last}';
+    return AssistantResponse(
+      reply:
+          "Okay, I've changed $steps to $what. "
+          "Say 'let's start' when you're ready.",
+      action: AssistantAction('adapt_steps', steps: changes),
     );
   }
 
