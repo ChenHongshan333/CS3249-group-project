@@ -63,8 +63,8 @@ Write **Pass**, **Fail**, or what happened.
 | O1 | On Get ready, leave **two ingredients unticked** → **Start cooking** | You hear "Today we're making …, right? Have you got the …?" naming those two | |
 | O2 | Say "I don't have *(one of them)*" | A short, sensible reply (it works without it, or a swap) | |
 | O3 | Say "I've got the *(other one)*" | It gets ticked on screen | |
+| O3b | Suggest your own swap, e.g. "Could I use lemon instead of some of the oil?" | One sentence on whether it is healthier and fits the dish. If it is, it says which step it changed and "Changed for you" appears in the chat | |
 | O4 | Say "Let's start" | Step 1 is read out | |
-| O5 | Before saying "let's start", suggest your own swap, e.g. "Could I use lemon instead of some of the oil?" | One sentence on whether it is healthier and fits the dish. If it is, it says which step it changed and "Changed for you" appears in the chat | |
 | **Voice through the glasses** | | | |
 | V1 | Wear the glasses; say "next step" | The app moves on. Note whether the glasses mic or the phone mic heard you | |
 | V2 | Listen to a step being read | Note whether the sound comes from the glasses or the phone | |
