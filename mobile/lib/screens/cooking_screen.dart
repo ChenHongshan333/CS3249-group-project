@@ -251,12 +251,15 @@ class _CookingScreenState extends State<CookingScreen>
           sender: MessageSender.user,
           text: text,
           timestamp: DateTime.now(),
+          stepIndex: _opening ? null : _currentStep,
         ),
       );
     });
     _scrollToBottom();
   }
 
+  /// [stepIndex] defaults to the step the photo was taken on, or else the
+  /// current step.
   void _appendAiMessage(
     String text, {
     VisionCapture? visionCapture,
@@ -272,7 +275,10 @@ class _CookingScreenState extends State<CookingScreen>
           timestamp: DateTime.now(),
           visionCapture: visionCapture,
           isStepAnnouncement: isStepAnnouncement,
-          stepIndex: stepIndex,
+          stepIndex:
+              stepIndex ??
+              visionCapture?.stepIndex ??
+              (_opening ? null : _currentStep),
         ),
       );
     });
@@ -683,6 +689,8 @@ class _CookingScreenState extends State<CookingScreen>
     final offer = _pendingOffer;
     _pendingOffer = null;
     final startTime = DateTime.now();
+    // The answer goes with the step the question was asked on.
+    final askedOnStep = _opening ? null : _currentStep;
     final response = await widget.assistantService.askQuestion(
       sessionId: _sessionId,
       recipe: widget.recipe,
@@ -712,7 +720,7 @@ class _CookingScreenState extends State<CookingScreen>
           'repeat_step',
           'start_cooking',
         }.contains(action.type);
-    if (!leadsIn) _appendAiMessage(response.reply);
+    if (!leadsIn) _appendAiMessage(response.reply, stepIndex: askedOnStep);
     if (action != null) {
       _runAction(action, lead: leadsIn ? response.reply : null);
     }
@@ -1221,20 +1229,33 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
-  /// Step announcements are already on the step panel, so they show as a
-  /// small marker instead of a repeated bubble. With captions off, only the
-  /// latest reply is shown.
+  /// The chat is grouped by step. A step's group starts with a divider
+  /// ("Step 2: Chop the vegetables"), shown only for steps where something
+  /// was said. Step announcements are already on the step panel, so they
+  /// are not repeated as bubbles. With captions off, only the latest reply
+  /// is shown.
   Widget _buildConversation() {
     final textTheme = Theme.of(context).textTheme;
-    var items = _messages;
-    if (!widget.preferences.showCaptions) {
-      final replies = _messages.where((m) => !m.isStepAnnouncement);
-      items = replies.isEmpty ? const [] : [replies.last];
+    final replies = _messages.where((m) => !m.isStepAnnouncement).toList();
+    final items = widget.preferences.showCaptions
+        ? replies
+        : replies.isEmpty
+        ? const <ChatMessage>[]
+        : [replies.last];
+
+    final children = <Widget>[];
+    for (final (i, msg) in items.indexed) {
+      final step = msg.stepIndex;
+      final startsGroup = i == 0 || items[i - 1].stepIndex != step;
+      if (startsGroup && step != null && widget.preferences.showCaptions) {
+        children.add(_buildStepDivider(step));
+      }
+      children.add(
+        msg.visionCapture != null
+            ? _buildVisionCard(msg.visionCapture!, msg.text)
+            : _buildBubble(msg),
+      );
     }
-    final hasReplies = items.any((m) => !m.isStepAnnouncement);
-    // A step marker only earns its place when replies follow it.
-    bool repliesAfter(int i) =>
-        items.skip(i + 1).takeWhile((m) => !m.isStepAnnouncement).isNotEmpty;
 
     return ListView(
       controller: _scrollController,
@@ -1245,14 +1266,8 @@ class _CookingScreenState extends State<CookingScreen>
         12,
       ),
       children: [
-        for (final (i, msg) in items.indexed)
-          if (msg.isStepAnnouncement)
-            if (repliesAfter(i)) _buildStepMarker(msg) else const SizedBox()
-          else if (msg.visionCapture != null)
-            _buildVisionCard(msg.visionCapture!, msg.text)
-          else
-            _buildBubble(msg),
-        if (!hasReplies)
+        ...children,
+        if (items.isEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 16),
             child: Text(
@@ -1265,22 +1280,23 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
-  Widget _buildStepMarker(ChatMessage msg) {
-    final index = msg.stepIndex ?? 0;
+  Widget _buildStepDivider(int index) {
+    final textTheme = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          const Expanded(child: Divider()),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Text(
-              'Step ${index + 1} · ${widget.recipe.steps[index].title}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+      padding: const EdgeInsets.only(top: 8, bottom: 12),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            border: Border.all(color: CookTogetherTheme.line),
+            borderRadius: BorderRadius.circular(CookTogetherTheme.radiusCard),
           ),
-          const Expanded(child: Divider()),
-        ],
+          child: Text(
+            'Step ${index + 1}: ${widget.recipe.steps[index].title}',
+            textAlign: TextAlign.center,
+            style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
       ),
     );
   }
