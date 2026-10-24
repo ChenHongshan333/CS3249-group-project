@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:meta_wearables_dat_flutter/meta_wearables_dat_flutter.dart';
 
+import '../glasses/glasses_service.dart';
 import '../models/conversation.dart';
 import '../models/user_preferences.dart';
 import '../theme/app_theme.dart';
@@ -14,6 +16,11 @@ class ProfileScreen extends StatefulWidget {
   final VoidCallback onOpenHistory;
   final VoidCallback onBack;
 
+  /// For the simulated glasses controls in the Developer section. They
+  /// act at once, without Save.
+  final GlassesService? glassesService;
+  final ValueChanged<String>? onShowToast;
+
   const ProfileScreen({
     super.key,
     required this.preferences,
@@ -21,6 +28,8 @@ class ProfileScreen extends StatefulWidget {
     required this.onSavePreferences,
     required this.onOpenHistory,
     required this.onBack,
+    this.glassesService,
+    this.onShowToast,
   });
 
   @override
@@ -34,6 +43,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     'I know a few basics': 'Know the basics',
   };
   static const _diets = ['No restrictions', 'Vegetarian', 'Halal', 'Other'];
+  static const _glassesModels = {
+    MockGlassesModel.rayBanMeta: 'Ray-Ban Meta',
+    MockGlassesModel.oakleyMetaHSTN: 'Oakley Meta HSTN',
+    MockGlassesModel.metaRayBanDisplay: 'Meta Ray-Ban Display',
+  };
 
   late UserPreferences _draft;
   late final TextEditingController _serverUrlController;
@@ -56,6 +70,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _save() {
     widget.onSavePreferences(
       _draft.copyWith(serverBaseUrl: _serverUrlController.text.trim()),
+    );
+  }
+
+  /// Mock Device Kit model and touchpad, for demos. Picking a model
+  /// switches to simulated glasses.
+  Widget _buildSimulatedGlasses(GlassesService glasses) {
+    final textTheme = Theme.of(context).textTheme;
+    return ListenableBuilder(
+      listenable: glasses,
+      builder: (context, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          RadioGroup<MockGlassesModel>(
+            groupValue: glasses.usingRealGlasses ? null : glasses.mockModel,
+            onChanged: (model) async {
+              if (model == null) return;
+              await glasses.initializeAndPairMockDevice(model: model);
+              widget.onShowToast?.call('Switched to ${_glassesModels[model]}');
+            },
+            child: Column(
+              children: [
+                for (final MapEntry(key: model, value: name)
+                    in _glassesModels.entries)
+                  RadioListTile<MockGlassesModel>(
+                    contentPadding: EdgeInsets.zero,
+                    value: model,
+                    activeColor: CookTogetherTheme.success,
+                    title: Text(name, style: textTheme.bodyLarge),
+                  ),
+              ],
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: () async {
+              await glasses.simulateTouchpadTap();
+              widget.onShowToast?.call('Touchpad tap simulated');
+            },
+            icon: const Icon(Icons.touch_app_outlined),
+            label: const Text('Test touchpad tap'),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
     );
   }
 
@@ -177,13 +234,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     _SwitchRow(
-                      title: 'Simulated glasses photos when no glasses',
+                      title: 'Simulated glasses when no real ones',
                       value: _draft.simulatedGlassesPhotos,
                       onChanged: (v) => setState(
                         () =>
                             _draft = _draft.copyWith(simulatedGlassesPhotos: v),
                       ),
                     ),
+                    if (widget.glassesService case final glasses?)
+                      _buildSimulatedGlasses(glasses),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: _draft.forcedCheckResult,

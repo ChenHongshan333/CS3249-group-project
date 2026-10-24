@@ -362,6 +362,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           history: _history,
           onStartCooking: () => setState(() => _screen = AppScreen.recipes),
           onOpenWelcomeOverview: () => setState(() => _welcomeOpen = true),
+          showSimulatedGlasses: _preferences.simulatedGlassesPhotos,
           onCookAgain: (recipeId) {
             _selectedRecipeId = recipeId;
             _openPrep(returnTo: AppScreen.home);
@@ -436,6 +437,8 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           history: _history,
           onSavePreferences: _savePreferences,
           onOpenHistory: () => setState(() => _screen = AppScreen.history),
+          glassesService: _glassesService,
+          onShowToast: _showToast,
           onBack: () => setState(() => _screen = AppScreen.home),
         );
     }

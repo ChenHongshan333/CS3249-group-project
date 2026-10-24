@@ -55,9 +55,10 @@ Write **Pass**, **Fail**, or what happened.
 | # | Do this | Expect | Result |
 | --- | --- | --- | --- |
 | **Glasses** | | | |
-| G1 | Choose a recipe → on **Get ready**, tap **Change** next to the glasses → **Connect my glasses** | Meta AI opens and asks you to approve an unverified app | |
+| G1 | Choose a recipe → on **Get ready**, tap **Connect** next to the glasses → **Connect my glasses** | Meta AI opens and asks you to approve an unverified app | |
 | G2 | Approve in Meta AI | You're back in CookAlong; the sheet says "Connected to …" with a battery level | |
 | G3 | Close the app fully and reopen it | It reconnects to the real glasses by itself, not the "Mock Kit" | |
+| G4 | Turn the glasses off → on **Get ready**, check the status. Turn them on → **Reconnect** → **Reconnect glasses** | "Glasses disconnected", then "Connected to …". No simulated glasses are offered | |
 | **Opening chat** | | | |
 | O1 | On Get ready, leave **two ingredients unticked** → **Start cooking** | You hear "Today we're making …, right? Have you got the …?" naming those two | |
 | O2 | Say "I don't have *(one of them)*" | A short, sensible reply (it works without it, or a swap) | |
