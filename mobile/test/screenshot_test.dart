@@ -14,6 +14,7 @@ import 'package:mobile/camera/phone_camera.dart';
 import 'package:mobile/main.dart';
 import 'package:mobile/models/user_preferences.dart';
 import 'package:mobile/services/assistant_service.dart';
+import 'package:mobile/services/cue_sounds.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fake_phone_camera.dart';
@@ -23,6 +24,12 @@ final String? _outDir = Platform.environment['SCREENSHOT_DIR'];
 
 // iPhone 17 logical size, matching the web prototype frame.
 const Size _phone = Size(402, 874);
+
+/// Screenshots let real async work run, where the audio plugin is missing.
+class _SilentSounds implements CueSounds {
+  @override
+  Future<void> play(Cue cue) async {}
+}
 
 final List<CookingHistoryItem> _sampleHistory = [
   const CookingHistoryItem(
@@ -88,6 +95,7 @@ Future<void> _pumpScreen(
         initialScreen: screen,
         assistantService: const MockAssistantService(),
         phoneCamera: phoneCamera,
+        cueSounds: _SilentSounds(),
       ),
     ),
   );
