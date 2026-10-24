@@ -7,7 +7,7 @@ model ignores the prompt, and keeps replies speakable.
 import json
 import re
 
-from .schemas import PHASE_ACTIONS, Action, AskRequest, CheckStatus
+from .schemas import PHASE_ACTIONS, Action, AskRequest, CheckStatus, StepChange
 
 _CLAIM_VERB = r"(?:\bis|\bare|'s|'re|\blooks?|\bseems?)"
 _CERTAINLY = r"(?:\s+(?:fully|properly|thoroughly|completely|definitely|totally))?"
@@ -191,4 +191,24 @@ def _valid_action(value: object, req: AskRequest) -> Action | None:
             by_lower[n.strip().lower()] for n in asked if n.strip().lower() in by_lower
         ))
         return Action(type="tick_ingredient", name=names[0], names=names) if names else None
+    if action.type == "adapt_steps":
+        return _valid_adapt_steps(action, req)
     return Action(type=action.type)
+
+
+def _valid_adapt_steps(action: Action, req: AskRequest) -> Action | None:
+    """Keeps changes to steps the app sent that really change them. The new
+    text is read aloud later, so it gets the same safety pass as replies."""
+    changes: dict[int, str] = {}
+    for change in action.steps or []:
+        if change.step >= len(req.steps):
+            continue
+        text, _ = make_safe(change.text.strip())
+        if text and text != req.steps[change.step].text.strip():
+            changes[change.step] = text
+    if not changes:
+        return None
+    return Action(
+        type="adapt_steps",
+        steps=[StepChange(step=i, text=t) for i, t in sorted(changes.items())],
+    )
