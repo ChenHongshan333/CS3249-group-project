@@ -421,6 +421,7 @@ class _CameraTestSheetState extends State<_CameraTestSheet> {
   Uint8List? _photo;
   bool _works = false;
   String _message = '';
+  bool _canUpdateGlasses = false;
 
   bool get _useGlasses =>
       widget.glassesService.usingRealGlasses || widget.simulatedGlassesPhotos;
@@ -438,6 +439,7 @@ class _CameraTestSheetState extends State<_CameraTestSheet> {
     });
     Uint8List? photo;
     var works = false;
+    var canUpdateGlasses = false;
     String message;
     if (_useGlasses) {
       try {
@@ -453,8 +455,10 @@ class _CameraTestSheetState extends State<_CameraTestSheet> {
             : 'The simulated glasses work. They send a placeholder, not a '
                   'real photo.';
       } on GlassesCaptureException catch (e) {
-        message =
-            "${e.message} While cooking, I'll use your phone camera instead.";
+        canUpdateGlasses = e.canUpdateGlasses;
+        message = e.busy
+            ? e.message
+            : "${e.message} While cooking, I'll use your phone camera instead.";
       }
     } else {
       final camera = widget.phoneCamera;
@@ -478,6 +482,7 @@ class _CameraTestSheetState extends State<_CameraTestSheet> {
       _photo = photo;
       _works = works;
       _message = message;
+      _canUpdateGlasses = canUpdateGlasses;
     });
   }
 
@@ -559,6 +564,11 @@ class _CameraTestSheetState extends State<_CameraTestSheet> {
                   TextButton(
                     onPressed: _takePhoto,
                     child: const Text('Try again'),
+                  ),
+                if (!_busy && _canUpdateGlasses)
+                  TextButton(
+                    onPressed: widget.glassesService.openGlassesAppUpdate,
+                    child: const Text('Update in Meta AI'),
                   ),
                 const Spacer(),
                 TextButton(

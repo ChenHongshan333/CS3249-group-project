@@ -51,6 +51,9 @@ abstract class GlassesService extends ChangeNotifier {
   Future<void> stopPreviewStream();
   Future<void> simulateTouchpadTap();
 
+  /// Opens the Meta AI app where the glasses' toolkit app can be updated.
+  Future<void> openGlassesAppUpdate();
+
   /// Throws [GlassesCaptureException] when the real glasses can't take a
   /// photo, so the caller never sends a blank image to the assistant.
   Future<VisionCapture> captureFrame({
@@ -71,7 +74,18 @@ bool glassesReady(GlassesService glasses, {required bool allowSimulated}) =>
 /// A photo could not be taken. [message] is safe to show or speak.
 class GlassesCaptureException implements Exception {
   final String message;
-  const GlassesCaptureException(this.message);
+
+  /// Another photo is still being taken; nothing went wrong.
+  final bool busy;
+
+  /// The glasses may need an update; offer to open Meta AI.
+  final bool canUpdateGlasses;
+
+  const GlassesCaptureException(
+    this.message, {
+    this.busy = false,
+    this.canUpdateGlasses = false,
+  });
 
   @override
   String toString() => message;
@@ -198,9 +212,16 @@ class MetaWearablesDatGlassesService extends GlassesService {
             .timeout(const Duration(minutes: 2));
       }
 
-      final permission = await MetaWearablesDat.requestPermission(
+      // Ask only when it isn't granted yet: Meta AI shows its prompt every
+      // time it's asked, even after "Always allow" (#84).
+      var permission = await MetaWearablesDat.checkPermissionStatus(
         Permission.camera,
       );
+      if (!permission.isGranted) {
+        permission = await MetaWearablesDat.requestPermission(
+          Permission.camera,
+        );
+      }
       if (!permission.isGranted) {
         return _fail(
           'Allow camera access for CookTogether in the Meta AI app.',
@@ -474,6 +495,15 @@ class MetaWearablesDatGlassesService extends GlassesService {
       );
     }
 
+    // One photo at a time: a second start while the glasses are still
+    // connecting makes both fail (#83).
+    if (_isCapturing) {
+      throw const GlassesCaptureException(
+        'Still taking the last photo. One moment.',
+        busy: true,
+      );
+    }
+
     try {
       return await _takeGlassesPhoto(recipe, stepIndex, userPrompt);
     } on DatError catch (e) {
@@ -481,13 +511,64 @@ class MetaWearablesDatGlassesService extends GlassesService {
       // (Meta AI shows the prompt), then try once more.
       if (e.recoveryAction == DatRecoveryAction.grantPermission &&
           await _askForCameraPermission()) {
-        try {
-          return await _takeGlassesPhoto(recipe, stepIndex, userPrompt);
-        } on DatError catch (retryError) {
-          throw GlassesCaptureException(explainGlassesError(retryError));
-        }
+        return _retryGlassesPhoto(recipe, stepIndex, userPrompt);
       }
-      throw GlassesCaptureException(explainGlassesError(e));
+      // The glasses sometimes drop their link right after a photo; they
+      // usually come back within seconds, so wait for them and try once
+      // more.
+      if (_isDroppedLink(e) && await _waitForGlasses()) {
+        return _retryGlassesPhoto(recipe, stepIndex, userPrompt);
+      }
+      throw GlassesCaptureException(
+        explainGlassesError(e),
+        canUpdateGlasses: suggestsGlassesUpdate(e),
+      );
+    }
+  }
+
+  Future<VisionCapture> _retryGlassesPhoto(
+    Recipe recipe,
+    int stepIndex,
+    String? userPrompt,
+  ) async {
+    try {
+      return await _takeGlassesPhoto(recipe, stepIndex, userPrompt);
+    } on DatError catch (retryError) {
+      throw GlassesCaptureException(
+        explainGlassesError(retryError),
+        canUpdateGlasses: suggestsGlassesUpdate(retryError),
+      );
+    }
+  }
+
+  static bool _isDroppedLink(DatError e) => switch (e) {
+    CaptureError(reason: CaptureErrorCase.deviceDisconnected) => true,
+    DeviceSessionError(reason: DeviceSessionErrorCase.deviceDisconnected) =>
+      true,
+    _ => false,
+  };
+
+  /// Waits up to 15 s for the glasses to reconnect after a dropped link.
+  Future<bool> _waitForGlasses() async {
+    _lastStatusNote = 'Reconnecting to $_deviceName…';
+    notifyListeners();
+    try {
+      final device = await MetaWearablesDat.activeDeviceStream()
+          .firstWhere((d) => d != null)
+          .timeout(const Duration(seconds: 15));
+      _applyDevice(device!);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<void> openGlassesAppUpdate() async {
+    try {
+      await MetaWearablesDat.openDatGlassesAppUpdate();
+    } catch (_) {
+      // Meta AI missing or too old; the message already says where to go.
     }
   }
 
@@ -501,11 +582,15 @@ class MetaWearablesDatGlassesService extends GlassesService {
     _isCapturing = true;
     _lastStatusNote = 'Taking a photo with $_deviceName…';
     notifyListeners();
+    var started = false;
     try {
-      // Listen before starting so the "streaming" state isn't missed.
-      final streaming = MetaWearablesDat.streamSessionStateStream()
-          .firstWhere((s) => s == StreamSessionState.streaming)
-          .timeout(const Duration(seconds: 8));
+      // Listen before starting so the "streaming" state isn't missed. Its
+      // 8 s only start once the glasses have connected (#83), and an error
+      // before then must not go unhandled.
+      final streaming = MetaWearablesDat.streamSessionStateStream().firstWhere(
+        (s) => s == StreamSessionState.streaming,
+      );
+      unawaited(streaming.then((_) {}, onError: (_) {}));
       await MetaWearablesDat.startStreamSession(
         deviceUUID: _deviceUuid,
         config: const StreamSessionConfig(
@@ -513,10 +598,13 @@ class MetaWearablesDatGlassesService extends GlassesService {
           quality: StreamQuality.high,
         ),
       );
-      await streaming;
+      started = true;
+      await streaming.timeout(const Duration(seconds: 8));
+      // Longer than Meta's own wait, so its error (such as a dropped link)
+      // is reported rather than "took too long".
       final photo = await MetaWearablesDat.capturePhoto(
         format: PhotoFormat.jpeg,
-      ).timeout(const Duration(seconds: 6));
+      ).timeout(const Duration(seconds: 15));
       if (photo.bytes.isEmpty) {
         throw const GlassesCaptureException('The glasses sent an empty photo.');
       }
@@ -526,9 +614,13 @@ class MetaWearablesDatGlassesService extends GlassesService {
         'The glasses took too long to take a photo. Try again.',
       );
     } finally {
-      try {
-        await MetaWearablesDat.stopStreamSession();
-      } catch (_) {}
+      // Stopping a session that never started has frozen the app inside
+      // Meta's toolkit (#83), so stop only one that did.
+      if (started) {
+        try {
+          await MetaWearablesDat.stopStreamSession();
+        } catch (_) {}
+      }
       _isCapturing = false;
       notifyListeners();
     }
@@ -570,11 +662,33 @@ class MetaWearablesDatGlassesService extends GlassesService {
   }
 }
 
+/// Whether the error may mean the glasses' toolkit app needs an update.
+/// The plugin reports "update required" as the device ending the session,
+/// so that case can only suggest it (#86).
+bool suggestsGlassesUpdate(DatError error) => switch (error) {
+  DeviceSessionError(
+    reason: DeviceSessionErrorCase.sessionEndedByDevice ||
+        DeviceSessionErrorCase.datAppOnTheGlassesUpdateRequired,
+  ) =>
+    true,
+  _ => error.recoveryAction == DatRecoveryAction.openDatGlassesAppUpdate,
+};
+
 /// A short instruction for a glasses error that a user can act on. Meta's own
 /// message is only logged: it can name screens that don't exist in the
 /// user's version of the Meta AI app.
 String explainGlassesError(DatError error) {
   debugPrint('Glasses photo failed: $error');
+  if (error is DeviceSessionError &&
+      error.reason == DeviceSessionErrorCase.sessionEndedByDevice) {
+    return 'Your glasses stopped the photo. If this keeps happening, they '
+        'may need an update: in Meta AI, open App info, then Developer mode.';
+  }
+  if (error is CaptureError &&
+      error.reason == CaptureErrorCase.deviceDisconnected) {
+    return 'Your glasses disconnected during the photo. Keep them on and '
+        'nearby, then try again.';
+  }
   if (error is StreamError) {
     switch (error.reason) {
       case StreamErrorCase.hingesClosed:

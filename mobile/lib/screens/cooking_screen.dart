@@ -568,6 +568,10 @@ class _CookingScreenState extends State<CookingScreen>
         await widget.voiceController.playPhotoShutter();
         return capture;
       } on GlassesCaptureException catch (e) {
+        if (e.busy) {
+          if (mounted) _appendAiMessage(e.message);
+          return null;
+        }
         if (mounted) {
           _appendAiMessage(
             '${e.message} Let\'s use your phone camera instead.',
