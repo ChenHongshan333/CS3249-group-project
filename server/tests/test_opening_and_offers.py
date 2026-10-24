@@ -236,3 +236,71 @@ def test_cut_off_json_is_never_read_aloud(client, fake_llm):
     res = client.post("/ask", json=ASK_BODY)
     assert res.status_code == 502
     assert "{" not in res.text.replace('{"error"', "")
+
+
+# Adapting steps to a missing ingredient (#32)
+
+STEPS = [
+    {"title": "Prepare", "text": "Halve the cherry tomatoes and slice the garlic."},
+    {"title": "Cook the chicken", "text": "Pan-fry the chicken thigh skin-side down."},
+    {"title": "Make the sauce", "text": "Soften the garlic, then add the cherry tomatoes."},
+]
+ADAPT_BODY = {**OPENING_BODY, "question": "I'll leave the tomatoes out.", "steps": STEPS}
+
+
+def adapt(*changes) -> dict:
+    return {"type": "adapt_steps", "steps": [{"step": s, "text": t} for s, t in changes]}
+
+
+def test_opening_context_lists_the_steps(client, fake_llm):
+    client.post("/ask", json=ADAPT_BODY)
+    text = fake_llm.calls[0]["text"]
+    assert "[0] Prepare: Halve the cherry tomatoes" in text
+    assert "[2] Make the sauce: Soften the garlic" in text
+    assert "adapt_steps" in fake_llm.calls[0]["system"]
+
+
+def test_adapt_steps_is_returned(client, fake_llm):
+    fake_llm.next_reply = reply_json(
+        reply="No problem. I've changed steps 1 and 3.",
+        action=adapt((0, "Slice the garlic."), (2, "Soften the garlic.")),
+    )
+    body = client.post("/ask", json=ADAPT_BODY).json()
+    assert body["action"] == adapt((0, "Slice the garlic."), (2, "Soften the garlic."))
+
+
+def test_adapt_steps_drops_unknown_and_unchanged_steps(client, fake_llm):
+    fake_llm.next_reply = reply_json(
+        action=adapt(
+            (0, "Slice the garlic."),
+            (1, "Pan-fry the chicken thigh skin-side down."),  # unchanged
+            (7, "Not a step."),
+        )
+    )
+    body = client.post("/ask", json=ADAPT_BODY).json()
+    assert body["action"] == adapt((0, "Slice the garlic."))
+
+
+def test_adapt_steps_needs_the_steps(client, fake_llm):
+    fake_llm.next_reply = reply_json(action=adapt((0, "Slice the garlic.")))
+    assert "action" not in client.post("/ask", json=OPENING_BODY).json()
+
+
+def test_adapt_steps_is_opening_only(client, fake_llm):
+    fake_llm.next_reply = reply_json(action=adapt((0, "Slice the garlic.")))
+    assert "action" not in client.post("/ask", json={**ASK_BODY, "steps": STEPS}).json()
+
+
+def test_adapted_steps_get_the_safety_pass(client, fake_llm):
+    fake_llm.next_reply = reply_json(
+        action=adapt((1, "Pan-fry the chicken thigh. It is cooked through and safe to eat."))
+    )
+    text = client.post("/ask", json=ADAPT_BODY).json()["action"]["steps"][0]["text"]
+    assert "safe to eat" not in text
+    assert text.startswith("Pan-fry the chicken thigh.")
+
+
+def test_opening_has_room_for_rewritten_steps(client, fake_llm):
+    client.post("/ask", json=ADAPT_BODY)
+    client.post("/ask", json=ASK_BODY)
+    assert fake_llm.calls[0]["max_tokens"] > fake_llm.calls[1]["max_tokens"]
