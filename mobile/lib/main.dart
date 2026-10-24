@@ -18,6 +18,7 @@ import 'screens/prep_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/recipes_screen.dart';
 import 'services/assistant_service.dart';
+import 'services/cue_sounds.dart';
 import 'services/voice_controller.dart';
 import 'theme/app_theme.dart';
 import 'theme/widgets.dart';
@@ -34,6 +35,7 @@ class CookTogetherApp extends StatefulWidget {
   final AssistantService? assistantService;
   final VoiceController? voiceController;
   final PhoneCamera? phoneCamera;
+  final CueSounds? cueSounds;
   final bool showInitialWelcome;
 
   /// Screen to open on launch. Tests and the screenshot harness use it to
@@ -46,6 +48,7 @@ class CookTogetherApp extends StatefulWidget {
     this.assistantService,
     this.voiceController,
     this.phoneCamera,
+    this.cueSounds,
     this.showInitialWelcome = true,
     this.initialScreen = AppScreen.home,
   });
@@ -99,6 +102,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
   late final VoiceController _voiceController;
   late final PhoneCamera _phoneCamera =
       widget.phoneCamera ?? SystemPhoneCamera();
+  late final CueSounds _cueSounds = widget.cueSounds ?? AudioCueSounds();
 
   Recipe get _selectedRecipe => kStarterRecipes.firstWhere(
     (r) => r.id == _selectedRecipeId,
@@ -370,6 +374,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
       assistantService: _assistantService,
       voiceController: _voiceController,
       phoneCamera: _phoneCamera,
+      cueSounds: _cueSounds,
       initialCheckedIngredients: _sessionCheckedIngredients,
       initialListeningMode: _sessionListeningMode,
       acceptedSwapIds: _sessionAcceptedSwapIds,
@@ -391,6 +396,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           history: _history,
           onStartCooking: () => setState(() => _screen = AppScreen.recipes),
           onOpenWelcomeOverview: () => setState(() => _welcomeOpen = true),
+          showSimulatedGlasses: _preferences.simulatedGlassesPhotos,
           onCookAgain: (recipeId) {
             _selectedRecipeId = recipeId;
             _openPrep(returnTo: AppScreen.home);
@@ -472,6 +478,8 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           history: _history,
           onSavePreferences: _savePreferences,
           onOpenHistory: () => setState(() => _screen = AppScreen.history),
+          glassesService: _glassesService,
+          onShowToast: _showToast,
           onBack: () => setState(() => _screen = AppScreen.home),
         );
     }

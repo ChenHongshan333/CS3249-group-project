@@ -55,9 +55,10 @@ Write **Pass**, **Fail**, or what happened.
 | # | Do this | Expect | Result |
 | --- | --- | --- | --- |
 | **Glasses** | | | |
-| G1 | Choose a recipe → on **Get ready**, tap **Change** next to the glasses → **Connect my glasses** | Meta AI opens and asks you to approve an unverified app | |
+| G1 | Choose a recipe → on **Get ready**, tap **Connect** next to the glasses → **Connect my glasses** | Meta AI opens and asks you to approve an unverified app | |
 | G2 | Approve in Meta AI | You're back in CookAlong; the sheet says "Connected to …" with a battery level | |
 | G3 | Close the app fully and reopen it | It reconnects to the real glasses by itself, not the "Mock Kit" | |
+| G4 | Turn the glasses off → on **Get ready**, check the status. Turn them on → **Reconnect** → **Reconnect glasses** | "Glasses disconnected", then "Connected to …". No simulated glasses are offered | |
 | **Opening chat** | | | |
 | O1 | On Get ready, leave **two ingredients unticked** → **Start cooking** | You hear "Today we're making …, right? Have you got the …?" naming those two | |
 | O2 | Say "I don't have *(one of them)*" | A short, sensible reply (it works without it, or a swap) | |
@@ -66,11 +67,12 @@ Write **Pass**, **Fail**, or what happened.
 | **Voice through the glasses** | | | |
 | V1 | Wear the glasses; say "next step" | The app moves on. Note whether the glasses mic or the phone mic heard you | |
 | V2 | Listen to a step being read | Note whether the sound comes from the glasses or the phone | |
-| V3 | While it is talking, say "hold on" | Note whether it stops talking, and whether it pauses | |
+| V3 | While it is talking, say "hold on" (also try "wait" and "stop") | It stops talking at once and listens. Note whether the phone beeps while it talks, and whether it ever stops by itself without you speaking. If the beeps are annoying, turn off **Profile → Say "hold on" to interrupt** | |
 | **Questions and offers** | | | |
 | Q1 | On a step, ask "How small should the pieces be?" | One or two sentences about this step, not a demo answer | |
 | Q2 | On a step with waiting time, ask "How long does this take?" | It answers and asks "Would you like a … timer?" | |
 | Q3 | Say "Yes please" | A timer appears on screen and counts down | |
+| Q4 | Say "set a timer for 4 minutes", and let it run | A short sound when it starts; spoken reminders at 2 minutes and 1 minute left; a ding and "…timer just finished" at the end; the timer row disappears by itself a few seconds later. Note whether the sounds cut off speech or listening | |
 | **Photo check** | | | |
 | P1 | Point at the food → tap **Check** (or say "check this") | The glasses take a photo (capture light comes on briefly), then a reply that describes what's in front of you | |
 | P2 | Fold the glasses → **Check** | It says to unfold them. It does not give a food verdict | |
