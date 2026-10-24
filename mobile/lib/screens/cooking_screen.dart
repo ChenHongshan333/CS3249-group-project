@@ -1212,6 +1212,17 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
+  Future<void> _reconnectGlasses() async {
+    final glasses = widget.glassesService;
+    if (await glasses.connectRealGlasses()) {
+      widget.onShowToast('Connected to ${glasses.deviceName}');
+    } else if (mounted) {
+      widget.onShowToast(
+        glasses.lastStatusNote ?? "Couldn't connect to your glasses.",
+      );
+    }
+  }
+
   Widget _buildTopBar() {
     final textTheme = Theme.of(context).textTheme;
     return Padding(
@@ -1241,6 +1252,31 @@ class _CookingScreenState extends State<CookingScreen>
                 ),
               ],
             ),
+          ),
+          ListenableBuilder(
+            listenable: widget.glassesService,
+            builder: (context, _) {
+              final glasses = widget.glassesService;
+              final connected = glassesReady(
+                glasses,
+                allowSimulated: widget.preferences.simulatedGlassesPhotos,
+              );
+              final connecting =
+                  glasses.connectionState == GlassesConnectionState.connecting;
+              return IconButton(
+                tooltip: connecting
+                    ? 'Connecting to your glasses…'
+                    : connected
+                    ? 'Take a photo with your glasses'
+                    : 'Reconnect your glasses',
+                onPressed: connecting
+                    ? null
+                    : connected
+                    ? () => _triggerVisualCheck()
+                    : _reconnectGlasses,
+                icon: GlassesIcon(connected: connected || connecting),
+              );
+            },
           ),
           ListenableBuilder(
             listenable: widget.voiceController,

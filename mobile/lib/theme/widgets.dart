@@ -328,3 +328,75 @@ class StatusDot extends StatelessWidget {
     );
   }
 }
+
+/// A pair of glasses, with a red slash across it when [connected] is false.
+/// Material has no glasses icon, so it is drawn.
+class GlassesIcon extends StatelessWidget {
+  final bool connected;
+  final double size;
+
+  const GlassesIcon({super.key, required this.connected, this.size = 24});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = IconTheme.of(context).color ?? CookTogetherTheme.ink;
+    return CustomPaint(
+      size: Size.square(size),
+      painter: _GlassesPainter(color: color, slashed: !connected),
+    );
+  }
+}
+
+class _GlassesPainter extends CustomPainter {
+  final Color color;
+  final bool slashed;
+
+  const _GlassesPainter({required this.color, required this.slashed});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.08
+      ..strokeCap = StrokeCap.round;
+    final r = w * 0.17;
+    final y = h * 0.55;
+    canvas.drawCircle(Offset(w * 0.27, y), r, stroke);
+    canvas.drawCircle(Offset(w * 0.73, y), r, stroke);
+    // Bridge and arms.
+    canvas.drawLine(
+      Offset(w * 0.44, y - r * 0.2),
+      Offset(w * 0.56, y - r * 0.2),
+      stroke,
+    );
+    canvas.drawLine(
+      Offset(w * 0.10, y - r * 0.2),
+      Offset(w * 0.04, y - r * 1.4),
+      stroke,
+    );
+    canvas.drawLine(
+      Offset(w * 0.90, y - r * 0.2),
+      Offset(w * 0.96, y - r * 1.4),
+      stroke,
+    );
+    if (slashed) {
+      final slash = Paint()
+        ..color = CookTogetherTheme.accent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = w * 0.1
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(
+        Offset(w * 0.12, h * 0.12),
+        Offset(w * 0.88, h * 0.88),
+        slash,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GlassesPainter old) =>
+      old.color != color || old.slashed != slashed;
+}

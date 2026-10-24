@@ -95,9 +95,28 @@ class HomeScreen extends StatelessWidget {
                     label: '${glassesService.deviceName} connected',
                     color: CookTogetherTheme.success,
                   )
-                : const StatusDot(
-                    label: 'Glasses not connected',
-                    color: CookTogetherTheme.warning,
+                : Column(
+                    children: [
+                      const StatusDot(
+                        label: 'Glasses not connected',
+                        color: CookTogetherTheme.warning,
+                      ),
+                      TextButton(
+                        onPressed:
+                            glassesService.connectionState ==
+                                GlassesConnectionState.connecting
+                            ? null
+                            : glassesService.connectRealGlasses,
+                        child: Text(
+                          glassesService.connectionState ==
+                                  GlassesConnectionState.connecting
+                              ? 'Connecting…'
+                              : glassesService.usingRealGlasses
+                              ? 'Reconnect glasses'
+                              : 'Connect my glasses',
+                        ),
+                      ),
+                    ],
                   ),
           ),
         ),

@@ -669,6 +669,11 @@ class _GlassesSheet extends StatelessWidget {
           'The camera turns on only while a photo is taken.',
           style: textTheme.bodyMedium,
         ),
+        // The link can drop while the glasses still show as connected.
+        TextButton(
+          onPressed: _connect,
+          child: const Text('Not working? Reconnect'),
+        ),
       ] else ...[
         const SizedBox(height: 16),
         PrimaryButton(

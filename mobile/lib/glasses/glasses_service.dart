@@ -516,8 +516,15 @@ class MetaWearablesDatGlassesService extends GlassesService {
       // The glasses sometimes drop their link right after a photo; they
       // usually come back within seconds, so wait for them and try once
       // more.
-      if (_isDroppedLink(e) && await _waitForGlasses()) {
-        return _retryGlassesPhoto(recipe, stepIndex, userPrompt);
+      if (_isDroppedLink(e)) {
+        if (await _waitForGlasses()) {
+          return _retryGlassesPhoto(recipe, stepIndex, userPrompt);
+        }
+        // Meta's toolkit can still list glasses whose link is gone; show
+        // them as disconnected so the screens offer to reconnect.
+        _connectionState = GlassesConnectionState.disconnected;
+        _lastStatusNote = 'Glasses disconnected. Tap to reconnect.';
+        notifyListeners();
       }
       throw GlassesCaptureException(
         explainGlassesError(e),
