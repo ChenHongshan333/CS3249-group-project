@@ -22,6 +22,11 @@ enum MicTapResult {
   unavailable,
 }
 
+/// Whether speech can be recorded through the glasses' mic. Off for now:
+/// on Android that needs Bluetooth call mode, which muffles CookTogether's
+/// voice and jams glasses photos (#40). Set to true to bring it back.
+const bool kGlassesMicEnabled = false;
+
 /// Manages on-device Speech-to-Text (`speech_to_text`) and Text-to-Speech (`flutter_tts`)
 /// for the Cooking screen, supporting both Hands-Free Continuous Listening and Tap-to-Speak.
 class VoiceController extends ChangeNotifier {
@@ -244,6 +249,9 @@ class VoiceController extends ChangeNotifier {
           if (!_isSessionActive) return;
           _interruptListening ? _onInterruptListenEnded() : _onListenEnded();
         },
+        // Otherwise the plugin starts Bluetooth voice recognition on every
+        // listen, which puts the glasses in call mode by itself (#40).
+        options: [SpeechToText.androidNoBluetooth],
       );
     } catch (_) {
       _speechAvailable = false;
