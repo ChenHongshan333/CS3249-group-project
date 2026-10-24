@@ -123,6 +123,10 @@ class _CookingScreenState extends State<CookingScreen>
     )..repeat(reverse: true);
 
     widget.voiceController.onFinalUtterance = _handleUserUtterance;
+    widget.voiceController.onNothingHeard = () =>
+        _appendAiMessage("Sorry, I didn't catch that. Could you say it again?");
+    widget.voiceController.onListeningStopped = () =>
+        _appendAiMessage('Tap the mic when you need me.');
 
     // Fall back to the Mock Device Kit, unless the user chose real glasses
     // (those reconnect on their own).
@@ -259,7 +263,10 @@ class _CookingScreenState extends State<CookingScreen>
     // A new session may already have taken over the voice controller (it
     // starts in the same frame that ends a paused one), so leave it alone.
     if (widget.voiceController.onFinalUtterance == _handleUserUtterance) {
-      widget.voiceController.onFinalUtterance = null;
+      widget.voiceController
+        ..onFinalUtterance = null
+        ..onNothingHeard = null
+        ..onListeningStopped = null;
       widget.voiceController.shutdownSession();
     }
     super.dispose();
@@ -1518,7 +1525,9 @@ class _CookingScreenState extends State<CookingScreen>
                 VoiceActivityState.thinking => 'Thinking…',
                 VoiceActivityState.speaking => 'Speaking…',
                 VoiceActivityState.idle =>
-                  mode == VoiceListeningMode.handsFree
+                  widget.voiceController.listeningStopped
+                      ? 'Tap the mic when you need me'
+                      : mode == VoiceListeningMode.handsFree
                       ? (_opening
                             ? 'Say "let\'s start" or ask a question'
                             : 'Say "next step" or ask a question')
