@@ -17,6 +17,11 @@ class UserPreferences {
   /// the phone camera when no real glasses are connected.
   final bool simulatedGlassesPhotos;
 
+  /// Developer only: every step check gives this result (a
+  /// VisualCheckStatus wire value) without a photo or the backend, so demos
+  /// and tests work without a camera. Empty means off.
+  final String forcedCheckResult;
+
   const UserPreferences({
     this.level = 'I know a few basics',
     this.diet = 'No restrictions',
@@ -25,6 +30,7 @@ class UserPreferences {
     this.handsFreeListening = true,
     this.serverBaseUrl = kDefaultBackendUrl,
     this.simulatedGlassesPhotos = false,
+    this.forcedCheckResult = '',
   });
 
   UserPreferences copyWith({
@@ -35,6 +41,7 @@ class UserPreferences {
     bool? handsFreeListening,
     String? serverBaseUrl,
     bool? simulatedGlassesPhotos,
+    String? forcedCheckResult,
   }) {
     return UserPreferences(
       level: level ?? this.level,
@@ -45,6 +52,7 @@ class UserPreferences {
       serverBaseUrl: serverBaseUrl ?? this.serverBaseUrl,
       simulatedGlassesPhotos:
           simulatedGlassesPhotos ?? this.simulatedGlassesPhotos,
+      forcedCheckResult: forcedCheckResult ?? this.forcedCheckResult,
     );
   }
 
@@ -56,6 +64,7 @@ class UserPreferences {
     'handsFreeListening': handsFreeListening,
     'serverBaseUrl': serverBaseUrl,
     'simulatedGlassesPhotos': simulatedGlassesPhotos,
+    'forcedCheckResult': forcedCheckResult,
   };
 
   factory UserPreferences.fromJson(Map<String, dynamic> json) {
@@ -67,6 +76,7 @@ class UserPreferences {
       handsFreeListening: json['handsFreeListening'] as bool? ?? true,
       serverBaseUrl: json['serverBaseUrl'] as String? ?? kDefaultBackendUrl,
       simulatedGlassesPhotos: json['simulatedGlassesPhotos'] as bool? ?? false,
+      forcedCheckResult: json['forcedCheckResult'] as String? ?? '',
     );
   }
 
@@ -75,9 +85,7 @@ class UserPreferences {
   static UserPreferences decode(String? raw) {
     if (raw == null || raw.isEmpty) return const UserPreferences();
     try {
-      return UserPreferences.fromJson(
-        jsonDecode(raw) as Map<String, dynamic>,
-      );
+      return UserPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>);
     } catch (_) {
       return const UserPreferences();
     }
