@@ -66,7 +66,7 @@ Write **Pass**, **Fail**, or what happened.
 | **Voice through the glasses** | | | |
 | V1 | Wear the glasses; say "next step" | The app moves on. Note whether the glasses mic or the phone mic heard you | |
 | V2 | Listen to a step being read | Note whether the sound comes from the glasses or the phone | |
-| V3 | While it is talking, say "hold on" | Note whether it stops talking, and whether it pauses | |
+| V3 | While it is talking, say "hold on" (also try "wait" and "stop") | It stops talking at once and listens. Note whether the phone beeps while it talks, and whether it ever stops by itself without you speaking. If the beeps are annoying, turn off **Profile → Say "hold on" to interrupt** | |
 | **Questions and offers** | | | |
 | Q1 | On a step, ask "How small should the pieces be?" | One or two sentences about this step, not a demo answer | |
 | Q2 | On a step with waiting time, ask "How long does this take?" | It answers and asks "Would you like a … timer?" | |
