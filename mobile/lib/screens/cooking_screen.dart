@@ -106,6 +106,11 @@ class _CookingScreenState extends State<CookingScreen>
   AssistantAction? _pendingOffer;
 
   late Set<String> _checkedIngredients;
+
+  /// This session's recipe. The opening can adapt its steps to a missing
+  /// ingredient (adapt_steps); everything else then uses the new text.
+  late Recipe _recipe = widget.recipe;
+  final Set<int> _adaptedSteps = {};
   final List<ChatMessage> _messages = [];
   final List<CookingTimer> _timers = [];
 
@@ -119,7 +124,7 @@ class _CookingScreenState extends State<CookingScreen>
   Timer? _clockTimer;
   late final AnimationController _orbPulseController;
 
-  RecipeStep get _step => widget.recipe.steps[_currentStep];
+  RecipeStep get _step => _recipe.steps[_currentStep];
 
   @override
   void initState() {
@@ -175,7 +180,7 @@ class _CookingScreenState extends State<CookingScreen>
     });
 
     // A fixed first line, so every participant hears the same opening.
-    _openingAsked = widget.recipe.ingredients
+    _openingAsked = _recipe.ingredients
         .where((i) => !_checkedIngredients.contains(i))
         .toList();
     final openingText = _openingLine();
@@ -191,7 +196,7 @@ class _CookingScreenState extends State<CookingScreen>
   }
 
   String _openingLine() {
-    final name = widget.recipe.name;
+    final name = _recipe.name;
     final missing = _openingAsked;
     if (missing.isEmpty) {
       return "Today we're making $name, right? You've got everything, "
@@ -216,7 +221,7 @@ class _CookingScreenState extends State<CookingScreen>
       data: {
         'ms': DateTime.now().difference(_openingStartedAt).inMilliseconds,
         'turns': _openingTurns,
-        'missing': widget.recipe.ingredients
+        'missing': _recipe.ingredients
             .where((i) => !_checkedIngredients.contains(i))
             .toList(),
       },
@@ -243,9 +248,9 @@ class _CookingScreenState extends State<CookingScreen>
     widget.assistantService.logEvent(
       sessionId: _sessionId,
       type: 'session_start',
-      data: {'recipeId': widget.recipe.id, 'condition': 'glasses_cui'},
+      data: {'recipeId': _recipe.id, 'condition': 'glasses_cui'},
     );
-    for (final swap in widget.recipe.swaps) {
+    for (final swap in _recipe.swaps) {
       widget.assistantService.logEvent(
         sessionId: _sessionId,
         type: 'swap',
@@ -444,17 +449,17 @@ class _CookingScreenState extends State<CookingScreen>
     }
     _endOpening();
     _pendingOffer = null;
-    if (targetStep >= widget.recipe.steps.length) {
+    if (targetStep >= _recipe.steps.length) {
       _completeSession();
       return;
     }
-    final clamped = targetStep.clamp(0, widget.recipe.steps.length - 1);
+    final clamped = targetStep.clamp(0, _recipe.steps.length - 1);
     // Moving on means the step is done, so its timer ends quietly.
     if (clamped > _currentStep) _endTimerForStep(_currentStep);
     setState(() {
       _currentStep = clamped;
     });
-    final nextStepObj = widget.recipe.steps[clamped];
+    final nextStepObj = _recipe.steps[clamped];
     final announcement =
         'Step ${clamped + 1}: ${nextStepObj.title}. ${nextStepObj.instruction}';
     _appendAiMessage(
@@ -477,7 +482,7 @@ class _CookingScreenState extends State<CookingScreen>
     );
     widget.onFinishCooking(
       elapsedSeconds: _elapsedSeconds,
-      stepsCompleted: widget.recipe.steps.length,
+      stepsCompleted: _recipe.steps.length,
       visualChecksCount: _visualChecksCount,
     );
   }
@@ -509,7 +514,7 @@ class _CookingScreenState extends State<CookingScreen>
       );
       try {
         final capture = await glasses.captureFrame(
-          recipe: widget.recipe,
+          recipe: _recipe,
           stepIndex: _currentStep,
           userPrompt: promptText,
         );
@@ -557,16 +562,16 @@ class _CookingScreenState extends State<CookingScreen>
       }
       return null;
     }
-    final step = widget.recipe.steps[_currentStep];
+    final step = _recipe.steps[_currentStep];
     return VisionCapture(
       id: 'phone-${DateTime.now().millisecondsSinceEpoch}',
-      recipeId: widget.recipe.id,
+      recipeId: _recipe.id,
       stepIndex: _currentStep,
       source: 'phone',
       deviceName: 'Phone camera',
       sceneDescription: step.visionSceneDescription,
-      recipeIcon: widget.recipe.icon,
-      recipeTone: widget.recipe.tone,
+      recipeIcon: _recipe.icon,
+      recipeTone: _recipe.tone,
       jpegBytes: bytes,
       base64Jpeg: base64Encode(bytes),
       capturedAt: DateTime.now(),
@@ -576,16 +581,16 @@ class _CookingScreenState extends State<CookingScreen>
 
   /// A stand-in for a photo when the Developer option forces the result.
   VisionCapture _forcedCapture(String promptText, VisualCheckStatus status) {
-    final step = widget.recipe.steps[_currentStep];
+    final step = _recipe.steps[_currentStep];
     return VisionCapture(
       id: 'forced-${DateTime.now().millisecondsSinceEpoch}',
-      recipeId: widget.recipe.id,
+      recipeId: _recipe.id,
       stepIndex: _currentStep,
       source: 'developer',
       deviceName: 'Developer option',
       sceneDescription: step.visionSceneDescription,
-      recipeIcon: widget.recipe.icon,
-      recipeTone: widget.recipe.tone,
+      recipeIcon: _recipe.icon,
+      recipeTone: _recipe.tone,
       base64Jpeg: '',
       capturedAt: DateTime.now(),
       status: status,
@@ -649,7 +654,7 @@ class _CookingScreenState extends State<CookingScreen>
           )
         : await widget.assistantService.checkStepWithVision(
             sessionId: _sessionId,
-            recipe: widget.recipe,
+            recipe: _recipe,
             stepIndex: _currentStep,
             visionCapture: capture,
             userQuestion: userQuestion,
@@ -856,15 +861,14 @@ class _CookingScreenState extends State<CookingScreen>
     final askedOnStep = _opening ? null : _currentStep;
     final response = await widget.assistantService.askQuestion(
       sessionId: _sessionId,
-      recipe: widget.recipe,
+      recipe: _recipe,
       stepIndex: _currentStep,
       question: text,
       history: _messages,
       acceptedSwaps: widget.acceptedSwapIds.toList(),
       phase: _opening ? 'opening' : 'cooking',
       ingredients: {
-        for (final i in widget.recipe.ingredients)
-          i: _checkedIngredients.contains(i),
+        for (final i in _recipe.ingredients) i: _checkedIngredients.contains(i),
       },
       pendingOffer: offer,
     ).whenComplete(() {
@@ -925,17 +929,58 @@ class _CookingScreenState extends State<CookingScreen>
         );
       case 'start_cooking' when _opening:
         _startCooking(lead: lead);
+      case 'adapt_steps' when _opening:
+        _adaptSteps(action.steps);
       case 'tick_ingredient' when _opening:
         final names = {...action.names, ?action.name};
         setState(
           () => _checkedIngredients.addAll(
-            names.where(widget.recipe.ingredients.contains),
+            names.where(_recipe.ingredients.contains),
           ),
         );
       default:
         // Doesn't fit the current phase; the backend should not send it.
         if (lead != null) _appendAiMessage(lead);
     }
+  }
+
+  /// Replaces steps for a missing ingredient, and notes the changes in the
+  /// chat. The reply already said so aloud, so the note isn't spoken.
+  void _adaptSteps(Map<int, String> changes) {
+    final valid = {
+      for (final e in changes.entries)
+        if (e.key >= 0 && e.key < _recipe.steps.length) e.key: e.value,
+    };
+    if (valid.isEmpty) return;
+    final steps = [
+      for (final (i, step) in _recipe.steps.indexed)
+        valid.containsKey(i) ? step.copyWith(instruction: valid[i]) : step,
+    ];
+    final note = [
+      'Changed for you:',
+      for (final i in valid.keys.toList()..sort())
+        'Step ${i + 1}, ${steps[i].title}: ${steps[i].instruction}',
+    ].join('\n');
+    setState(() {
+      _recipe = _recipe.copyWith(steps: steps);
+      _adaptedSteps.addAll(valid.keys);
+      _messages.add(
+        ChatMessage(
+          id: 'sys-${DateTime.now().microsecondsSinceEpoch}',
+          sender: MessageSender.system,
+          text: note,
+          timestamp: DateTime.now(),
+        ),
+      );
+    });
+    _scrollToBottom();
+    widget.assistantService.logEvent(
+      sessionId: _sessionId,
+      type: 'swap',
+      data: {
+        'adaptedSteps': [for (final i in valid.keys) i],
+      },
+    );
   }
 
   void _togglePause({bool? forcePause}) {
@@ -961,7 +1006,7 @@ class _CookingScreenState extends State<CookingScreen>
       builder: (context) => FractionallySizedBox(
         heightFactor: 0.8,
         child: StepIngredientSheet(
-          recipe: widget.recipe,
+          recipe: _recipe,
           currentStepIndex: _currentStep,
           checkedIngredients: _checkedIngredients,
           onSelectStep: (idx) => _goToStep(idx),
@@ -996,7 +1041,7 @@ class _CookingScreenState extends State<CookingScreen>
     }
   }
 
-  bool get _isLastStep => _currentStep == widget.recipe.steps.length - 1;
+  bool get _isLastStep => _currentStep == _recipe.steps.length - 1;
 
   /// Next and "next step" ask first when this step hasn't been checked.
   /// Users can always skip; this only confirms.
@@ -1094,7 +1139,7 @@ class _CookingScreenState extends State<CookingScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.recipe.name,
+                  _recipe.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: textTheme.titleSmall,
@@ -1201,7 +1246,7 @@ class _CookingScreenState extends State<CookingScreen>
             ],
           ),
           if (_isPaused) ...[_buildPausedBanner(), const SizedBox(height: 12)],
-          Text(widget.recipe.name, style: textTheme.headlineSmall),
+          Text(_recipe.name, style: textTheme.headlineSmall),
           const SizedBox(height: 8),
           if (_openingAsked.isEmpty)
             Text(
@@ -1229,7 +1274,7 @@ class _CookingScreenState extends State<CookingScreen>
   Widget _buildStepPanel() {
     if (_opening) return _buildOpeningPanel();
     final textTheme = Theme.of(context).textTheme;
-    final totalSteps = widget.recipe.steps.length;
+    final totalSteps = _recipe.steps.length;
     final suggestedSecs = _step.suggestedTimerSeconds;
     final suggestedLabel = _step.suggestedTimerLabel ?? _step.title;
     final showSuggestion =
@@ -1298,6 +1343,10 @@ class _CookingScreenState extends State<CookingScreen>
             _step.instruction,
             style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w500),
           ),
+          if (_adaptedSteps.contains(_currentStep)) ...[
+            const SizedBox(height: 4),
+            Text('Changed for your ingredients', style: textTheme.bodySmall),
+          ],
           const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1462,6 +1511,8 @@ class _CookingScreenState extends State<CookingScreen>
       children.add(
         msg.visionCapture != null
             ? _buildVisionCard(msg.visionCapture!, msg.text)
+            : msg.sender == MessageSender.system
+            ? _buildNote(msg)
             : _buildBubble(msg),
       );
     }
@@ -1533,11 +1584,31 @@ class _CookingScreenState extends State<CookingScreen>
             borderRadius: BorderRadius.circular(CookTogetherTheme.radiusCard),
           ),
           child: Text(
-            'Step ${index + 1}: ${widget.recipe.steps[index].title}',
+            'Step ${index + 1}: ${_recipe.steps[index].title}',
             textAlign: TextAlign.center,
             style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
         ),
+      ),
+    );
+  }
+
+  /// A note from the app, such as steps changed for a missing ingredient.
+  Widget _buildNote(ChatMessage msg) {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.edit_note_rounded,
+            size: 20,
+            color: CookTogetherTheme.inkMuted,
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(msg.text, style: textTheme.bodyMedium)),
+        ],
       ),
     );
   }

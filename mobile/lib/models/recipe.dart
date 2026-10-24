@@ -17,6 +17,16 @@ class RecipeStep {
     this.suggestedTimerLabel,
     required this.visionSceneDescription,
   });
+
+  RecipeStep copyWith({String? instruction}) => RecipeStep(
+    title: title,
+    instruction: instruction ?? this.instruction,
+    tip: tip,
+    check: check,
+    suggestedTimerSeconds: suggestedTimerSeconds,
+    suggestedTimerLabel: suggestedTimerLabel,
+    visionSceneDescription: visionSceneDescription,
+  );
 }
 
 /// A healthier choice offered before cooking, such as using less oil.
@@ -55,6 +65,20 @@ class Recipe {
     required this.steps,
     this.swaps = const [],
   });
+
+  /// The same recipe with [steps] replaced, for example adapted to a
+  /// missing ingredient.
+  Recipe copyWith({List<RecipeStep>? steps}) => Recipe(
+    id: id,
+    name: name,
+    timeMinutes: timeMinutes,
+    tone: tone,
+    icon: icon,
+    level: level,
+    ingredients: ingredients,
+    steps: steps ?? this.steps,
+    swaps: swaps,
+  );
 }
 
 const List<Recipe> kStarterRecipes = [

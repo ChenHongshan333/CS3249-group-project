@@ -40,6 +40,7 @@ class AssistantAction {
     'repeat_step',
     'start_cooking',
     'tick_ingredient',
+    'adapt_steps',
   };
 
   final String type;
@@ -51,12 +52,17 @@ class AssistantAction {
   /// only [name].
   final List<String> names;
 
+  /// For `adapt_steps`: the new instruction for each changed step, by step
+  /// index.
+  final Map<int, String> steps;
+
   const AssistantAction(
     this.type, {
     this.seconds,
     this.label,
     this.name,
     this.names = const [],
+    this.steps = const {},
   });
 
   static AssistantAction? fromJson(Object? json) {
@@ -65,6 +71,15 @@ class AssistantAction {
     if (type is! String || !knownTypes.contains(type)) return null;
     final seconds = (json['seconds'] as num?)?.toInt();
     if (type == 'start_timer' && (seconds == null || seconds < 1)) return null;
+    final steps = <int, String>{
+      for (final s in json['steps'] as List? ?? const [])
+        if (s is Map &&
+            s['step'] is int &&
+            s['text'] is String &&
+            (s['text'] as String).trim().isNotEmpty)
+          s['step'] as int: (s['text'] as String).trim(),
+    };
+    if (type == 'adapt_steps' && steps.isEmpty) return null;
     return AssistantAction(
       type,
       seconds: seconds,
@@ -73,6 +88,7 @@ class AssistantAction {
       names: [
         for (final n in json['names'] as List? ?? const []) ?(n as String?),
       ],
+      steps: steps,
     );
   }
 
@@ -82,6 +98,11 @@ class AssistantAction {
     'label': ?label,
     'name': ?name,
     if (names.isNotEmpty) 'names': names,
+    if (steps.isNotEmpty)
+      'steps': [
+        for (final MapEntry(key: step, value: text) in steps.entries)
+          {'step': step, 'text': text},
+      ],
   };
 }
 
@@ -457,6 +478,12 @@ class HttpAssistantService implements AssistantService {
                   {'name': e.key, 'ready': e.value},
               ],
               'pendingOffer': ?pendingOffer?.toJson(),
+              // So CookAlong can adapt them to a missing ingredient.
+              if (phase == 'opening')
+                'steps': [
+                  for (final s in recipe.steps)
+                    {'title': s.title, 'text': s.instruction},
+                ],
             }),
           )
           .timeout(const Duration(seconds: 6));
