@@ -4,6 +4,7 @@ import 'package:meta_wearables_dat_flutter/meta_wearables_dat_flutter.dart';
 import '../glasses/glasses_service.dart';
 import '../models/conversation.dart';
 import '../models/user_preferences.dart';
+import '../services/voice_controller.dart' show kGlassesMicEnabled;
 import '../theme/app_theme.dart';
 import '../theme/widgets.dart';
 
@@ -249,13 +250,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     if (widget.glassesService case final glasses?)
                       _buildSimulatedGlasses(glasses),
-                    _SwitchRow(
-                      title: "Use the phone's mic only",
-                      value: _draft.phoneMicOnly,
-                      onChanged: (v) => setState(
-                        () => _draft = _draft.copyWith(phoneMicOnly: v),
+                    if (kGlassesMicEnabled)
+                      _SwitchRow(
+                        title: "Use the phone's mic only",
+                        value: _draft.phoneMicOnly,
+                        onChanged: (v) => setState(
+                          () => _draft = _draft.copyWith(phoneMicOnly: v),
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: _draft.forcedCheckResult,
