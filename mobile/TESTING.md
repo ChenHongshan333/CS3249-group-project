@@ -63,6 +63,7 @@ Write **Pass**, **Fail**, or what happened.
 | O1 | On Get ready, tap **Don't have** on two ingredients and tick the rest → **Start cooking** | **Start cooking** stays off until every ingredient is ticked or marked. Then you hear "Today we're making …, right? You said you don't have the …" naming those two | |
 | O2 | Say "I don't have *(one of them)*" | A short, sensible reply (it works without it, or a swap) | |
 | O3 | Say "I've got the *(other one)*" | It gets ticked on screen | |
+| O3b | Suggest your own swap, e.g. "Could I use lemon instead of some of the oil?" | One sentence on whether it is healthier and fits the dish. If it is, it says which step it changed and "Changed for you" appears in the chat | |
 | O4 | Say "Let's start" | Step 1 is read out | |
 | **Voice through the glasses** | | | |
 | V1 | Wear the glasses; say "next step" | The app moves on. Note whether the glasses mic or the phone mic heard you | |

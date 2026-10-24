@@ -932,7 +932,11 @@ class _CookingScreenState extends State<CookingScreen>
         }.contains(action.type);
     if (!leadsIn) _appendAiMessage(response.reply, stepIndex: askedOnStep);
     if (action != null) {
-      _runAction(action, lead: leadsIn ? response.reply : null);
+      _runAction(
+        action,
+        lead: leadsIn ? response.reply : null,
+        reply: response.reply,
+      );
     }
 
     widget.assistantService.logEvent(
@@ -948,7 +952,7 @@ class _CookingScreenState extends State<CookingScreen>
   }
 
   /// Does what the assistant asked, the same way the buttons would.
-  void _runAction(AssistantAction action, {String? lead}) {
+  void _runAction(AssistantAction action, {String? lead, String? reply}) {
     switch (action.type) {
       case 'start_timer' when !_opening:
         _startOrUpdateTimer(
@@ -972,6 +976,8 @@ class _CookingScreenState extends State<CookingScreen>
         _startCooking(lead: lead);
       case 'adapt_steps' when _opening:
         _adaptSteps(action.steps);
+      case 'custom_swap' when _opening:
+        _customSwap(action, reason: reply ?? '');
       case 'tick_ingredient' when _opening:
         final names = {...action.names, ?action.name};
         setState(
@@ -987,12 +993,15 @@ class _CookingScreenState extends State<CookingScreen>
 
   /// Replaces steps for a missing ingredient, and notes the changes in the
   /// chat. The reply already said so aloud, so the note isn't spoken.
-  void _adaptSteps(Map<int, String> changes) {
+  /// Returns whether any step changed.
+  ///
+  /// The cook's own swaps log as `custom_swap` instead of `swap` (#22).
+  bool _adaptSteps(Map<int, String> changes, {bool logAsSwap = true}) {
     final valid = {
       for (final e in changes.entries)
         if (e.key >= 0 && e.key < _recipe.steps.length) e.key: e.value,
     };
-    if (valid.isEmpty) return;
+    if (valid.isEmpty) return false;
     final steps = [
       for (final (i, step) in _recipe.steps.indexed)
         valid.containsKey(i) ? step.copyWith(instruction: valid[i]) : step,
@@ -1015,11 +1024,33 @@ class _CookingScreenState extends State<CookingScreen>
       );
     });
     _scrollToBottom();
+    if (logAsSwap) {
+      widget.assistantService.logEvent(
+        sessionId: _sessionId,
+        type: 'swap',
+        data: {
+          'adaptedSteps': [for (final i in valid.keys) i],
+        },
+      );
+    }
+    return true;
+  }
+
+  /// A swap the cook suggested (#22). Steps change only when CookAlong
+  /// judged it healthier and a fit. It is logged apart from the fixed
+  /// swaps, so they stay the same for every participant.
+  void _customSwap(AssistantAction action, {required String reason}) {
+    final works = action.healthier == true && action.fits == true;
+    final applied = works && _adaptSteps(action.steps, logAsSwap: false);
     widget.assistantService.logEvent(
       sessionId: _sessionId,
-      type: 'swap',
+      type: 'custom_swap',
       data: {
-        'adaptedSteps': [for (final i in valid.keys) i],
+        'swap': action.swap,
+        'healthier': action.healthier,
+        'fits': action.fits,
+        'applied': applied,
+        'reason': reason,
       },
     );
   }
