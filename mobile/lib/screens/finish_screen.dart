@@ -46,14 +46,10 @@ enum _PhotoSource { glasses, phone }
 class _FinishScreenState extends State<FinishScreen> {
   bool _busy = false;
 
-  /// The user's own glasses when connected, or the Mock Device Kit when
-  /// Developer allows simulated glasses.
   bool get _glassesReady {
     final glasses = widget.glassesService;
-    if (glasses == null) return false;
-    return glasses.usingRealGlasses
-        ? glasses.connectionState == GlassesConnectionState.connectedHardware
-        : widget.allowSimulatedGlasses && glasses.isConnected;
+    return glasses != null &&
+        glassesReady(glasses, allowSimulated: widget.allowSimulatedGlasses);
   }
 
   /// With glasses connected, asks which camera to use; otherwise the phone.
