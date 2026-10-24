@@ -129,11 +129,11 @@ void main() {
     await _capture(tester, '03b-prep-ready');
 
     await tester.dragUntilVisible(
-      find.text('Change'),
+      find.text('Connect'),
       find.byType(ListView),
       const Offset(0, -200),
     );
-    await tester.tap(find.text('Change'));
+    await tester.tap(find.text('Connect'));
     await settle(tester);
     await _capture(tester, '03c-prep-glasses-sheet');
   }, skip: skip);
