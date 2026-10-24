@@ -1460,20 +1460,18 @@ class _CookingScreenState extends State<CookingScreen>
       button: true,
       label: _isPaused ? 'Resume session' : 'Talk to CookTogether',
       child: GestureDetector(
-        onTap: () {
+        onTap: () async {
           if (_isPaused) {
             _togglePause(forcePause: false);
             return;
           }
-          if (widget.voiceController.speechAvailable) {
-            widget.voiceController.toggleTapToSpeak();
-          } else {
-            // Simulator, web, or tests without a mic: send a sample question
-            // so the conversation flow can still be demonstrated.
-            _handleUserUtterance(
-              _opening
-                  ? "Let's start."
-                  : 'Does this look chopped small enough?',
+          final result = await widget.voiceController.tapMic();
+          // Never stand in for the user with a made-up phrase: say why the
+          // microphone can't be used and point to typing instead.
+          if (result == MicTapResult.unavailable && mounted) {
+            widget.onShowToast(
+              "I can't use the microphone. Check microphone permission for "
+              'CookTogether, or type below.',
             );
           }
         },
