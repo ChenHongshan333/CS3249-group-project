@@ -249,6 +249,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     if (widget.glassesService case final glasses?)
                       _buildSimulatedGlasses(glasses),
+                    _SwitchRow(
+                      title: "Use the phone's mic only",
+                      value: _draft.phoneMicOnly,
+                      onChanged: (v) => setState(
+                        () => _draft = _draft.copyWith(phoneMicOnly: v),
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: _draft.forcedCheckResult,

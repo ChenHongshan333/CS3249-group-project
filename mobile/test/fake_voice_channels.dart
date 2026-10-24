@@ -13,6 +13,11 @@ class FakeVoiceChannels {
   /// Method names the app called on each plugin, in order.
   final List<String> speechCalls = [];
   final List<String> ttsCalls = [];
+  final List<String> audioRouteCalls = [];
+
+  /// The Bluetooth headset whose mic the app gets, or null for the phone's
+  /// own mic. Change it to drop the link or bring it back.
+  String? headset;
 
   /// What was passed to `speak`.
   final List<String> spoken = [];
@@ -23,6 +28,7 @@ class FakeVoiceChannels {
   void install() {
     speechCalls.clear();
     ttsCalls.clear();
+    audioRouteCalls.clear();
     spoken.clear();
     _messenger.setMockMethodCallHandler(_speech, (call) async {
       speechCalls.add(call.method);
@@ -36,8 +42,12 @@ class FakeVoiceChannels {
       if (call.method == 'speak') spoken.add(call.arguments as String);
       return 1;
     });
-    // No Bluetooth headset: the phone's own mic stays in use.
-    _messenger.setMockMethodCallHandler(_audioRoute, (call) async => null);
+    // By default no Bluetooth headset: the phone's own mic stays in use.
+    headset = null;
+    _messenger.setMockMethodCallHandler(_audioRoute, (call) async {
+      audioRouteCalls.add(call.method);
+      return call.method == 'useBluetoothMic' ? headset : null;
+    });
   }
 
   void uninstall() {
