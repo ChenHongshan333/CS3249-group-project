@@ -71,6 +71,10 @@ class _CookingScreenState extends State<CookingScreen>
   bool _isPaused = false;
   bool _composerOpen = false;
   bool _confirmEndOpen = false;
+  bool _confirmSkipOpen = false;
+
+  /// Steps the user has checked with a photo, so Next doesn't ask again.
+  final Set<int> _checkedSteps = {};
 
   // The short chat before step 1 (docs/api.md, "The opening conversation").
   bool _opening = true;
@@ -251,12 +255,15 @@ class _CookingScreenState extends State<CookingScreen>
           sender: MessageSender.user,
           text: text,
           timestamp: DateTime.now(),
+          stepIndex: _opening ? null : _currentStep,
         ),
       );
     });
     _scrollToBottom();
   }
 
+  /// [stepIndex] defaults to the step the photo was taken on, or else the
+  /// current step.
   void _appendAiMessage(
     String text, {
     VisionCapture? visionCapture,
@@ -272,7 +279,10 @@ class _CookingScreenState extends State<CookingScreen>
           timestamp: DateTime.now(),
           visionCapture: visionCapture,
           isStepAnnouncement: isStepAnnouncement,
-          stepIndex: stepIndex,
+          stepIndex:
+              stepIndex ??
+              visionCapture?.stepIndex ??
+              (_opening ? null : _currentStep),
         ),
       );
     });
@@ -466,6 +476,7 @@ class _CookingScreenState extends State<CookingScreen>
     }
 
     final startTime = DateTime.now();
+    final checkedStep = _currentStep;
     final forced = widget.preferences.forcedCheckResult.isEmpty
         ? null
         : VisualCheckStatus.fromWire(widget.preferences.forcedCheckResult);
@@ -503,7 +514,10 @@ class _CookingScreenState extends State<CookingScreen>
       _appendAiMessage(response.reply);
       return;
     }
-    setState(() => _visualChecksCount++);
+    setState(() {
+      _visualChecksCount++;
+      _checkedSteps.add(checkedStep);
+    });
 
     _appendAiMessage(
       response.reply,
@@ -550,6 +564,18 @@ class _CookingScreenState extends State<CookingScreen>
       return;
     }
 
+    // An answer to "Skip this step without checking?". Anything else closes
+    // the question and is handled as usual ("check" takes the photo).
+    if (_confirmSkipOpen) {
+      setState(() => _confirmSkipOpen = false);
+      if (RegExp(
+        r"^(yes|yeah|yep|ok(ay)?|sure|skip( it)?|next( step)?|move on|go ahead)\b",
+      ).hasMatch(text.toLowerCase())) {
+        _moveOn(fromVoice: true);
+        return;
+      }
+    }
+
     // "It's done" ends the step's timer quietly, so it doesn't announce
     // later; the reply carries on as usual.
     if (RegExp(
@@ -563,11 +589,7 @@ class _CookingScreenState extends State<CookingScreen>
 
     switch (intent.type) {
       case VoiceIntentType.nextStep:
-        if (_currentStep == widget.recipe.steps.length - 1) {
-          _completeSession();
-        } else {
-          _goToStep(_currentStep + 1, fromVoice: true);
-        }
+        _nextOrFinish(fromVoice: true);
         return;
 
       case VoiceIntentType.previousStep:
@@ -683,6 +705,8 @@ class _CookingScreenState extends State<CookingScreen>
     final offer = _pendingOffer;
     _pendingOffer = null;
     final startTime = DateTime.now();
+    // The answer goes with the step the question was asked on.
+    final askedOnStep = _opening ? null : _currentStep;
     final response = await widget.assistantService.askQuestion(
       sessionId: _sessionId,
       recipe: widget.recipe,
@@ -712,7 +736,7 @@ class _CookingScreenState extends State<CookingScreen>
           'repeat_step',
           'start_cooking',
         }.contains(action.type);
-    if (!leadsIn) _appendAiMessage(response.reply);
+    if (!leadsIn) _appendAiMessage(response.reply, stepIndex: askedOnStep);
     if (action != null) {
       _runAction(action, lead: leadsIn ? response.reply : null);
     }
@@ -824,11 +848,27 @@ class _CookingScreenState extends State<CookingScreen>
 
   bool get _isLastStep => _currentStep == widget.recipe.steps.length - 1;
 
-  void _nextOrFinish() {
+  /// Next and "next step" ask first when this step hasn't been checked.
+  /// Users can always skip; this only confirms.
+  void _nextOrFinish({bool fromVoice = false}) {
+    if (!_isPaused && !_checkedSteps.contains(_currentStep)) {
+      setState(() => _confirmSkipOpen = true);
+      if (fromVoice) {
+        _appendAiMessage(
+          "You haven't checked this step yet. Say skip to move on, or check "
+          'and I will take a look.',
+        );
+      }
+      return;
+    }
+    _moveOn(fromVoice: fromVoice);
+  }
+
+  void _moveOn({bool fromVoice = false}) {
     if (_isLastStep) {
       _completeSession();
     } else {
-      _goToStep(_currentStep + 1);
+      _goToStep(_currentStep + 1, fromVoice: fromVoice);
     }
   }
 
@@ -847,13 +887,19 @@ class _CookingScreenState extends State<CookingScreen>
 
   @override
   Widget build(BuildContext context) {
-    // The back gesture asks before leaving, like the close button; with the
-    // question open, back answers "stay".
+    // The back gesture asks before leaving, like the close button; with a
+    // question open, back answers "stay" (or "don't skip").
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        setState(() => _confirmEndOpen = !_confirmEndOpen);
+        setState(() {
+          if (_confirmSkipOpen) {
+            _confirmSkipOpen = false;
+          } else {
+            _confirmEndOpen = !_confirmEndOpen;
+          }
+        });
       },
       child: Stack(
         children: [
@@ -873,6 +919,7 @@ class _CookingScreenState extends State<CookingScreen>
               _buildDock(),
             ],
           ),
+          if (_confirmSkipOpen) _buildConfirmSkipModal(),
           if (_confirmEndOpen) _buildConfirmEndModal(),
         ],
       ),
@@ -1230,20 +1277,33 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
-  /// Step announcements are already on the step panel, so they show as a
-  /// small marker instead of a repeated bubble. With captions off, only the
-  /// latest reply is shown.
+  /// The chat is grouped by step. A step's group starts with a divider
+  /// ("Step 2: Chop the vegetables"), shown only for steps where something
+  /// was said. Step announcements are already on the step panel, so they
+  /// are not repeated as bubbles. With captions off, only the latest reply
+  /// is shown.
   Widget _buildConversation() {
     final textTheme = Theme.of(context).textTheme;
-    var items = _messages;
-    if (!widget.preferences.showCaptions) {
-      final replies = _messages.where((m) => !m.isStepAnnouncement);
-      items = replies.isEmpty ? const [] : [replies.last];
+    final replies = _messages.where((m) => !m.isStepAnnouncement).toList();
+    final items = widget.preferences.showCaptions
+        ? replies
+        : replies.isEmpty
+        ? const <ChatMessage>[]
+        : [replies.last];
+
+    final children = <Widget>[];
+    for (final (i, msg) in items.indexed) {
+      final step = msg.stepIndex;
+      final startsGroup = i == 0 || items[i - 1].stepIndex != step;
+      if (startsGroup && step != null && widget.preferences.showCaptions) {
+        children.add(_buildStepDivider(step));
+      }
+      children.add(
+        msg.visionCapture != null
+            ? _buildVisionCard(msg.visionCapture!, msg.text)
+            : _buildBubble(msg),
+      );
     }
-    final hasReplies = items.any((m) => !m.isStepAnnouncement);
-    // A step marker only earns its place when replies follow it.
-    bool repliesAfter(int i) =>
-        items.skip(i + 1).takeWhile((m) => !m.isStepAnnouncement).isNotEmpty;
 
     return ListView(
       controller: _scrollController,
@@ -1254,14 +1314,8 @@ class _CookingScreenState extends State<CookingScreen>
         12,
       ),
       children: [
-        for (final (i, msg) in items.indexed)
-          if (msg.isStepAnnouncement)
-            if (repliesAfter(i)) _buildStepMarker(msg) else const SizedBox()
-          else if (msg.visionCapture != null)
-            _buildVisionCard(msg.visionCapture!, msg.text)
-          else
-            _buildBubble(msg),
-        if (!hasReplies)
+        ...children,
+        if (items.isEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 16),
             child: Text(
@@ -1274,22 +1328,23 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
-  Widget _buildStepMarker(ChatMessage msg) {
-    final index = msg.stepIndex ?? 0;
+  Widget _buildStepDivider(int index) {
+    final textTheme = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          const Expanded(child: Divider()),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Text(
-              'Step ${index + 1} · ${widget.recipe.steps[index].title}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+      padding: const EdgeInsets.only(top: 8, bottom: 12),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            border: Border.all(color: CookTogetherTheme.line),
+            borderRadius: BorderRadius.circular(CookTogetherTheme.radiusCard),
           ),
-          const Expanded(child: Divider()),
-        ],
+          child: Text(
+            'Step ${index + 1}: ${widget.recipe.steps[index].title}',
+            textAlign: TextAlign.center,
+            style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
       ),
     );
   }
@@ -1593,6 +1648,56 @@ class _CookingScreenState extends State<CookingScreen>
               color: Colors.white,
               size: 32,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConfirmSkipModal() {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      color: const Color(0x8A263023),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(24),
+      child: Material(
+        color: CookTogetherTheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Skip this step without checking?',
+                style: textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Check takes a photo and tells you if it looks ready.',
+                style: textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 24),
+              PrimaryButton(
+                label: 'Check first',
+                onPressed: () {
+                  setState(() => _confirmSkipOpen = false);
+                  _triggerVisualCheck();
+                },
+              ),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () {
+                    setState(() => _confirmSkipOpen = false);
+                    _moveOn();
+                  },
+                  child: const Text('Skip'),
+                ),
+              ),
+            ],
           ),
         ),
       ),

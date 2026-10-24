@@ -150,6 +150,9 @@ void main() {
       await tester.pump();
 
       await tester.tap(find.text('Next'));
+      await tester.pump();
+      // Not checked, so Next asks first (#20).
+      await tester.tap(find.text('Skip'));
       await tester.pump(const Duration(seconds: 1));
       expect(find.text('Step 4 of 4'), findsOneWidget);
       expect(find.byIcon(Icons.timer_outlined), findsNothing);

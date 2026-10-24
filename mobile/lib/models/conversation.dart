@@ -100,6 +100,8 @@ class ChatMessage {
   final DateTime timestamp;
   final VisionCapture? visionCapture;
   final bool isStepAnnouncement;
+
+  /// The recipe step the message was said on; null before step 1.
   final int? stepIndex;
 
   const ChatMessage({

@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:meta_wearables_dat_flutter/meta_wearables_dat_flutter.dart';
 
+import '../camera/phone_camera.dart';
 import '../glasses/glasses_service.dart';
 import '../models/conversation.dart';
 import '../models/recipe.dart';
@@ -12,6 +15,11 @@ import '../theme/widgets.dart';
 class PrepScreen extends StatefulWidget {
   final Recipe recipe;
   final GlassesService glassesService;
+  final PhoneCamera? phoneCamera;
+
+  /// Use the Mock Device Kit photo when there are no real glasses, as the
+  /// cooking screen does.
+  final bool simulatedGlassesPhotos;
   final VoiceListeningMode initialListeningMode;
   final void Function({
     required Set<String> checkedIngredients,
@@ -26,6 +34,8 @@ class PrepScreen extends StatefulWidget {
     super.key,
     required this.recipe,
     required this.glassesService,
+    this.phoneCamera,
+    this.simulatedGlassesPhotos = false,
     required this.initialListeningMode,
     required this.onStartCookingSession,
     required this.onBack,
@@ -72,6 +82,19 @@ class _PrepScreenState extends State<PrepScreen> {
       builder: (_) => _GlassesSheet(
         glassesService: widget.glassesService,
         onShowToast: widget.onShowToast,
+      ),
+    );
+  }
+
+  void _openCameraTest() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _CameraTestSheet(
+        recipe: widget.recipe,
+        glassesService: widget.glassesService,
+        phoneCamera: widget.phoneCamera,
+        simulatedGlassesPhotos: widget.simulatedGlassesPhotos,
       ),
     );
   }
@@ -205,6 +228,15 @@ class _PrepScreenState extends State<PrepScreen> {
                   );
                 },
               ),
+              // Catch camera problems now rather than in the middle of a step.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _openCameraTest,
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: const Text('Test camera'),
+                ),
+              ),
             ],
           ),
         ),
@@ -273,6 +305,183 @@ class _SwapRow extends StatelessWidget {
               Switch(value: accepted, onChanged: onChanged),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Takes one photo the way a step check would, and shows it: the glasses
+/// when they are real (or simulated photos are on), otherwise the phone.
+class _CameraTestSheet extends StatefulWidget {
+  final Recipe recipe;
+  final GlassesService glassesService;
+  final PhoneCamera? phoneCamera;
+  final bool simulatedGlassesPhotos;
+
+  const _CameraTestSheet({
+    required this.recipe,
+    required this.glassesService,
+    required this.phoneCamera,
+    required this.simulatedGlassesPhotos,
+  });
+
+  @override
+  State<_CameraTestSheet> createState() => _CameraTestSheetState();
+}
+
+class _CameraTestSheetState extends State<_CameraTestSheet> {
+  bool _busy = true;
+  Uint8List? _photo;
+  bool _works = false;
+  String _message = '';
+
+  bool get _useGlasses =>
+      widget.glassesService.usingRealGlasses || widget.simulatedGlassesPhotos;
+
+  @override
+  void initState() {
+    super.initState();
+    _takePhoto();
+  }
+
+  Future<void> _takePhoto() async {
+    setState(() {
+      _busy = true;
+      _photo = null;
+    });
+    Uint8List? photo;
+    var works = false;
+    String message;
+    if (_useGlasses) {
+      try {
+        final capture = await widget.glassesService.captureFrame(
+          recipe: widget.recipe,
+          stepIndex: 0,
+        );
+        photo = capture.jpegBytes;
+        works = true;
+        // The Mock Device Kit may send a placeholder too small to show.
+        message = photo != null
+            ? 'Your camera works. This photo is from ${capture.deviceName}.'
+            : 'The simulated glasses work. They send a placeholder, not a '
+                  'real photo.';
+      } on GlassesCaptureException catch (e) {
+        message =
+            "${e.message} While cooking, I'll use your phone camera instead.";
+      }
+    } else {
+      final camera = widget.phoneCamera;
+      if (camera == null) {
+        message = 'No camera is available on this device.';
+      } else {
+        try {
+          photo = await camera.takePhoto();
+          works = photo != null;
+          message = works
+              ? 'Your camera works. This photo is from your phone camera.'
+              : 'No photo taken.';
+        } on PhoneCameraException catch (e) {
+          message = e.message;
+        }
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _photo = photo;
+      _works = works;
+      _message = message;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final photo = _photo;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          CookTogetherTheme.gutter,
+          0,
+          CookTogetherTheme.gutter,
+          16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Camera test', style: textTheme.headlineSmall),
+            const SizedBox(height: 16),
+            if (_busy)
+              Row(
+                children: [
+                  const SizedBox.square(
+                    dimension: 24,
+                    child: CircularProgressIndicator(strokeWidth: 3),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _useGlasses
+                          ? 'Taking a photo with your glasses…'
+                          : 'Take a photo with your phone…',
+                      style: textTheme.bodyLarge,
+                    ),
+                  ),
+                ],
+              )
+            else ...[
+              if (photo != null) ...[
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.45,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(
+                      CookTogetherTheme.radiusCard,
+                    ),
+                    child: Image.memory(
+                      photo,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    _works
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    color: _works
+                        ? CookTogetherTheme.success
+                        : CookTogetherTheme.warning,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(_message, style: textTheme.bodyLarge)),
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (!_busy)
+                  TextButton(
+                    onPressed: _takePhoto,
+                    child: const Text('Try again'),
+                  ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Done'),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
