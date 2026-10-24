@@ -121,12 +121,16 @@ class CookingTimer {
   final int remainingSeconds;
   final bool isRunning;
 
+  /// The recipe step this timer belongs to. Each step has at most one.
+  final int? stepIndex;
+
   const CookingTimer({
     required this.id,
     required this.label,
     required this.totalSeconds,
     required this.remainingSeconds,
     this.isRunning = true,
+    this.stepIndex,
   });
 
   bool get isFinished => remainingSeconds <= 0;
@@ -152,6 +156,7 @@ class CookingTimer {
       totalSeconds: totalSeconds ?? this.totalSeconds,
       remainingSeconds: remainingSeconds ?? this.remainingSeconds,
       isRunning: isRunning ?? this.isRunning,
+      stepIndex: stepIndex,
     );
   }
 }

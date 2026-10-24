@@ -285,13 +285,19 @@ class _CookingScreenState extends State<CookingScreen>
 
   void _startOrUpdateTimer({required int seconds, required String label}) {
     setState(() {
-      final existingIdx = _timers.indexWhere((t) => t.label == label);
+      // One timer per step: a new one for this step replaces the old one,
+      // whatever it's called (the button, voice and the AI name it
+      // differently).
+      final existingIdx = _timers.indexWhere(
+        (t) => t.stepIndex == _currentStep,
+      );
       final timer = CookingTimer(
         id: 'tmr-${DateTime.now().millisecondsSinceEpoch}',
         label: label,
         totalSeconds: seconds,
         remainingSeconds: seconds,
         isRunning: true,
+        stepIndex: _currentStep,
       );
       if (existingIdx >= 0) {
         _timers[existingIdx] = timer;
@@ -315,6 +321,8 @@ class _CookingScreenState extends State<CookingScreen>
       return;
     }
     final clamped = targetStep.clamp(0, widget.recipe.steps.length - 1);
+    // Moving on means the step is done, so its timer ends quietly.
+    if (clamped > _currentStep) _endTimerForStep(_currentStep);
     setState(() {
       _currentStep = clamped;
     });
@@ -508,6 +516,14 @@ class _CookingScreenState extends State<CookingScreen>
       return;
     }
 
+    // "It's done" ends the step's timer quietly, so it doesn't announce
+    // later; the reply carries on as usual.
+    if (RegExp(
+      r"\b(it'?s|they'?re|that'?s|i'?m|we'?re|it is|they are) (all )?(done|finished|ready|cooked)\b",
+    ).hasMatch(text.toLowerCase())) {
+      _endTimerForStep(_currentStep);
+    }
+
     // A command the app handles itself replaces any open offer.
     if (intent.type != VoiceIntentType.generalQuestion) _pendingOffer = null;
 
@@ -572,8 +588,15 @@ class _CookingScreenState extends State<CookingScreen>
         return;
 
       case VoiceIntentType.cancelTimer:
-        setState(() => _timers.clear());
-        _appendAiMessage('I cleared your kitchen timer.');
+        if (_timers.isEmpty) {
+          _appendAiMessage('There is no timer running right now.');
+        } else if (_hasActiveTimerForCurrentStep) {
+          _endTimerForStep(_currentStep);
+          _appendAiMessage('I stopped the timer.');
+        } else {
+          setState(() => _timers.clear());
+          _appendAiMessage('I stopped your timers.');
+        }
         return;
 
       case VoiceIntentType.pauseSession:
@@ -755,9 +778,14 @@ class _CookingScreenState extends State<CookingScreen>
     return '$mins:${secs.toString().padLeft(2, '0')}';
   }
 
-  bool get _hasActiveTimerForCurrentStep {
-    final label = _step.suggestedTimerLabel ?? _step.title;
-    return _timers.any((t) => t.label == label);
+  bool get _hasActiveTimerForCurrentStep =>
+      _timers.any((t) => t.stepIndex == _currentStep);
+
+  /// Ends this step's timer without a "finished" announcement, for when the
+  /// user says the step is done or moves on.
+  void _endTimerForStep(int step) {
+    if (!_timers.any((t) => t.stepIndex == step)) return;
+    setState(() => _timers.removeWhere((t) => t.stepIndex == step));
   }
 
   bool get _isLastStep => _currentStep == widget.recipe.steps.length - 1;
