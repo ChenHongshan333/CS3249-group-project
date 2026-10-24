@@ -17,21 +17,35 @@ Future<void> _loadFont(String family, List<String> paths) async {
   await loader.load();
 }
 
+/// The file in [dir] called [name], ignoring case: the SDK names them
+/// "roboto-regular.ttf" on some machines and "Roboto-Regular.ttf" on others,
+/// and Linux file names are case-sensitive.
+String _inDir(String dir, String name) {
+  final folder = Directory(dir);
+  if (!folder.existsSync()) return '$dir/$name';
+  for (final entry in folder.listSync()) {
+    final base = entry.uri.pathSegments.last;
+    if (base.toLowerCase() == name) return entry.path;
+  }
+  return '$dir/$name';
+}
+
 Future<void> loadRealFonts() async {
   // flutter_tester lives in <sdk>/bin/cache/artifacts/engine/<platform>/.
   final engineDir = File(Platform.resolvedExecutable).parent;
   final fontDir = '${engineDir.parent.parent.path}/material_fonts';
   // Without Roboto, tests would quietly measure with the square test font.
-  if (!File('$fontDir/roboto-regular.ttf').existsSync()) {
-    throw StateError(
-      'Roboto not found in $fontDir. Run "flutter precache --universal".',
-    );
+  final regular = _inDir(fontDir, 'roboto-regular.ttf');
+  if (!File(regular).existsSync()) {
+    throw StateError('Roboto not found in $fontDir.');
   }
   await _loadFont('Roboto', [
     for (final w in ['light', 'regular', 'medium', 'bold', 'black'])
-      '$fontDir/roboto-$w.ttf',
+      _inDir(fontDir, 'roboto-$w.ttf'),
   ]);
-  await _loadFont('MaterialIcons', ['$fontDir/materialicons-regular.otf']);
+  await _loadFont('MaterialIcons', [
+    _inDir(fontDir, 'materialicons-regular.otf'),
+  ]);
   await _loadFont('Noto Color Emoji', [
     'C:/Windows/Fonts/seguiemj.ttf',
     '/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf',

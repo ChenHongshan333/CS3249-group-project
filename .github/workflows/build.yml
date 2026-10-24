@@ -46,14 +46,6 @@ jobs:
           channel: stable
           flutter-version: 3.47.7
           cache: true
-      # Roboto from the SDK, which the text-fit and screenshot tests use.
-      - run: flutter precache --universal
-      - name: Find fonts (temporary)
-        run: |
-          echo "FLUTTER_ROOT=$FLUTTER_ROOT"
-          ls "$FLUTTER_ROOT/bin/cache/artifacts" || true
-          find / -iname 'roboto-regular.ttf' 2>/dev/null | head
-          cat "$FLUTTER_ROOT/bin/cache/material_fonts.stamp" 2>/dev/null || echo no stamp
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
