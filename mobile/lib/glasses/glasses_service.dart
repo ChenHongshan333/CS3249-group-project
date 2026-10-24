@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:meta_wearables_dat_flutter/meta_wearables_dat_flutter.dart';
 
+import 'upright_photo.dart';
 import '../models/conversation.dart';
 import '../models/recipe.dart';
 
@@ -615,7 +616,8 @@ class MetaWearablesDatGlassesService extends GlassesService {
       if (photo.bytes.isEmpty) {
         throw const GlassesCaptureException('The glasses sent an empty photo.');
       }
-      return _buildCapture(recipe, stepIndex, userPrompt, photo.bytes);
+      final upright = await uprightGlassesPhoto(photo.bytes);
+      return _buildCapture(recipe, stepIndex, userPrompt, upright);
     } on TimeoutException {
       throw const GlassesCaptureException(
         'The glasses took too long to take a photo. Try again.',
