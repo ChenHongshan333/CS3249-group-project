@@ -11,6 +11,7 @@ import '../models/conversation.dart';
 import '../models/recipe.dart';
 import '../models/user_preferences.dart';
 import '../services/assistant_service.dart';
+import '../services/cue_sounds.dart';
 import '../services/voice_controller.dart';
 import '../services/voice_intent_parser.dart';
 import '../theme/app_theme.dart';
@@ -31,6 +32,7 @@ class CookingScreen extends StatefulWidget {
   final AssistantService assistantService;
   final VoiceController voiceController;
   final PhoneCamera? phoneCamera;
+  final CueSounds? cueSounds;
   final Set<String> initialCheckedIngredients;
   final VoiceListeningMode initialListeningMode;
   final Set<String> acceptedSwapIds;
@@ -59,6 +61,7 @@ class CookingScreen extends StatefulWidget {
     required this.assistantService,
     required this.voiceController,
     this.phoneCamera,
+    this.cueSounds,
     required this.initialCheckedIngredients,
     required this.initialListeningMode,
     this.acceptedSwapIds = const {},
@@ -82,7 +85,9 @@ class _CookingScreenState extends State<CookingScreen>
   bool _isPaused = false;
   bool _composerOpen = false;
   bool _confirmEndOpen = false;
+  bool _waitingForReply = false;
   bool _confirmSkipOpen = false;
+  bool _visualCheckInProgress = false;
 
   /// Steps the user has checked with a photo, so Next doesn't ask again.
   final Set<int> _checkedSteps = {};
@@ -103,6 +108,11 @@ class _CookingScreenState extends State<CookingScreen>
 
   late Set<String> _checkedIngredients;
 
+  /// This session's recipe. The opening can adapt its steps to a missing
+  /// ingredient (adapt_steps); everything else then uses the new text.
+  late Recipe _recipe = widget.recipe;
+  final Set<int> _adaptedSteps = {};
+
   /// The step panel flashes briefly when the step changes, so a new step
   /// isn't mistaken for part of the chat.
   bool _stepHighlighted = false;
@@ -113,13 +123,18 @@ class _CookingScreenState extends State<CookingScreen>
   bool _stepHintSeen = true;
   final List<ChatMessage> _messages = [];
   final List<CookingTimer> _timers = [];
+
+  /// Finished timers fade out on their own after [_finishedTimerShown].
+  static const _finishedTimerShown = Duration(seconds: 8);
+  final Set<String> _fadingTimerIds = {};
+  final Map<String, Timer> _fadeTimers = {};
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
   Timer? _clockTimer;
   late final AnimationController _orbPulseController;
 
-  RecipeStep get _step => widget.recipe.steps[_currentStep];
+  RecipeStep get _step => _recipe.steps[_currentStep];
 
   @override
   void initState() {
@@ -133,6 +148,11 @@ class _CookingScreenState extends State<CookingScreen>
     )..repeat(reverse: true);
 
     widget.voiceController.onFinalUtterance = _handleUserUtterance;
+    widget.voiceController.addListener(_onVoiceChanged);
+    widget.voiceController.onNothingHeard = () =>
+        _appendAiMessage("Sorry, I didn't catch that. Could you say it again?");
+    widget.voiceController.onListeningStopped = () =>
+        _appendAiMessage('Tap the mic when you need me.');
 
     // Fall back to the Mock Device Kit, unless the user chose real glasses
     // (those reconnect on their own).
@@ -145,6 +165,8 @@ class _CookingScreenState extends State<CookingScreen>
 
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || _isPaused) return;
+      final finished = <CookingTimer>[];
+      final reminders = <String>[];
       setState(() {
         _elapsedSeconds++;
         for (int i = 0; i < _timers.length; i++) {
@@ -155,21 +177,22 @@ class _CookingScreenState extends State<CookingScreen>
               remainingSeconds: nextRemaining,
               isRunning: nextRemaining > 0,
             );
-            if (nextRemaining == 0) {
-              widget.onShowToast(
-                'Timer finished: ${t.label} — check your food!',
-              );
-              _appendAiMessage(
-                'Your ${t.label.toLowerCase()} timer just finished! Take a look or say "check this step" so we can inspect it together.',
-              );
-            }
+            if (nextRemaining == 0) finished.add(t);
+            final reminder = _timerReminder(t, nextRemaining);
+            if (reminder != null) reminders.add(reminder);
           }
         }
       });
+      for (final t in finished) {
+        _onTimerFinished(t);
+      }
+      for (final reminder in reminders) {
+        _speakOnly(reminder);
+      }
     });
 
     // A fixed first line, so every participant hears the same opening.
-    _openingAsked = widget.recipe.ingredients
+    _openingAsked = _recipe.ingredients
         .where((i) => !_checkedIngredients.contains(i))
         .toList();
     final openingText = _openingLine();
@@ -185,7 +208,7 @@ class _CookingScreenState extends State<CookingScreen>
   }
 
   String _openingLine() {
-    final name = widget.recipe.name;
+    final name = _recipe.name;
     final missing = _openingAsked;
     if (missing.isEmpty) {
       return "Today we're making $name, right? You've got everything, "
@@ -210,7 +233,7 @@ class _CookingScreenState extends State<CookingScreen>
       data: {
         'ms': DateTime.now().difference(_openingStartedAt).inMilliseconds,
         'turns': _openingTurns,
-        'missing': widget.recipe.ingredients
+        'missing': _recipe.ingredients
             .where((i) => !_checkedIngredients.contains(i))
             .toList(),
       },
@@ -247,6 +270,7 @@ class _CookingScreenState extends State<CookingScreen>
   }
 
   Future<void> _initializeVoiceAndAnnounce(String openingText) async {
+    widget.voiceController.interruptByVoice = widget.preferences.voiceInterrupt;
     await widget.voiceController.initialize(
       initialMode: widget.initialListeningMode,
       initialMuted: !widget.preferences.voiceGuidance,
@@ -260,9 +284,9 @@ class _CookingScreenState extends State<CookingScreen>
     widget.assistantService.logEvent(
       sessionId: _sessionId,
       type: 'session_start',
-      data: {'recipeId': widget.recipe.id, 'condition': 'glasses_cui'},
+      data: {'recipeId': _recipe.id, 'condition': 'glasses_cui'},
     );
-    for (final swap in widget.recipe.swaps) {
+    for (final swap in _recipe.swaps) {
       widget.assistantService.logEvent(
         sessionId: _sessionId,
         type: 'swap',
@@ -290,13 +314,22 @@ class _CookingScreenState extends State<CookingScreen>
   void dispose() {
     _clockTimer?.cancel();
     _stepHighlightTimer?.cancel();
+    for (final t in _fadeTimers.values) {
+      t.cancel();
+    }
     _orbPulseController.dispose();
     _textController.dispose();
     _scrollController.dispose();
+    
+    widget.voiceController.removeListener(_onVoiceChanged);
+    
     // A new session may already have taken over the voice controller (it
     // starts in the same frame that ends a paused one), so leave it alone.
     if (widget.voiceController.onFinalUtterance == _handleUserUtterance) {
-      widget.voiceController.onFinalUtterance = null;
+      widget.voiceController
+        ..onFinalUtterance = null
+        ..onNothingHeard = null
+        ..onListeningStopped = null;
       widget.voiceController.shutdownSession();
     }
     super.dispose();
@@ -312,6 +345,15 @@ class _CookingScreenState extends State<CookingScreen>
         );
       }
     });
+  }
+
+  void _onVoiceChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (widget.voiceController.partialTranscript.isNotEmpty ||
+        widget.voiceController.activityState == VoiceActivityState.thinking) {
+      _scrollToBottom();
+    }
   }
 
   void _appendUserMessage(String text) {
@@ -363,6 +405,53 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
+  /// Spoken reminders for timers of 3 minutes or more: halfway (when that
+  /// isn't close to the end) and 1 minute before the end.
+  String? _timerReminder(CookingTimer t, int remaining) {
+    if (t.totalSeconds < 180) return null;
+    final name = t.label.toLowerCase();
+    if (remaining == 60) return '1 minute left on your $name timer.';
+    final half = t.totalSeconds ~/ 2;
+    if (remaining == half && half - 60 >= 30) {
+      final minutes = (half / 60).round();
+      return 'Halfway there: $minutes minutes left on your $name timer.';
+    }
+    return null;
+  }
+
+  /// A ding, then CookTogether says so; the row fades out a little later.
+  void _onTimerFinished(CookingTimer t) {
+    widget.cueSounds?.play(Cue.timerDone);
+    widget.onShowToast('Timer finished: ${t.label} — check your food!');
+    // After the ding, so the two don't talk over each other.
+    Timer(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
+      _appendAiMessage(
+        'Your ${t.label.toLowerCase()} timer just finished! Take a look or say "check this step" so we can inspect it together.',
+      );
+    });
+    _fadeTimers[t.id]?.cancel();
+    _fadeTimers[t.id] = Timer(_finishedTimerShown, () {
+      if (mounted) setState(() => _fadingTimerIds.add(t.id));
+    });
+  }
+
+  void _removeTimer(String id) {
+    _fadeTimers.remove(id)?.cancel();
+    _fadingTimerIds.remove(id);
+    setState(() => _timers.removeWhere((t) => t.id == id));
+  }
+
+  /// Says [text] without adding it to the chat: the timer row already
+  /// shows the time left.
+  void _speakOnly(String text) {
+    if (_isPaused) return;
+    widget.voiceController.speak(
+      text,
+      voiceGuidanceEnabled: widget.preferences.voiceGuidance,
+    );
+  }
+
   void _startOrUpdateTimer({required int seconds, required String label}) {
     setState(() {
       // One timer per step: a new one for this step replaces the old one,
@@ -385,6 +474,7 @@ class _CookingScreenState extends State<CookingScreen>
         _timers.add(timer);
       }
     });
+    widget.cueSounds?.play(Cue.timerStart);
     final mins = (seconds / 60).ceil();
     widget.onShowToast('$label started ($mins min)');
   }
@@ -396,11 +486,11 @@ class _CookingScreenState extends State<CookingScreen>
     }
     _endOpening();
     _pendingOffer = null;
-    if (targetStep >= widget.recipe.steps.length) {
+    if (targetStep >= _recipe.steps.length) {
       _completeSession();
       return;
     }
-    final clamped = targetStep.clamp(0, widget.recipe.steps.length - 1);
+    final clamped = targetStep.clamp(0, _recipe.steps.length - 1);
     // Moving on means the step is done, so its timer ends quietly.
     if (clamped > _currentStep) _endTimerForStep(_currentStep);
     // The hint has done its job once the cook moves past step 1.
@@ -409,7 +499,7 @@ class _CookingScreenState extends State<CookingScreen>
       _currentStep = clamped;
     });
     _highlightStep();
-    final nextStepObj = widget.recipe.steps[clamped];
+    final nextStepObj = _recipe.steps[clamped];
     final announcement =
         'Step ${clamped + 1}: ${nextStepObj.title}. ${nextStepObj.instruction}';
     _appendAiMessage(
@@ -432,7 +522,7 @@ class _CookingScreenState extends State<CookingScreen>
     );
     widget.onFinishCooking(
       elapsedSeconds: _elapsedSeconds,
-      stepsCompleted: widget.recipe.steps.length,
+      stepsCompleted: _recipe.steps.length,
       visualChecksCount: _visualChecksCount,
     );
   }
@@ -447,16 +537,32 @@ class _CookingScreenState extends State<CookingScreen>
     final useGlasses =
         glasses.usingRealGlasses || widget.preferences.simulatedGlassesPhotos;
     if (useGlasses) {
+      final step = _currentStep;
+      final ready = await widget.voiceController.prepareForPhoto(
+        voiceGuidanceEnabled: widget.preferences.voiceGuidance,
+      );
+      if (!mounted || _isPaused || !widget.isVisible || _currentStep != step) {
+        return null;
+      }
+      if (!ready) {
+        _appendAiMessage('Photo cancelled. Say "check this" to try again.');
+        return null;
+      }
       widget.voiceController.setActivityState(
         VoiceActivityState.capturingVision,
         hint: 'Taking a photo with your glasses…',
       );
       try {
-        return await glasses.captureFrame(
-          recipe: widget.recipe,
+        final capture = await glasses.captureFrame(
+          recipe: _recipe,
           stepIndex: _currentStep,
           userPrompt: promptText,
         );
+        if (!mounted || _isPaused || !widget.isVisible || _currentStep != step) {
+          return null;
+        }
+        await widget.voiceController.playPhotoShutter();
+        return capture;
       } on GlassesCaptureException catch (e) {
         if (mounted) {
           _appendAiMessage(
@@ -465,6 +571,7 @@ class _CookingScreenState extends State<CookingScreen>
         }
       }
     }
+    if (!mounted || _isPaused || !widget.isVisible) return null;
     return _takePhonePhoto(promptText);
   }
 
@@ -495,16 +602,16 @@ class _CookingScreenState extends State<CookingScreen>
       }
       return null;
     }
-    final step = widget.recipe.steps[_currentStep];
+    final step = _recipe.steps[_currentStep];
     return VisionCapture(
       id: 'phone-${DateTime.now().millisecondsSinceEpoch}',
-      recipeId: widget.recipe.id,
+      recipeId: _recipe.id,
       stepIndex: _currentStep,
       source: 'phone',
       deviceName: 'Phone camera',
       sceneDescription: step.visionSceneDescription,
-      recipeIcon: widget.recipe.icon,
-      recipeTone: widget.recipe.tone,
+      recipeIcon: _recipe.icon,
+      recipeTone: _recipe.tone,
       jpegBytes: bytes,
       base64Jpeg: base64Encode(bytes),
       capturedAt: DateTime.now(),
@@ -514,16 +621,16 @@ class _CookingScreenState extends State<CookingScreen>
 
   /// A stand-in for a photo when the Developer option forces the result.
   VisionCapture _forcedCapture(String promptText, VisualCheckStatus status) {
-    final step = widget.recipe.steps[_currentStep];
+    final step = _recipe.steps[_currentStep];
     return VisionCapture(
       id: 'forced-${DateTime.now().millisecondsSinceEpoch}',
-      recipeId: widget.recipe.id,
+      recipeId: _recipe.id,
       stepIndex: _currentStep,
       source: 'developer',
       deviceName: 'Developer option',
       sceneDescription: step.visionSceneDescription,
-      recipeIcon: widget.recipe.icon,
-      recipeTone: widget.recipe.tone,
+      recipeIcon: _recipe.icon,
+      recipeTone: _recipe.tone,
       base64Jpeg: '',
       capturedAt: DateTime.now(),
       status: status,
@@ -532,6 +639,16 @@ class _CookingScreenState extends State<CookingScreen>
   }
 
   Future<void> _triggerVisualCheck({String? userQuestion}) async {
+    if (_visualCheckInProgress) return;
+    _visualCheckInProgress = true;
+    try {
+      await _performVisualCheck(userQuestion: userQuestion);
+    } finally {
+      _visualCheckInProgress = false;
+    }
+  }
+
+  Future<void> _performVisualCheck({String? userQuestion}) async {
     if (_opening) {
       _appendAiMessage("Let's start the first step, then I can take a look.");
       return;
@@ -556,6 +673,7 @@ class _CookingScreenState extends State<CookingScreen>
     final capture = forced != null
         ? _forcedCapture(promptText, forced)
         : await _takeStepPhoto(promptText);
+    if (!mounted) return;
     if (capture == null) {
       widget.voiceController.setActivityState(VoiceActivityState.idle);
       return;
@@ -576,7 +694,7 @@ class _CookingScreenState extends State<CookingScreen>
           )
         : await widget.assistantService.checkStepWithVision(
             sessionId: _sessionId,
-            recipe: widget.recipe,
+            recipe: _recipe,
             stepIndex: _currentStep,
             visionCapture: capture,
             userQuestion: userQuestion,
@@ -771,6 +889,7 @@ class _CookingScreenState extends State<CookingScreen>
   };
 
   Future<void> _askAssistant(String text) async {
+    setState(() => _waitingForReply = true);
     widget.voiceController.setActivityState(
       VoiceActivityState.thinking,
       hint: 'Thinking…',
@@ -782,18 +901,19 @@ class _CookingScreenState extends State<CookingScreen>
     final askedOnStep = _opening ? null : _currentStep;
     final response = await widget.assistantService.askQuestion(
       sessionId: _sessionId,
-      recipe: widget.recipe,
+      recipe: _recipe,
       stepIndex: _currentStep,
       question: text,
       history: _messages,
       acceptedSwaps: widget.acceptedSwapIds.toList(),
       phase: _opening ? 'opening' : 'cooking',
       ingredients: {
-        for (final i in widget.recipe.ingredients)
-          i: _checkedIngredients.contains(i),
+        for (final i in _recipe.ingredients) i: _checkedIngredients.contains(i),
       },
       pendingOffer: offer,
-    );
+    ).whenComplete(() {
+      if (mounted) setState(() => _waitingForReply = false);
+    });
     if (!mounted) return;
     if (_opening) _openingTurns++;
     // After an error the question was never answered, so the offer stands.
@@ -849,17 +969,58 @@ class _CookingScreenState extends State<CookingScreen>
         );
       case 'start_cooking' when _opening:
         _startCooking(lead: lead);
+      case 'adapt_steps' when _opening:
+        _adaptSteps(action.steps);
       case 'tick_ingredient' when _opening:
         final names = {...action.names, ?action.name};
         setState(
           () => _checkedIngredients.addAll(
-            names.where(widget.recipe.ingredients.contains),
+            names.where(_recipe.ingredients.contains),
           ),
         );
       default:
         // Doesn't fit the current phase; the backend should not send it.
         if (lead != null) _appendAiMessage(lead);
     }
+  }
+
+  /// Replaces steps for a missing ingredient, and notes the changes in the
+  /// chat. The reply already said so aloud, so the note isn't spoken.
+  void _adaptSteps(Map<int, String> changes) {
+    final valid = {
+      for (final e in changes.entries)
+        if (e.key >= 0 && e.key < _recipe.steps.length) e.key: e.value,
+    };
+    if (valid.isEmpty) return;
+    final steps = [
+      for (final (i, step) in _recipe.steps.indexed)
+        valid.containsKey(i) ? step.copyWith(instruction: valid[i]) : step,
+    ];
+    final note = [
+      'Changed for you:',
+      for (final i in valid.keys.toList()..sort())
+        'Step ${i + 1}, ${steps[i].title}: ${steps[i].instruction}',
+    ].join('\n');
+    setState(() {
+      _recipe = _recipe.copyWith(steps: steps);
+      _adaptedSteps.addAll(valid.keys);
+      _messages.add(
+        ChatMessage(
+          id: 'sys-${DateTime.now().microsecondsSinceEpoch}',
+          sender: MessageSender.system,
+          text: note,
+          timestamp: DateTime.now(),
+        ),
+      );
+    });
+    _scrollToBottom();
+    widget.assistantService.logEvent(
+      sessionId: _sessionId,
+      type: 'swap',
+      data: {
+        'adaptedSteps': [for (final i in valid.keys) i],
+      },
+    );
   }
 
   void _togglePause({bool? forcePause}) {
@@ -885,7 +1046,7 @@ class _CookingScreenState extends State<CookingScreen>
       builder: (context) => FractionallySizedBox(
         heightFactor: 0.8,
         child: StepIngredientSheet(
-          recipe: widget.recipe,
+          recipe: _recipe,
           currentStepIndex: _currentStep,
           checkedIngredients: _checkedIngredients,
           onSelectStep: (idx) => _goToStep(idx),
@@ -915,11 +1076,12 @@ class _CookingScreenState extends State<CookingScreen>
   /// Ends this step's timer without a "finished" announcement, for when the
   /// user says the step is done or moves on.
   void _endTimerForStep(int step) {
-    if (!_timers.any((t) => t.stepIndex == step)) return;
-    setState(() => _timers.removeWhere((t) => t.stepIndex == step));
+    for (final t in _timers.where((t) => t.stepIndex == step).toList()) {
+      _removeTimer(t.id);
+    }
   }
 
-  bool get _isLastStep => _currentStep == widget.recipe.steps.length - 1;
+  bool get _isLastStep => _currentStep == _recipe.steps.length - 1;
 
   /// Next and "next step" ask first when this step hasn't been checked.
   /// Users can always skip; this only confirms.
@@ -1017,7 +1179,7 @@ class _CookingScreenState extends State<CookingScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.recipe.name,
+                  _recipe.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: textTheme.titleSmall,
@@ -1164,7 +1326,7 @@ class _CookingScreenState extends State<CookingScreen>
             ],
           ),
           if (_isPaused) ...[_buildPausedBanner(), const SizedBox(height: 12)],
-          Text(widget.recipe.name, style: textTheme.headlineSmall),
+          Text(_recipe.name, style: textTheme.headlineSmall),
           const SizedBox(height: 8),
           if (_openingAsked.isEmpty)
             Text(
@@ -1192,7 +1354,7 @@ class _CookingScreenState extends State<CookingScreen>
   Widget _buildStepPanel() {
     if (_opening) return _buildOpeningPanel();
     final textTheme = Theme.of(context).textTheme;
-    final totalSteps = widget.recipe.steps.length;
+    final totalSteps = _recipe.steps.length;
     final suggestedSecs = _step.suggestedTimerSeconds;
     final suggestedLabel = _step.suggestedTimerLabel ?? _step.title;
     final showSuggestion =
@@ -1253,6 +1415,10 @@ class _CookingScreenState extends State<CookingScreen>
             _step.instruction,
             style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w500),
           ),
+          if (_adaptedSteps.contains(_currentStep)) ...[
+            const SizedBox(height: 4),
+            Text('Changed for your ingredients', style: textTheme.bodySmall),
+          ],
           const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1271,7 +1437,15 @@ class _CookingScreenState extends State<CookingScreen>
           ),
           for (final timer in _timers) ...[
             const SizedBox(height: 12),
-            _buildTimerRow(timer),
+            AnimatedOpacity(
+              key: ValueKey(timer.id),
+              opacity: _fadingTimerIds.contains(timer.id) ? 0 : 1,
+              duration: const Duration(milliseconds: 600),
+              onEnd: () {
+                if (_fadingTimerIds.contains(timer.id)) _removeTimer(timer.id);
+              },
+              child: _buildTimerRow(timer),
+            ),
           ],
           if (showSuggestion) ...[
             const SizedBox(height: 12),
@@ -1347,8 +1521,7 @@ class _CookingScreenState extends State<CookingScreen>
             ),
           IconButton(
             tooltip: 'Dismiss timer',
-            onPressed: () =>
-                setState(() => _timers.removeWhere((t) => t.id == timer.id)),
+            onPressed: () => _removeTimer(timer.id),
             icon: const Icon(Icons.close_rounded, size: 20),
           ),
         ],
@@ -1391,6 +1564,8 @@ class _CookingScreenState extends State<CookingScreen>
   /// is shown.
   Widget _buildConversation() {
     final textTheme = Theme.of(context).textTheme;
+    final transcript = widget.voiceController.partialTranscript;
+    final thinking = _waitingForReply;
     final replies = _messages.where((m) => !m.isStepAnnouncement).toList();
     final items = widget.preferences.showCaptions
         ? replies
@@ -1408,6 +1583,8 @@ class _CookingScreenState extends State<CookingScreen>
       children.add(
         msg.visionCapture != null
             ? _buildVisionCard(msg.visionCapture!, msg.text)
+            : msg.sender == MessageSender.system
+            ? _buildNote(msg)
             : _buildBubble(msg),
       );
     }
@@ -1422,7 +1599,39 @@ class _CookingScreenState extends State<CookingScreen>
       ),
       children: [
         ...children,
-        if (items.isEmpty)
+        if (transcript.isNotEmpty)
+          KeyedSubtree(
+            key: const ValueKey('live-transcript'),
+            child: _buildBubble(
+              ChatMessage(
+                id: 'live-transcript',
+                sender: MessageSender.user,
+                text: transcript,
+                timestamp: DateTime.now(),
+                stepIndex: _opening ? null : _currentStep,
+              ),
+            ),
+          ),
+        if (thinking)
+          Padding(
+            key: const ValueKey('chat-thinking'),
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Semantics(
+              liveRegion: true,
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('Thinking…', style: textTheme.bodyMedium),
+                ],
+              ),
+            ),
+          ),
+        if (items.isEmpty && transcript.isEmpty && !thinking)
           Padding(
             padding: const EdgeInsets.only(top: 16),
             child: Text(
@@ -1447,11 +1656,31 @@ class _CookingScreenState extends State<CookingScreen>
             borderRadius: BorderRadius.circular(CookTogetherTheme.radiusCard),
           ),
           child: Text(
-            'Step ${index + 1}: ${widget.recipe.steps[index].title}',
+            'Step ${index + 1}: ${_recipe.steps[index].title}',
             textAlign: TextAlign.center,
             style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
         ),
+      ),
+    );
+  }
+
+  /// A note from the app, such as steps changed for a missing ingredient.
+  Widget _buildNote(ChatMessage msg) {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.edit_note_rounded,
+            size: 20,
+            color: CookTogetherTheme.inkMuted,
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(msg.text, style: textTheme.bodyMedium)),
+        ],
       ),
     );
   }
@@ -1574,7 +1803,6 @@ class _CookingScreenState extends State<CookingScreen>
       builder: (context, _) {
         final state = widget.voiceController.activityState;
         final mode = widget.voiceController.listeningMode;
-        final partial = widget.voiceController.partialTranscript;
 
         final orbColor = switch (state) {
           VoiceActivityState.listening => CookTogetherTheme.success,
@@ -1584,18 +1812,19 @@ class _CookingScreenState extends State<CookingScreen>
           VoiceActivityState.idle => const Color(0xFF55664F),
         };
 
-        final statusLabel = partial.isNotEmpty
-            ? '"$partial…"'
-            : _isPaused
+        final statusLabel = _isPaused
             ? 'Paused'
             : switch (state) {
                 VoiceActivityState.listening => 'Listening…',
                 VoiceActivityState.capturingVision =>
-                  'Looking through your glasses…',
+                  widget.voiceController.statusHint ??
+                      'Looking through your glasses…',
                 VoiceActivityState.thinking => 'Thinking…',
                 VoiceActivityState.speaking => 'Speaking…',
                 VoiceActivityState.idle =>
-                  mode == VoiceListeningMode.handsFree
+                  widget.voiceController.listeningStopped
+                      ? 'Tap the mic when you need me'
+                      : mode == VoiceListeningMode.handsFree
                       ? (_opening
                             ? 'Say "let\'s start" or ask a question'
                             : 'Say "next step" or ask a question')
@@ -1623,9 +1852,7 @@ class _CookingScreenState extends State<CookingScreen>
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: partial.isNotEmpty ? CookTogetherTheme.ink : null,
-                  ),
+                  style: textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 10),
                 Row(

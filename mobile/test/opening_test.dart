@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/main.dart';
 import 'package:mobile/models/conversation.dart';
 import 'package:mobile/models/recipe.dart';
 import 'package:mobile/services/assistant_service.dart';
+import 'package:mobile/services/voice_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Replies from a script and records what the app sent.
@@ -11,6 +14,7 @@ class _ScriptedAssistant implements AssistantService {
   final List<AssistantResponse> replies;
   final List<Map<String, Object?>> asked = [];
   final List<String> logged = [];
+  Completer<AssistantResponse>? pendingReply;
 
   _ScriptedAssistant(this.replies);
 
@@ -33,6 +37,7 @@ class _ScriptedAssistant implements AssistantService {
       'ingredients': ingredients,
       'pendingOffer': pendingOffer?.toJson(),
     });
+    if (pendingReply != null) return pendingReply!.future;
     return replies.removeAt(0);
   }
 
@@ -56,10 +61,34 @@ class _ScriptedAssistant implements AssistantService {
   }) async => logged.add(type);
 }
 
+class _LiveVoice extends VoiceController {
+  String transcript = '';
+
+  @override
+  String get partialTranscript => transcript;
+
+  void hear(String words) {
+    transcript = words;
+    notifyListeners();
+  }
+
+  void send() {
+    final words = transcript;
+    hear('');
+    onFinalUtterance?.call(words);
+  }
+
+  @override
+  Future<void> speak(String text, {required bool voiceGuidanceEnabled}) async {
+    setActivityState(VoiceActivityState.idle);
+  }
+}
+
 Future<void> _openCooking(
   WidgetTester tester,
-  AssistantService assistant,
-) async {
+  AssistantService assistant, {
+  VoiceController? voiceController,
+}) async {
   tester.view.physicalSize = const Size(430, 932);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -68,6 +97,7 @@ Future<void> _openCooking(
       showInitialWelcome: false,
       initialScreen: AppScreen.cook,
       assistantService: assistant,
+      voiceController: voiceController,
     ),
   );
   await tester.pump(const Duration(seconds: 1));
@@ -99,6 +129,58 @@ Future<void> _finish(WidgetTester tester) async {
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({'cooktogether.seen': true});
+  });
+
+  testWidgets('live speech grows in chat and becomes one message while waiting', (
+    tester,
+  ) async {
+    final voice = _LiveVoice();
+    addTearDown(voice.dispose);
+    final assistant = _ScriptedAssistant([])
+      ..pendingReply = Completer<AssistantResponse>();
+    await _openCooking(tester, assistant, voiceController: voice);
+
+    voice.hear('Can I replace');
+    await tester.pump();
+    expect(find.text('Can I replace'), findsOneWidget);
+    expect(assistant.asked, isEmpty);
+
+    const words =
+        'Can I replace the cucumber with another vegetable that I '
+        'already have in my kitchen, and should I use the same amount?';
+    voice.hear(words);
+    await tester.pump();
+    expect(find.text('Can I replace'), findsNothing);
+    final liveText = tester.widget<Text>(find.text(words));
+    expect(liveText.maxLines, isNull);
+    expect(liveText.overflow, isNot(TextOverflow.ellipsis));
+
+    voice.send();
+    await tester.pump();
+    expect(find.text(words), findsOneWidget);
+    expect(find.byKey(const ValueKey('live-transcript')), findsNothing);
+    // The chat scrolls, so look beyond what's on screen.
+    expect(
+      find.byKey(const ValueKey('chat-thinking'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(assistant.asked.single['question'], words);
+
+    assistant.pendingReply!.complete(
+      const AssistantResponse(reply: 'You can use chopped bell pepper.'),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('chat-thinking'), skipOffstage: false),
+      findsNothing,
+    );
+    expect(
+      find.text('You can use chopped bell pepper.', skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(find.text(words, skipOffstage: false), findsOneWidget);
+    await _finish(tester);
   });
 
   testWidgets('opening asks about unticked ingredients, then starts', (

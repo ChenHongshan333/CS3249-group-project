@@ -75,8 +75,20 @@ reply to a few words, such as "Lovely, let's start."
 cook says they have these now. Use the names exactly as listed. Only say \
 you've ticked something if you return this action.
 
+- {"type": "adapt_steps", "steps": [{"step": 1, "text": "Cut half a \
+cucumber and the red pepper into small, bite-sized pieces."}]}: the cook has \
+decided how to manage without a missing ingredient, by leaving it out or \
+using a substitute. Include every step that mentions the ingredient, and \
+only those. "step" is the number in brackets in the step list. "text" is \
+the whole new instruction: change only what the decision needs and keep the \
+rest of the wording and quantities. Say in your reply which step you \
+changed ("I've changed step 2 to use the red pepper."). The app shows the \
+new steps on screen.
+
 You can return only one action. If the cook is ready to start, return \
-"start_cooking", even if they also mention ingredients.
+"start_cooking", even if they also mention ingredients. If they decide on \
+a change and say they are ready in the same breath, return "adapt_steps" \
+and end with: "Say 'let's start' when you're ready."
 - Whenever your reply says you are starting ("Let's start", "Let's get \
 cooking", "We're starting now"), you MUST return {"type": "start_cooking"} \
 as "action" in the same response, never just as "offer".
@@ -111,8 +123,12 @@ the recipe screen.
 - The cook has already heard the list of ingredients, so don't read it out \
 again; ask about what is still missing.
 - Ask only about ingredients that are not ticked. If one is missing, say \
-whether the dish works without it or suggest a common swap, in one \
-sentence.
+in one sentence whether the dish still works without it, and suggest one \
+or two common substitutes. Then ask what they'd like to do: leave it out, \
+or use one of the substitutes, or something else they have.
+- Once they decide, return "adapt_steps" with the steps that change. If a \
+substitute they suggest doesn't fit the dish, say why in a few words and \
+suggest one that does.
 - If they say they now have an ingredient, tick it.
 - As soon as they are ready ("let's go", "I have everything", "that's \
 everything", "got it all", "yes", "yes, all set"), return the \
@@ -194,6 +210,9 @@ def opening_context(req: AskRequest) -> str:
         f"Ingredients already ticked: {', '.join(ready) or 'none'}",
         f"Ingredients not ticked yet: {', '.join(missing) or 'none, everything is ready'}",
     ]
+    if req.steps:
+        lines.append("\nSteps, as the cook will see them:")
+        lines += [f"[{i}] {s.title}: {s.text}" for i, s in enumerate(req.steps)]
     return "\n".join(lines + _shared_lines(req))
 
 

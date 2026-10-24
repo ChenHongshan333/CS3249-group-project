@@ -42,4 +42,85 @@ void main() {
       },
     );
   }
+
+  group('saying "hold on" while speaking', () {
+    int listens() => channels.speechCalls.where((c) => c == 'listen').length;
+
+    Future<VoiceController> speaking(
+      String text, {
+      bool interrupt = true,
+    }) async {
+      final voice = VoiceController(speech: SpeechToText.withMethodChannel())
+        ..interruptByVoice = interrupt;
+      await voice.initialize(initialMode: VoiceListeningMode.tapToSpeak);
+      await voice.speak(text, voiceGuidanceEnabled: true);
+      await channels.speechStatus('listening');
+      return voice;
+    }
+
+    Future<void> finish(WidgetTester tester, VoiceController voice) async {
+      await voice.shutdownSession();
+      await tester.pump(const Duration(seconds: 31));
+    }
+
+    testWidgets('stops the speech and listens', (tester) async {
+      final voice = await speaking('Step 1: Wash & prepare. Rinse the greens.');
+      // It listens for "hold on" while it speaks.
+      expect(listens(), 1);
+      expect(voice.activityState, VoiceActivityState.speaking);
+
+      await channels.heard('hold on');
+      await tester.pump();
+
+      expect(channels.ttsCalls.last, 'stop');
+      expect(listens(), 2);
+      expect(voice.activityState, VoiceActivityState.listening);
+      await finish(tester, voice);
+    });
+
+    testWidgets("ignores its own voice, such as 'wait' in the step", (
+      tester,
+    ) async {
+      final voice = await speaking('Wait for the water to boil.');
+      await channels.heard('wait for the water');
+      await tester.pump();
+
+      expect(channels.ttsCalls.last, 'speak');
+      expect(voice.activityState, VoiceActivityState.speaking);
+      // "Hold on" isn't in the step, so it still works.
+      await channels.heard('hold on');
+      await tester.pump();
+      expect(channels.ttsCalls.last, 'stop');
+      await finish(tester, voice);
+    });
+
+    testWidgets('ignores longer speech that only starts with a stop word', (
+      tester,
+    ) async {
+      final voice = await speaking('Rinse the greens.');
+      await channels.heard('stop the car at the next corner please');
+      await tester.pump();
+      expect(voice.activityState, VoiceActivityState.speaking);
+      await finish(tester, voice);
+    });
+
+    testWidgets('after speaking, the listen for "hold on" ends first', (
+      tester,
+    ) async {
+      final voice = await speaking('Would you like a timer?');
+      await channels.ttsDone();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // Stopped, then listened for the answer.
+      expect(channels.speechCalls.where((c) => c == 'stop'), isNotEmpty);
+      expect(listens(), 2);
+      await finish(tester, voice);
+    });
+
+    testWidgets('can be turned off', (tester) async {
+      final voice = await speaking('Rinse the greens.', interrupt: false);
+      expect(listens(), 0);
+      await finish(tester, voice);
+    });
+  });
 }

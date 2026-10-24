@@ -81,7 +81,7 @@ void main() {
     // Scroll to the end, so Change is clear of the bottom bar.
     await tester.drag(find.byType(ListView), const Offset(0, -2000));
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.text('Change'));
+    await tester.tap(find.text('Reconnect'));
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 300));
     }
