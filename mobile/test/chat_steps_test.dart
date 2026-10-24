@@ -20,8 +20,13 @@ Future<void> _say(WidgetTester tester, String text) async {
   }
 }
 
+/// Moves on without a photo check, answering Skip when asked.
 Future<void> _tapNext(WidgetTester tester) async {
   await tester.tap(find.text('Next'));
+  await tester.pump(const Duration(milliseconds: 300));
+  if (find.text('Skip').evaluate().isNotEmpty) {
+    await tester.tap(find.text('Skip'));
+  }
   await tester.pump(const Duration(milliseconds: 500));
   await tester.pump(const Duration(milliseconds: 600));
 }
