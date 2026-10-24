@@ -51,6 +51,14 @@ class VoiceController extends ChangeNotifier {
   String? _bluetoothMic;
   String? get bluetoothMic => _bluetoothMic;
 
+  /// Records through the glasses' mic when they are connected. Off in
+  /// Profile → Developer to use the phone's mic only.
+  bool useGlassesMic = true;
+
+  /// True once the glasses' mic was in use this session. The glasses drop
+  /// it by themselves (#40), so it is opened again before each turn.
+  bool _keepGlassesMic = false;
+
   bool _speechInitialized = false;
   bool _speechAvailable = false;
   bool _autoRestartPaused = false;
@@ -147,7 +155,14 @@ class VoiceController extends ChangeNotifier {
     _autoRestartPaused = false;
     _fastFailures = 0;
     _isAudioBusy = false;
-    await _routeToBluetoothMic();
+    _keepGlassesMic = false;
+    if (useGlassesMic) {
+      await _routeToBluetoothMic();
+      _keepGlassesMic = _bluetoothMic != null;
+    } else {
+      _bluetoothMic = null;
+      await _audioRoute.clear();
+    }
 
     try {
       await _tts.setSharedInstance(true);
@@ -190,6 +205,17 @@ class VoiceController extends ChangeNotifier {
   /// listening starts: the recognizer keeps the mic it started with.
   Future<void> _routeToBluetoothMic() async {
     _bluetoothMic = await _audioRoute.useBluetoothMic();
+    notifyListeners();
+  }
+
+  /// Waits for the glasses' mic to come back if it dropped, so the user's
+  /// first words and the start of a reply aren't lost. Uses the phone's mic
+  /// for this turn when it doesn't come back in time.
+  Future<void> _reopenGlassesMic() async {
+    if (!_keepGlassesMic) return;
+    final mic = await _audioRoute.useBluetoothMic();
+    if (mic == _bluetoothMic) return;
+    _bluetoothMic = mic;
     notifyListeners();
   }
 
@@ -616,6 +642,11 @@ class VoiceController extends ChangeNotifier {
         return;
       }
       if (_speech.isListening) return;
+      // The recognizer keeps the mic it starts with.
+      if (_keepGlassesMic) {
+        await _reopenGlassesMic();
+        if (!_isSessionActive || _isPaused) return;
+      }
 
       // Show "listening" only once the recognizer is really starting.
       _partialTranscript = '';
@@ -747,6 +778,7 @@ class VoiceController extends ChangeNotifier {
     }
 
     await stopListening();
+    if (_keepGlassesMic) await _reopenGlassesMic();
     _activityState = VoiceActivityState.speaking;
     _statusHint = 'CookTogether is speaking…';
     notifyListeners();
@@ -777,6 +809,7 @@ class VoiceController extends ChangeNotifier {
     _photoPreparationId++;
     _interruptListening = false;
     _bluetoothMic = null;
+    _keepGlassesMic = false;
     _audioRoute.clear();
     _clearSentence();
     _isSessionActive = false;
