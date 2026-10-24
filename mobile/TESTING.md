@@ -60,7 +60,7 @@ Write **Pass**, **Fail**, or what happened.
 | G3 | Close the app fully and reopen it | It reconnects to the real glasses by itself, not the "Mock Kit" | |
 | G4 | Turn the glasses off → on **Get ready**, check the status. Turn them on → **Reconnect** → **Reconnect glasses** | "Glasses disconnected", then "Connected to …". No simulated glasses are offered | |
 | **Opening chat** | | | |
-| O1 | On Get ready, leave **two ingredients unticked** → **Start cooking** | You hear "Today we're making …, right? Have you got the …?" naming those two | |
+| O1 | On Get ready, tap **Don't have** on two ingredients and tick the rest → **Start cooking** | **Start cooking** stays off until every ingredient is ticked or marked. Then you hear "Today we're making …, right? You said you don't have the …" naming those two | |
 | O2 | Say "I don't have *(one of them)*" | A short, sensible reply (it works without it, or a swap) | |
 | O3 | Say "I've got the *(other one)*" | It gets ticked on screen | |
 | O4 | Say "Let's start" | Step 1 is read out | |

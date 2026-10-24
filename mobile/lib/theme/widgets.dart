@@ -191,11 +191,14 @@ class SectionTitle extends StatelessWidget {
   }
 }
 
-/// Large tappable checklist row.
+/// Large tappable checklist row. A [missing] row shows a cross instead of
+/// a tick, for something the user doesn't have.
 class CheckRow extends StatelessWidget {
   final String label;
   final String? detail;
   final bool checked;
+  final bool missing;
+  final Widget? trailing;
   final VoidCallback onTap;
 
   const CheckRow({
@@ -203,6 +206,8 @@ class CheckRow extends StatelessWidget {
     required this.label,
     this.detail,
     required this.checked,
+    this.missing = false,
+    this.trailing,
     required this.onTap,
   });
 
@@ -218,7 +223,11 @@ class CheckRow extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 52),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+            // A trailing button brings its own 48 px tap height.
+            padding: EdgeInsets.symmetric(
+              vertical: trailing == null ? 10 : 2,
+              horizontal: 4,
+            ),
             child: Row(
               crossAxisAlignment: detail == null
                   ? CrossAxisAlignment.center
@@ -246,6 +255,12 @@ class CheckRow extends StatelessWidget {
                           size: 18,
                           color: Colors.white,
                         )
+                      : missing
+                      ? const Icon(
+                          Icons.close_rounded,
+                          size: 18,
+                          color: CookTogetherTheme.inkMuted,
+                        )
                       : null,
                 ),
                 const SizedBox(width: 14),
@@ -256,7 +271,7 @@ class CheckRow extends StatelessWidget {
                       Text(
                         label,
                         style: textTheme.bodyLarge?.copyWith(
-                          color: checked
+                          color: checked || missing
                               ? CookTogetherTheme.inkMuted
                               : CookTogetherTheme.ink,
                         ),
@@ -268,6 +283,7 @@ class CheckRow extends StatelessWidget {
                     ],
                   ),
                 ),
+                ?trailing,
               ],
             ),
           ),

@@ -131,6 +131,9 @@ void main() {
 
   testWidgets('prep-ready', (tester) async {
     await _pumpScreen(tester, AppScreen.prep);
+    // One ingredient missing, the rest ticked.
+    await tester.tap(find.text("Don't have").at(3));
+    await tester.pump();
     await tester.tap(find.text('Mark all'));
     await tester.tap(find.text('Lemon instead of extra oil'));
     await tester.pump();
