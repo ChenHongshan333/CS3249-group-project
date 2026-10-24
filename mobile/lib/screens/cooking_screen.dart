@@ -421,6 +421,25 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
+  /// A stand-in for a photo when the Developer option forces the result.
+  VisionCapture _forcedCapture(String promptText, VisualCheckStatus status) {
+    final step = widget.recipe.steps[_currentStep];
+    return VisionCapture(
+      id: 'forced-${DateTime.now().millisecondsSinceEpoch}',
+      recipeId: widget.recipe.id,
+      stepIndex: _currentStep,
+      source: 'developer',
+      deviceName: 'Developer option',
+      sceneDescription: step.visionSceneDescription,
+      recipeIcon: widget.recipe.icon,
+      recipeTone: widget.recipe.tone,
+      base64Jpeg: '',
+      capturedAt: DateTime.now(),
+      status: status,
+      userQuestion: promptText,
+    );
+  }
+
   Future<void> _triggerVisualCheck({String? userQuestion}) async {
     if (_opening) {
       _appendAiMessage("Let's start the first step, then I can take a look.");
@@ -439,7 +458,12 @@ class _CookingScreenState extends State<CookingScreen>
     }
 
     final startTime = DateTime.now();
-    final capture = await _takeStepPhoto(promptText);
+    final forced = widget.preferences.forcedCheckResult.isEmpty
+        ? null
+        : VisualCheckStatus.fromWire(widget.preferences.forcedCheckResult);
+    final capture = forced != null
+        ? _forcedCapture(promptText, forced)
+        : await _takeStepPhoto(promptText);
     if (capture == null) {
       widget.voiceController.setActivityState(VoiceActivityState.idle);
       return;
@@ -450,13 +474,21 @@ class _CookingScreenState extends State<CookingScreen>
       hint: 'Analyzing visual view with CookTogether AI…',
     );
 
-    final response = await widget.assistantService.checkStepWithVision(
-      sessionId: _sessionId,
-      recipe: widget.recipe,
-      stepIndex: _currentStep,
-      visionCapture: capture,
-      userQuestion: userQuestion,
-    );
+    final response = forced != null
+        ? AssistantResponse(
+            reply:
+                '${forced.badgeLabel}. ${forced.subtitle}. '
+                '(Set under Profile → Developer.)',
+            visualStatus: forced,
+            visionCapture: capture,
+          )
+        : await widget.assistantService.checkStepWithVision(
+            sessionId: _sessionId,
+            recipe: widget.recipe,
+            stepIndex: _currentStep,
+            visionCapture: capture,
+            userQuestion: userQuestion,
+          );
 
     if (!mounted) return;
     if (response.isError) {
@@ -478,6 +510,8 @@ class _CookingScreenState extends State<CookingScreen>
         'step': _currentStep,
         'status': (response.visualStatus ?? VisualCheckStatus.done).wireValue,
         'ms': elapsedMs,
+        // So study data can leave out results nobody actually saw.
+        if (forced != null) 'forced': true,
       },
     );
   }
