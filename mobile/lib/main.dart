@@ -59,6 +59,9 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
 
   late AppScreen _screen = widget.initialScreen;
   bool _welcomeOpen = false;
+
+  /// Where Back from Get ready goes: Recipes, or Home after "Cook again".
+  AppScreen _prepReturnScreen = AppScreen.recipes;
   UserPreferences _preferences = const UserPreferences();
   List<CookingHistoryItem> _history = const [];
   String _selectedRecipeId = kStarterRecipes.first.id;
@@ -140,9 +143,33 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
 
   /// Get ready comes a minute or two before the first question, which is
   /// about how long a sleeping backend takes to wake.
-  void _openPrep() {
-    setState(() => _screen = AppScreen.prep);
+  void _openPrep({AppScreen returnTo = AppScreen.recipes}) {
+    setState(() {
+      _prepReturnScreen = returnTo;
+      _screen = AppScreen.prep;
+    });
     _assistantService.warmUp();
+  }
+
+  /// The screen the system back gesture goes to, the same as each screen's
+  /// own Back button. Null on Home, where back leaves the app, and while
+  /// cooking, where the cooking screen asks first.
+  AppScreen? get _backTarget => switch (_screen) {
+    AppScreen.home || AppScreen.cook => null,
+    AppScreen.prep => _prepReturnScreen,
+    AppScreen.recipes ||
+    AppScreen.finish ||
+    AppScreen.history ||
+    AppScreen.profile => AppScreen.home,
+  };
+
+  void _handleSystemBack() {
+    if (_welcomeOpen) {
+      setState(() => _welcomeOpen = false);
+      return;
+    }
+    final target = _backTarget;
+    if (target != null) setState(() => _screen = target);
   }
 
   Future<void> _recordCompletedSession({
@@ -240,19 +267,25 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
                   bottom: false,
                   // Builder gives the overlays a context below MaterialApp,
                   // so they pick up the app theme.
-                  child: Builder(
-                    builder: (context) => Stack(
-                      children: [
-                        Column(
-                          children: [
-                            Expanded(child: _buildCurrentScreen()),
-                            if (_showBottomNav) _buildBottomNav(),
-                          ],
-                        ),
-                        if (_welcomeOpen) _buildWelcomeModal(context),
-                        if (_toastMessage.isNotEmpty)
-                          _buildToastBanner(context),
-                      ],
+                  child: PopScope(
+                    canPop: _screen == AppScreen.home && !_welcomeOpen,
+                    onPopInvokedWithResult: (didPop, _) {
+                      if (!didPop) _handleSystemBack();
+                    },
+                    child: Builder(
+                      builder: (context) => Stack(
+                        children: [
+                          Column(
+                            children: [
+                              Expanded(child: _buildCurrentScreen()),
+                              if (_showBottomNav) _buildBottomNav(),
+                            ],
+                          ),
+                          if (_welcomeOpen) _buildWelcomeModal(context),
+                          if (_toastMessage.isNotEmpty)
+                            _buildToastBanner(context),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -274,7 +307,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           onOpenWelcomeOverview: () => setState(() => _welcomeOpen = true),
           onCookAgain: (recipeId) {
             _selectedRecipeId = recipeId;
-            _openPrep();
+            _openPrep(returnTo: AppScreen.home);
           },
         );
 
@@ -308,7 +341,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
                   _screen = AppScreen.cook;
                 });
               },
-          onBack: () => setState(() => _screen = AppScreen.recipes),
+          onBack: () => setState(() => _screen = _prepReturnScreen),
           onShowToast: _showToast,
         );
 

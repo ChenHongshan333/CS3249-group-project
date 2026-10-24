@@ -785,26 +785,35 @@ class _CookingScreenState extends State<CookingScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Column(
-          children: [
-            _buildTopBar(),
-            // On short phones the step scrolls rather than squeezing the
-            // conversation to nothing.
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.5,
+    // The back gesture asks before leaving, like the close button; with the
+    // question open, back answers "stay".
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        setState(() => _confirmEndOpen = !_confirmEndOpen);
+      },
+      child: Stack(
+        children: [
+          Column(
+            children: [
+              _buildTopBar(),
+              // On short phones the step scrolls rather than squeezing the
+              // conversation to nothing.
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.5,
+                ),
+                child: SingleChildScrollView(child: _buildStepPanel()),
               ),
-              child: SingleChildScrollView(child: _buildStepPanel()),
-            ),
-            Expanded(child: _buildConversation()),
-            if (_composerOpen) _buildComposer(),
-            _buildDock(),
-          ],
-        ),
-        if (_confirmEndOpen) _buildConfirmEndModal(),
-      ],
+              Expanded(child: _buildConversation()),
+              if (_composerOpen) _buildComposer(),
+              _buildDock(),
+            ],
+          ),
+          if (_confirmEndOpen) _buildConfirmEndModal(),
+        ],
+      ),
     );
   }
 
