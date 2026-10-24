@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from app.safety import COOKED_FALLBACK, make_safe
 from conftest import ASK_BODY
 
@@ -113,6 +115,35 @@ def test_opening_start_cooking(client, fake_llm):
     fake_llm.next_reply = reply_json(reply="Lovely, let's start.", action={"type": "start_cooking"})
     body = client.post("/ask", json={**OPENING_BODY, "question": "That's everything."}).json()
     assert body == {"reply": "Lovely, let's start.", "action": {"type": "start_cooking"}}
+
+
+@pytest.mark.parametrize("reply", [
+    "Lovely, let's start.",
+    "Great! Let’s get cooking.",
+    "We're starting now.",
+    "I'll start cooking now.",
+])
+def test_opening_start_announcement_gets_missing_action(client, fake_llm, reply):
+    fake_llm.next_reply = reply_json(reply=reply)
+    body = client.post("/ask", json={**OPENING_BODY, "question": "I have everything"}).json()
+    assert body == {"reply": reply, "action": {"type": "start_cooking"}}
+
+
+@pytest.mark.parametrize("reply", [
+    "Say 'let's start' when you're ready.",
+    "When you're ready, let's start.",
+    "Shall we start cooking?",
+    "Let's start once you have the garlic.",
+    "Don't start cooking yet.",
+])
+def test_opening_does_not_start_for_invitations_or_conditions(client, fake_llm, reply):
+    fake_llm.next_reply = reply_json(reply=reply)
+    assert "action" not in client.post("/ask", json=OPENING_BODY).json()
+
+
+def test_start_announcement_does_not_start_during_cooking(client, fake_llm):
+    fake_llm.next_reply = reply_json(reply="Let's start cooking.")
+    assert "action" not in client.post("/ask", json=ASK_BODY).json()
 
 
 def test_tick_ingredient_uses_the_apps_spelling(client, fake_llm):
