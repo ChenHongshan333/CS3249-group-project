@@ -10,7 +10,8 @@ import '../theme/app_theme.dart';
 import '../theme/widgets.dart';
 
 /// Get ready: gather ingredients, pick optional swaps, check the setup.
-/// The ingredient checklist gates the single "Start cooking" action.
+/// Every ingredient must be ticked or marked "Don't have" before the single
+/// "Start cooking" action (#31).
 class PrepScreen extends StatefulWidget {
   final Recipe recipe;
   final GlassesService glassesService;
@@ -47,12 +48,15 @@ class PrepScreen extends StatefulWidget {
 
 class _PrepScreenState extends State<PrepScreen> {
   final Set<String> _checkedIngredients = {};
+  final Set<String> _missingIngredients = {};
   final Set<String> _acceptedSwapIds = {};
   late VoiceListeningMode _listeningMode;
 
   int get _remaining =>
-      widget.recipe.ingredients.length - _checkedIngredients.length;
-  bool get _allIngredientsReady => _remaining == 0;
+      widget.recipe.ingredients.length -
+      _checkedIngredients.length -
+      _missingIngredients.length;
+  bool get _allDecided => _remaining == 0;
 
   @override
   void initState() {
@@ -66,10 +70,25 @@ class _PrepScreenState extends State<PrepScreen> {
 
   void _toggleAllIngredients() {
     setState(() {
-      if (_allIngredientsReady) {
+      if (_allDecided) {
         _checkedIngredients.clear();
+        _missingIngredients.clear();
       } else {
-        _checkedIngredients.addAll(widget.recipe.ingredients);
+        _checkedIngredients.addAll(
+          widget.recipe.ingredients.where(
+            (i) => !_missingIngredients.contains(i),
+          ),
+        );
+      }
+    });
+  }
+
+  /// A tap ticks or unticks; a missing ingredient that turns up is ticked.
+  void _toggleIngredient(String ingredient) {
+    setState(() {
+      if (_missingIngredients.remove(ingredient) ||
+          !_checkedIngredients.remove(ingredient)) {
+        _checkedIngredients.add(ingredient);
       }
     });
   }
@@ -138,18 +157,33 @@ class _PrepScreenState extends State<PrepScreen> {
                 'Ingredients',
                 trailing: TextButton(
                   onPressed: _toggleAllIngredients,
-                  child: Text(_allIngredientsReady ? 'Clear' : 'Mark all'),
+                  child: Text(_allDecided ? 'Clear' : 'Mark all'),
                 ),
               ),
               for (final ingredient in recipe.ingredients)
                 CheckRow(
                   label: _capitalise(ingredient),
                   checked: _checkedIngredients.contains(ingredient),
-                  onTap: () => setState(() {
-                    if (!_checkedIngredients.remove(ingredient)) {
-                      _checkedIngredients.add(ingredient);
-                    }
-                  }),
+                  missing: _missingIngredients.contains(ingredient),
+                  trailing: _missingIngredients.contains(ingredient)
+                      ? Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: Text('Missing', style: textTheme.bodyMedium),
+                        )
+                      : _checkedIngredients.contains(ingredient)
+                      ? null
+                      : TextButton(
+                          // Quieter than the ingredient it belongs to.
+                          style: TextButton.styleFrom(
+                            foregroundColor: CookTogetherTheme.inkMuted,
+                            textStyle: textTheme.bodyMedium,
+                          ),
+                          onPressed: () => setState(
+                            () => _missingIngredients.add(ingredient),
+                          ),
+                          child: const Text("Don't have"),
+                        ),
+                  onTap: () => _toggleIngredient(ingredient),
                 ),
               if (recipe.swaps.isNotEmpty) ...[
                 const SizedBox(height: 32),
@@ -255,20 +289,23 @@ class _PrepScreenState extends State<PrepScreen> {
             ],
           ),
         ),
-        // Ticking is optional: CookAlong asks about whatever is unticked in
-        // the opening chat before step 1.
+        // CookAlong talks about the missing ones before step 1.
         BottomActionBar(
-          hint: _allIngredientsReady
+          hint: !_allDecided
+              ? "Tick each ingredient, or tap Don't have"
+              : _missingIngredients.isEmpty
               ? null
-              : "I'll ask about the $_remaining you haven't ticked",
+              : "I'll help with the ${_missingIngredients.length} you don't have",
           child: PrimaryButton(
             label: 'Start cooking',
             icon: Icons.arrow_forward_rounded,
-            onPressed: () => widget.onStartCookingSession(
-              checkedIngredients: _checkedIngredients,
-              listeningMode: _listeningMode,
-              acceptedSwapIds: _acceptedSwapIds,
-            ),
+            onPressed: !_allDecided
+                ? null
+                : () => widget.onStartCookingSession(
+                    checkedIngredients: _checkedIngredients,
+                    listeningMode: _listeningMode,
+                    acceptedSwapIds: _acceptedSwapIds,
+                  ),
           ),
         ),
       ],
