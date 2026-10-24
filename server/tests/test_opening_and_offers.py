@@ -102,8 +102,9 @@ def test_opening_uses_its_own_prompt_and_context(client, fake_llm):
     assert res.status_code == 200
     call = fake_llm.calls[0]
     assert "short chat before step 1" in call["system"]
-    assert "Ingredients already ticked: chicken thigh" in call["text"]
-    assert "Ingredients not ticked yet: cherry tomatoes, garlic" in call["text"]
+    assert "Ingredients the cook has: chicken thigh" in call["text"]
+    assert "Ingredients the cook doesn't have: cherry tomatoes, garlic" in call["text"]
+    assert "You said you don't have the <missing ingredients>" in call["system"]
 
 
 def test_opening_needs_no_step_text(client, fake_llm):

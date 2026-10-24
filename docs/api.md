@@ -37,7 +37,7 @@ Optional fields (added 23 Oct; requests without them still work):
 | Field | Meaning |
 | --- | --- |
 | `phase` | `"cooking"` (default) or `"opening"`, the short conversation before step 1. In the opening, `step` and `stepText` may be left out. |
-| `ingredients` | `[{ "name": "garlic", "ready": true }]`. `ready` is the tick on the Get ready screen. In the opening, CookAlong only asks about ingredients that are not ready. |
+| `ingredients` | `[{ "name": "garlic", "ready": true }]`. `ready` is the tick on the Get ready screen. Since 24 Oct the cook must tick each ingredient or mark it "Don't have" before starting, so `ready: false` means they don't have it. In the opening, CookAlong only talks about ingredients that are not ready. |
 | `pendingOffer` | The `offer` from the previous reply, if the user has not answered it yet. Send it back exactly as received, then forget it. |
 | `steps` | Opening only (added 24 Oct): every step as the user will see it, `[{ "title": "Wash & prepare", "text": "Rinse the greens…" }]`, in order, so CookAlong can adapt them to missing ingredients. Send the adapted text once steps were changed. |
 
@@ -94,7 +94,7 @@ Example of an offer, then the user accepting it:
 
 After the user starts a recipe, and before step 1, the app speaks a fixed first line. Every participant hears the same opening, and it needs no backend call:
 
-- Some ingredients not ticked: "Today we're making {recipe}, right? Have you got the {unticked ingredients}?"
+- Some ingredients marked "Don't have": "Today we're making {recipe}, right? You said you don't have the {missing ingredients}. Shall we sort that out first?"
 - All ticked: "Today we're making {recipe}, right? You've got everything, so say 'let's start' when you're ready."
 
 The user's replies go to `/ask` with `"phase": "opening"`. CookAlong confirms what is missing, suggests what to leave out or swap, and returns `start_cooking` when the user is ready. Saying "let's start" or tapping Start also begins step 1 without a backend call.
@@ -225,6 +225,7 @@ Agreed by team poll on 23 Oct.
 
 - **Recipes live in the app.** The app sends the current step's text with each request, so the backend never holds a second copy that could drift. If the backend later turns recipe links into recipes, recipes move to the backend and the app loads them from a new `GET /recipes`.
 - **The opening conversation confirms, it does not choose.** Agreed 23 Oct: the user picks the recipe in the app, and CookAlong opens with "Today we're making …, right?". The Get ready checklist stays; the opening only asks about ingredients that are not ticked.
+- **Ingredients are checked before starting** (#31, team poll 24 Oct). Listening to a long list through the glasses and answering from memory was hard. Start cooking now needs every ingredient ticked or marked "Don't have", and the opening only talks about the missing ones.
 - **Cooks may suggest their own swaps** (#22, team poll 24 Oct). The study needs the same fixed swaps for every participant, so suggestions are allowed but logged as `custom_swap`, apart from the fixed `swap` events.
 - **Offers are confirmed through `/ask`.** When CookAlong proposes something ("Would you like a timer?"), the app sends the offer back with the user's next words, so "please" or "no thanks" is understood without the app parsing it.
 - **No streaming for now.** `/ask` returns the whole reply in one response. Reply times are measured from the log (`ms`); streaming is reconsidered later if replies are too slow after trying a faster model and shorter prompts.
