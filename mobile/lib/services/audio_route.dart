@@ -4,7 +4,8 @@ import 'package:flutter/services.dart';
 
 /// Chooses which microphone speech is recorded from. Backed by native code
 /// in `android/app/src/main/kotlin/.../MainActivity.kt`; on other platforms,
-/// the web build and tests, every call does nothing.
+/// the web build and tests, routing does nothing and shutter feedback falls
+/// back to a system click.
 class AudioRoute {
   const AudioRoute();
 
@@ -27,6 +28,24 @@ class AudioRoute {
       return null;
     } on PlatformException {
       return null;
+    }
+  }
+
+  /// Confirms a successful photo with the native shutter, or a system click
+  /// on platforms without the Android audio channel.
+  Future<void> playShutter() async {
+    try {
+      await _channel.invokeMethod<void>('playShutter');
+    } on MissingPluginException {
+      try {
+        await SystemSound.play(SystemSoundType.click);
+      } on MissingPluginException {
+        // No system audio in this environment.
+      } on PlatformException {
+        // Sound feedback is best effort.
+      }
+    } on PlatformException {
+      // A missing sound must not discard an otherwise successful photo.
     }
   }
 

@@ -29,12 +29,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.dragUntilVisible(
-      find.text('Developer'),
-      find.byType(ListView),
-      const Offset(0, -200),
-    );
+    // Scroll to the end, so Developer is clear of the Save bar.
+    await tester.drag(find.byType(ListView), const Offset(0, -2000));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Developer'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -2000));
     await tester.pumpAndSettle();
     expect(find.text('Step check result'), findsOneWidget);
     expect(find.text('Real check (photo + AI)'), findsOneWidget);

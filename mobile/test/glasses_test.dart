@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/camera/phone_camera.dart';
 import 'package:mobile/glasses/glasses_service.dart';
@@ -25,9 +28,59 @@ class _BrokenCameraGlasses extends MetaWearablesDatGlassesService {
   }
 }
 
+class _PhotoGlasses extends MetaWearablesDatGlassesService {
+  int photos = 0;
+
+  @override
+  bool get usingRealGlasses => true;
+
+  @override
+  Future<VisionCapture> captureFrame({
+    required Recipe recipe,
+    required int stepIndex,
+    String? userPrompt,
+  }) async {
+    photos++;
+    return VisionCapture(
+      id: 'test-photo',
+      recipeId: recipe.id,
+      stepIndex: stepIndex,
+      source: 'glasses',
+      deviceName: 'Test glasses',
+      sceneDescription: recipe.steps[stepIndex].visionSceneDescription,
+      recipeIcon: recipe.icon,
+      recipeTone: recipe.tone,
+      jpegBytes: FakePhoneCamera.samplePhoto,
+      base64Jpeg: base64Encode(FakePhoneCamera.samplePhoto),
+      capturedAt: DateTime.now(),
+      userQuestion: userPrompt,
+    );
+  }
+}
+
 void main() {
+  const tts = MethodChannel('flutter_tts');
+  const audioRoute = MethodChannel('cooktogether/audio_route');
+  TestDefaultBinaryMessenger messenger() =>
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+
   setUp(() {
     SharedPreferences.setMockInitialValues({'cooktogether.seen': true});
+    // Unanswered plugin calls never finish in widget tests. Without these,
+    // the photo countdown waits forever on TTS, and the opening line comes
+    // late, in the middle of a countdown, and cancels it.
+    // No TTS, as on the web:
+    messenger().setMockMethodCallHandler(
+      tts,
+      (call) async => throw MissingPluginException(),
+    );
+    // No Bluetooth headset:
+    messenger().setMockMethodCallHandler(audioRoute, (call) async => null);
+  });
+
+  tearDown(() {
+    messenger().setMockMethodCallHandler(tts, null);
+    messenger().setMockMethodCallHandler(audioRoute, null);
   });
 
   // flutter test has no native plugin, like the web build.
@@ -76,6 +129,9 @@ void main() {
 
   Future<void> tapCheck(WidgetTester tester) async {
     await tester.tap(find.text('Check'));
+    // Glasses without a native TTS plugin use the visual preparation delay.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 400));
@@ -96,8 +152,10 @@ void main() {
     await tapCheck(tester);
 
     expect(
+      // The chat scrolls, so look beyond what's on screen.
       find.text(
         "Unfold your glasses to take a photo. Let's use your phone camera instead.",
+        skipOffstage: false,
       ),
       findsOneWidget,
     );
@@ -105,6 +163,33 @@ void main() {
     expect(find.text('Looks ready'), findsOneWidget);
     await finish(tester);
   });
+
+  testWidgets(
+    'glasses wait for preparation and repeated checks take one photo',
+    (tester) async {
+      final glasses = _PhotoGlasses();
+      final camera = FakePhoneCamera(photo: FakePhoneCamera.samplePhoto);
+      await openStepOne(tester, glasses: glasses, camera: camera);
+      await tester.tap(find.text('Check'));
+      await tester.pump();
+      expect(
+        find.textContaining('Look at your food and hold still'),
+        findsOneWidget,
+      );
+      expect(glasses.photos, 0);
+      await tester.pump(const Duration(seconds: 2));
+      await tester.tap(find.text('Check'));
+      expect(glasses.photos, 0);
+      await tester.pump(const Duration(seconds: 1));
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+      expect(glasses.photos, 1);
+      expect(camera.opened, 0);
+      expect(find.text('Looks ready'), findsOneWidget);
+      await finish(tester);
+    },
+  );
 
   testWidgets('without real glasses, a check uses the phone camera', (
     tester,

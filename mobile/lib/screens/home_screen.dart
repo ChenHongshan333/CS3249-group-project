@@ -14,6 +14,9 @@ class HomeScreen extends StatelessWidget {
   final VoidCallback onOpenWelcomeOverview;
   final ValueChanged<String> onCookAgain;
 
+  /// Show the Mock Device Kit as connected (Profile → Developer).
+  final bool showSimulatedGlasses;
+
   /// A session the user paused and left, if any.
   final Recipe? pausedRecipe;
   final VoidCallback? onResumeSession;
@@ -25,6 +28,7 @@ class HomeScreen extends StatelessWidget {
     required this.onStartCooking,
     required this.onOpenWelcomeOverview,
     required this.onCookAgain,
+    this.showSimulatedGlasses = false,
     this.pausedRecipe,
     this.onResumeSession,
   });
@@ -82,7 +86,11 @@ class HomeScreen extends StatelessWidget {
         Center(
           child: ListenableBuilder(
             listenable: glassesService,
-            builder: (context, _) => glassesService.isConnected
+            builder: (context, _) =>
+                glassesReady(
+                  glassesService,
+                  allowSimulated: showSimulatedGlasses,
+                )
                 ? StatusDot(
                     label: '${glassesService.deviceName} connected',
                     color: CookTogetherTheme.success,

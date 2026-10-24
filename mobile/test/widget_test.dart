@@ -89,10 +89,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 1. Home: one primary action and the Mock Device Kit status
+      // 1. Home: one primary action. Simulated glasses stay hidden (#15).
       expect(find.text('CookTogether'), findsOneWidget);
       expect(find.text('Choose a recipe'), findsOneWidget);
-      expect(find.textContaining('Ray-Ban Meta (Mock Kit)'), findsOneWidget);
+      expect(find.text('Glasses not connected'), findsOneWidget);
+      expect(find.textContaining('Mock Kit'), findsNothing);
 
       // 2. Recipes: tapping a recipe opens it directly
       await tester.tap(find.text('Choose a recipe'));
@@ -111,15 +112,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining("you haven't ticked"), findsNothing);
 
-      // Glasses settings live in a sheet, away from the main flow
+      // Connecting glasses lives in a sheet, away from the main flow
       await tester.dragUntilVisible(
-        find.text('Change'),
+        find.text('Connect'),
         find.byType(ListView),
         const Offset(0, -200),
       );
-      await tester.tap(find.text('Change'));
+      await tester.tap(find.text('Connect'));
       await tester.pumpAndSettle();
-      expect(find.text('Test touchpad tap'), findsOneWidget);
+      expect(find.text('Connect my glasses'), findsOneWidget);
+      expect(find.text('Test touchpad tap'), findsNothing);
       await tester.tapAt(const Offset(200, 40));
       await tester.pumpAndSettle();
 

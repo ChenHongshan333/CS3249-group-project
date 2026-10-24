@@ -60,6 +60,14 @@ abstract class GlassesService extends ChangeNotifier {
   });
 }
 
+/// Whether to show the glasses as connected: the user's own glasses when
+/// they are connected, or the Mock Device Kit only when Profile → Developer
+/// allows simulated glasses, so a real user never sees them.
+bool glassesReady(GlassesService glasses, {required bool allowSimulated}) =>
+    glasses.usingRealGlasses
+    ? glasses.connectionState == GlassesConnectionState.connectedHardware
+    : allowSimulated && glasses.isConnected;
+
 /// A photo could not be taken. [message] is safe to show or speak.
 class GlassesCaptureException implements Exception {
   final String message;

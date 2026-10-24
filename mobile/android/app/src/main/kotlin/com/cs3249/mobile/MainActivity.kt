@@ -3,6 +3,7 @@ package com.cs3249.mobile
 import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.media.MediaActionSound
 import android.os.Handler
 import android.os.Looper
 import io.flutter.embedding.android.FlutterFragmentActivity
@@ -10,12 +11,19 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterFragmentActivity() {
+    private val shutterSound = MediaActionSound()
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        shutterSound.load(MediaActionSound.SHUTTER_CLICK)
         val audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "cooktogether/audio_route")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "playShutter" -> {
+                        shutterSound.play(MediaActionSound.SHUTTER_CLICK)
+                        result.success(null)
+                    }
                     "useBluetoothMic" -> useBluetoothMic(audio, result)
                     "clear" -> {
                         audio.clearCommunicationDevice()
@@ -24,6 +32,11 @@ class MainActivity : FlutterFragmentActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onDestroy() {
+        shutterSound.release()
+        super.onDestroy()
     }
 
     /**

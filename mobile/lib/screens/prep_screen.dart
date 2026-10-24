@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:meta_wearables_dat_flutter/meta_wearables_dat_flutter.dart';
 
 import '../camera/phone_camera.dart';
 import '../glasses/glasses_service.dart';
@@ -206,23 +205,34 @@ class _PrepScreenState extends State<PrepScreen> {
                 listenable: widget.glassesService,
                 builder: (context, _) {
                   final glasses = widget.glassesService;
+                  final ready = glassesReady(
+                    glasses,
+                    allowSimulated: widget.simulatedGlassesPhotos,
+                  );
+                  final real = glasses.usingRealGlasses;
                   return Row(
                     children: [
                       Expanded(
-                        child: glasses.isConnected
-                            ? StatusDot(
-                                label:
-                                    '${glasses.deviceName} · ${glasses.batteryLevel}%',
-                                color: CookTogetherTheme.success,
-                              )
-                            : const StatusDot(
-                                label: 'Glasses not connected',
-                                color: CookTogetherTheme.warning,
-                              ),
+                        child: StatusDot(
+                          label: ready
+                              ? '${glasses.deviceName} · ${glasses.batteryLevel}%'
+                              : real
+                              ? 'Glasses disconnected'
+                              : 'Glasses not connected',
+                          color: ready
+                              ? CookTogetherTheme.success
+                              : CookTogetherTheme.warning,
+                        ),
                       ),
                       TextButton(
                         onPressed: _openGlassesSheet,
-                        child: const Text('Change'),
+                        child: Text(
+                          ready
+                              ? 'Change'
+                              : real
+                              ? 'Reconnect'
+                              : 'Connect',
+                        ),
                       ),
                     ],
                   );
@@ -488,14 +498,9 @@ class _CameraTestSheetState extends State<_CameraTestSheet> {
   }
 }
 
-/// Mock Device Kit controls, kept out of the main flow.
+/// Connects the user's own glasses, or reconnects them after they were
+/// turned off. Simulated glasses are in Profile → Developer.
 class _GlassesSheet extends StatelessWidget {
-  static const _modelNames = {
-    MockGlassesModel.rayBanMeta: 'Ray-Ban Meta',
-    MockGlassesModel.oakleyMetaHSTN: 'Oakley Meta HSTN',
-    MockGlassesModel.metaRayBanDisplay: 'Meta Ray-Ban Display',
-  };
-
   final GlassesService glassesService;
   final ValueChanged<String> onShowToast;
 
@@ -503,6 +508,12 @@ class _GlassesSheet extends StatelessWidget {
     required this.glassesService,
     required this.onShowToast,
   });
+
+  Future<void> _connect() async {
+    if (await glassesService.connectRealGlasses()) {
+      onShowToast('Connected to ${glassesService.deviceName}');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -518,114 +529,72 @@ class _GlassesSheet extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: glassesService.usingRealGlasses
-              ? _realGlasses(context)
-              : _simulated(context),
+          children: _content(context),
         ),
       ),
     );
   }
 
-  List<Widget> _realGlasses(BuildContext context) {
+  List<Widget> _content(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final connected =
-        glassesService.connectionState ==
-        GlassesConnectionState.connectedHardware;
+    final real = glassesService.usingRealGlasses;
+    final state = glassesService.connectionState;
+    final connected = real && state == GlassesConnectionState.connectedHardware;
+    final connecting = state == GlassesConnectionState.connecting;
+    final note = glassesService.lastStatusNote;
     return [
-      Text(glassesService.deviceName, style: textTheme.headlineSmall),
-      const SizedBox(height: 8),
-      StatusDot(
-        label: glassesService.lastStatusNote ?? '',
-        color: connected
-            ? CookTogetherTheme.success
-            : CookTogetherTheme.warning,
+      Text(
+        real ? glassesService.deviceName : 'Meta glasses',
+        style: textTheme.headlineSmall,
       ),
+      const SizedBox(height: 8),
+      if (real)
+        StatusDot(
+          label: note ?? '',
+          color: connected
+              ? CookTogetherTheme.success
+              : CookTogetherTheme.warning,
+        )
+      else ...[
+        Text(
+          'Connect your own glasses through the Meta AI app, with Developer '
+          'Mode on.',
+          style: textTheme.bodyMedium,
+        ),
+        // Why the last try failed.
+        if (state == GlassesConnectionState.disconnected && note != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            note,
+            style: textTheme.bodyMedium?.copyWith(
+              color: CookTogetherTheme.warning,
+            ),
+          ),
+        ],
+      ],
       if (connected) ...[
         const SizedBox(height: 4),
         Text(
           'Battery ${glassesService.batteryLevel}%',
           style: textTheme.bodyMedium,
         ),
-      ],
-      const SizedBox(height: 12),
-      Text(
-        'The camera turns on only while a photo is taken.',
-        style: textTheme.bodyMedium,
-      ),
-      const SizedBox(height: 16),
-      TextButton(
-        onPressed: () => glassesService.initializeAndPairMockDevice(),
-        child: const Text('Use simulated glasses instead'),
-      ),
-    ];
-  }
-
-  List<Widget> _simulated(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final connecting =
-        glassesService.connectionState == GlassesConnectionState.connecting;
-    final note = glassesService.lastStatusNote;
-    final failed =
-        glassesService.connectionState == GlassesConnectionState.disconnected;
-    return [
-      Text('Meta glasses', style: textTheme.headlineSmall),
-      const SizedBox(height: 6),
-      Text(
-        'Connect your own glasses through the Meta AI app (Developer Mode '
-        'on), or keep using simulated ones.',
-        style: textTheme.bodyMedium,
-      ),
-      const SizedBox(height: 16),
-      PrimaryButton(
-        label: connecting ? 'Connecting…' : 'Connect my glasses',
-        icon: Icons.link_rounded,
-        onPressed: connecting
-            ? null
-            : () async {
-                if (await glassesService.connectRealGlasses()) {
-                  onShowToast('Connected to ${glassesService.deviceName}');
-                }
-              },
-      ),
-      if (failed && note != null) ...[
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Text(
-          note,
-          style: textTheme.bodyMedium?.copyWith(
-            color: CookTogetherTheme.warning,
-          ),
+          'The camera turns on only while a photo is taken.',
+          style: textTheme.bodyMedium,
+        ),
+      ] else ...[
+        const SizedBox(height: 16),
+        PrimaryButton(
+          label: connecting
+              ? 'Connecting…'
+              : real
+              ? 'Reconnect glasses'
+              : 'Connect my glasses',
+          icon: Icons.link_rounded,
+          onPressed: connecting ? null : _connect,
         ),
       ],
-      const SizedBox(height: 28),
-      Text('Simulated glasses', style: textTheme.titleMedium),
-      const SizedBox(height: 4),
-      RadioGroup<MockGlassesModel>(
-        groupValue: glassesService.mockModel,
-        onChanged: (model) async {
-          if (model == null) return;
-          await glassesService.initializeAndPairMockDevice(model: model);
-          onShowToast('Switched to ${_modelNames[model]}');
-        },
-        child: Column(
-          children: [
-            for (final MapEntry(key: model, value: name) in _modelNames.entries)
-              RadioListTile<MockGlassesModel>(
-                contentPadding: EdgeInsets.zero,
-                value: model,
-                activeColor: CookTogetherTheme.success,
-                title: Text(name, style: textTheme.bodyLarge),
-              ),
-          ],
-        ),
-      ),
-      OutlinedButton.icon(
-        onPressed: () async {
-          await glassesService.simulateTouchpadTap();
-          onShowToast('Touchpad tap simulated');
-        },
-        icon: const Icon(Icons.touch_app_outlined),
-        label: const Text('Test touchpad tap'),
-      ),
     ];
   }
 }
