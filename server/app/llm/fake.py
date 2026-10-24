@@ -17,7 +17,14 @@ class FakeLLM(LLM):
         self.calls: list[dict] = []
 
     async def _complete(self, system, text, image_jpeg, json_output, max_tokens, timeout):
-        self.calls.append({"system": system, "text": text, "has_image": image_jpeg is not None})
+        self.calls.append(
+            {
+                "system": system,
+                "text": text,
+                "has_image": image_jpeg is not None,
+                "max_tokens": max_tokens,
+            }
+        )
         if self.delay_s:
             await asyncio.sleep(self.delay_s)
         if self.next_reply is not None:

@@ -39,6 +39,7 @@ Optional fields (added 23 Oct; requests without them still work):
 | `phase` | `"cooking"` (default) or `"opening"`, the short conversation before step 1. In the opening, `step` and `stepText` may be left out. |
 | `ingredients` | `[{ "name": "garlic", "ready": true }]`. `ready` is the tick on the Get ready screen. In the opening, CookAlong only asks about ingredients that are not ready. |
 | `pendingOffer` | The `offer` from the previous reply, if the user has not answered it yet. Send it back exactly as received, then forget it. |
+| `steps` | Opening only (added 24 Oct): every step as the user will see it, `[{ "title": "Wash & prepare", "text": "Rinse the greens…" }]`, in order, so CookAlong can adapt them to missing ingredients. Send the adapted text once steps were changed. |
 
 Response:
 
@@ -62,6 +63,7 @@ Both use the same shape. The app ignores any `type` it does not know.
 | `repeat_step` | | "Say that again?" |
 | `start_cooking` | | Opening only: the user is ready for step 1. |
 | `tick_ingredient` | `names`, a list of the request's `ingredients` (also `name`, the first of them, for older apps) | Opening only: "I've got the garlic and the sauce now." |
+| `adapt_steps` | `steps`, the changed steps only: `[{ "step": 0, "text": "Rinse the greens and cucumber." }]`. `step` indexes the request's `steps`; `text` is the whole new instruction | Opening only (added 24 Oct): the cook has decided how to manage without a missing ingredient, by leaving it out or using a substitute. The app replaces those steps and shows the changes in the chat. |
 
 Example of an offer, then the user accepting it:
 
@@ -95,6 +97,23 @@ After the user starts a recipe, and before step 1, the app speaks a fixed first 
 - All ticked: "Today we're making {recipe}, right? You've got everything, so say 'let's start' when you're ready."
 
 The user's replies go to `/ask` with `"phase": "opening"`. CookAlong confirms what is missing, suggests what to leave out or swap, and returns `start_cooking` when the user is ready. Saying "let's start" or tapping Start also begins step 1 without a backend call.
+
+When an ingredient is missing, CookAlong says whether the recipe still works without it and talks through substitutes. Once the cook decides, it returns `adapt_steps` with the steps that change:
+
+```json
+// Request (phase "opening", with "steps")
+{ "question": "I'll use a red pepper instead.", "...": "..." }
+// Response
+{
+  "reply": "Good choice. I've changed step 2 to use the red pepper. Just let me know when you're ready.",
+  "action": {
+    "type": "adapt_steps",
+    "steps": [{ "step": 1, "text": "Cut half a cucumber and the red pepper into small, bite-sized pieces." }]
+  }
+}
+```
+
+From then on the app sends the adapted text as `stepText`, so answers while cooking match the changed steps.
 
 ## `POST /check-step`
 

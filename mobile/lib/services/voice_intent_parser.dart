@@ -209,6 +209,7 @@ class VoiceIntentParser {
 
   static bool _hasVisualIntent(String lower) {
     final visualPatterns = [
+      r'^(help|help me|i need help|can you help( me)?)[.!?]*$',
       r'\b(look at|take a look|see this|see my|what do you see)\b',
       r'\b(does this look|how does this look|do these look)\b',
       r'\b(is this|are these)\b.*\b(small enough|thin enough|done|ready|cooked|translucent|soft|wilted|chopped|diced|sliced|good|right|burnt|brown)\b',
