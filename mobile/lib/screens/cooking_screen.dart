@@ -487,6 +487,8 @@ class _CookingScreenState extends State<CookingScreen>
     }
     _endOpening();
     _pendingOffer = null;
+    // A reply cut off on the old step is no longer worth repeating.
+    widget.voiceController.takeHeldReply();
     if (targetStep >= _recipe.steps.length) {
       _completeSession();
       return;
@@ -744,11 +746,9 @@ class _CookingScreenState extends State<CookingScreen>
     );
 
     if (_opening && !_worksInOpening.contains(intent.type)) {
-      final lower = text.toLowerCase().replaceAll('’', "'");
       if (intent.type == VoiceIntentType.nextStep ||
-          RegExp(
-            r"^(let'?s (start|go|cook)|start( cooking)?|i'?m ready|ready|i have everything|that'?s everything|got it all|yes|yes,? all set)[.!?]*$",
-          ).hasMatch(lower)) {
+          intent.type == VoiceIntentType.carryOn ||
+          VoiceIntentParser.isReadyToStart(text)) {
         _startCooking();
       } else {
         await _askAssistant(text);
@@ -782,6 +782,18 @@ class _CookingScreenState extends State<CookingScreen>
     switch (intent.type) {
       case VoiceIntentType.nextStep:
         _nextOrFinish(fromVoice: true);
+        return;
+
+      case VoiceIntentType.carryOn:
+        final held = widget.voiceController.takeHeldReply();
+        if (_isPaused) {
+          _togglePause(forcePause: false);
+        } else if (held != null) {
+          // Already in the chat; just say it again.
+          _speakOnly(held);
+        } else {
+          _nextOrFinish(fromVoice: true);
+        }
         return;
 
       case VoiceIntentType.previousStep:

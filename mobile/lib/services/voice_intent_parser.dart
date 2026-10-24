@@ -1,6 +1,10 @@
 /// Structured intents parsed from user voice utterances on the Cooking screen.
 enum VoiceIntentType {
   nextStep,
+
+  /// "We can continue" after "hold on": say the cut-off reply again, or
+  /// resume a paused session, or else move on like "next step".
+  carryOn,
   previousStep,
   repeatStep,
   openStepsSheet,
@@ -65,7 +69,9 @@ class VoiceIntentParser {
     String? defaultStepTimerLabel,
   }) {
     final trimmed = input.trim();
-    final lower = trimmed.toLowerCase();
+    final lower = trimmed.toLowerCase().replaceAll('’', "'");
+    // Commands said naturally: "Okay, next step please."
+    final command = _bareCommand(lower);
 
     // 1-2. Timer commands. A question that mentions a timer ("what do I do
     // if it's sticky before the timer hits 3 minutes?") goes to the AI;
@@ -98,8 +104,8 @@ class VoiceIntentParser {
 
     // 3. Explicit step check ("check this step", "check my progress", "verify step")
     if (RegExp(
-      r'^(check this step|check step|check this|verify this step|check my bowl|check my pan|check my food)[.!?]*$',
-    ).hasMatch(lower)) {
+      r'^(check this step|check step|check this|verify this step|check my bowl|check my pan|check my food)$',
+    ).hasMatch(command)) {
       return ParsedVoiceIntent(
         type: VoiceIntentType.visualCheckStep,
         rawText: trimmed,
@@ -108,7 +114,7 @@ class VoiceIntentParser {
     }
 
     // 4. Visual questions that need a frame from the Meta glasses
-    if (_hasVisualIntent(lower)) {
+    if (_hasVisualIntent(lower) || _hasVisualIntent(command)) {
       return ParsedVoiceIntent(
         type: VoiceIntentType.visualQuestion,
         rawText: trimmed,
@@ -118,21 +124,26 @@ class VoiceIntentParser {
 
     // 5. Step navigation
     if (RegExp(
-      r'^(next|next step|move on|continue|done with this step|i finished this step|go to next step)[.!?]*$',
-    ).hasMatch(lower)) {
+      r'^(next|next step|move on|done with this step|i finished this step|go to (the )?next step)$',
+    ).hasMatch(command)) {
       return ParsedVoiceIntent(type: VoiceIntentType.nextStep, rawText: trimmed);
     }
     if (RegExp(
-      r'^(previous|previous step|go back|back a step|last step)[.!?]*$',
-    ).hasMatch(lower)) {
+      r"^((we|you) can |let's )?(continue|carry on|go on|keep going)$|^i'?m back$",
+    ).hasMatch(command)) {
+      return ParsedVoiceIntent(type: VoiceIntentType.carryOn, rawText: trimmed);
+    }
+    if (RegExp(
+      r'^(previous|previous step|go back|back a step|last step)$',
+    ).hasMatch(command)) {
       return ParsedVoiceIntent(
         type: VoiceIntentType.previousStep,
         rawText: trimmed,
       );
     }
     if (RegExp(
-      r'^(repeat|repeat that|say that again|read step again|what is this step)[.!?]*$',
-    ).hasMatch(lower)) {
+      r'^(repeat|repeat that|say that again|read step again|what is this step)$',
+    ).hasMatch(command)) {
       return ParsedVoiceIntent(type: VoiceIntentType.repeatStep, rawText: trimmed);
     }
     if (RegExp(
@@ -144,8 +155,8 @@ class VoiceIntentParser {
       );
     }
     if (RegExp(
-      r'^(finish cooking|finish recipe|complete session|we are done)[.!?]*$',
-    ).hasMatch(lower)) {
+      r'^(finish cooking|finish recipe|complete session|we are done)$',
+    ).hasMatch(command)) {
       return ParsedVoiceIntent(
         type: VoiceIntentType.finishCooking,
         rawText: trimmed,
@@ -153,24 +164,24 @@ class VoiceIntentParser {
     }
 
     // 6. Session & audio controls
-    if (RegExp(r'^(pause|pause session|pause cooking)[.!?]*$').hasMatch(lower)) {
+    if (RegExp(r'^(pause|pause session|pause cooking)$').hasMatch(command)) {
       return ParsedVoiceIntent(
         type: VoiceIntentType.pauseSession,
         rawText: trimmed,
       );
     }
     if (RegExp(
-      r'^(resume|resume session|continue cooking|unpause)[.!?]*$',
-    ).hasMatch(lower)) {
+      r'^(resume|resume session|continue cooking|unpause)$',
+    ).hasMatch(command)) {
       return ParsedVoiceIntent(
         type: VoiceIntentType.resumeSession,
         rawText: trimmed,
       );
     }
-    if (RegExp(r'^(mute|mute audio|quiet|stop speaking)[.!?]*$').hasMatch(lower)) {
+    if (RegExp(r'^(mute|mute audio|quiet|stop speaking)$').hasMatch(command)) {
       return ParsedVoiceIntent(type: VoiceIntentType.muteAudio, rawText: trimmed);
     }
-    if (RegExp(r'^(unmute|unmute audio|speak aloud)[.!?]*$').hasMatch(lower)) {
+    if (RegExp(r'^(unmute|unmute audio|speak aloud)$').hasMatch(command)) {
       return ParsedVoiceIntent(
         type: VoiceIntentType.unmuteAudio,
         rawText: trimmed,
@@ -183,6 +194,32 @@ class VoiceIntentParser {
       rawText: trimmed,
       requiresVision: false,
     );
+  }
+
+  /// The user is ready to leave the opening chat and start step 1, as in
+  /// the script's "I've got everything" or "let's start".
+  static bool isReadyToStart(String input) => RegExp(
+    r"^(let's (start|go|cook|begin)|start( cooking)?|i'?m ready|(we'?re )?ready|"
+    r"(i'?ve |i have )?got (it all|everything)|i have everything|"
+    r"that'?s everything|everything'?s (here|ready)|(yes,? )?all set|yes)$",
+  ).hasMatch(_bareCommand(input.toLowerCase().replaceAll('’', "'")));
+
+  /// Strips what people say around a command: "okay, ", "all right, ",
+  /// "please", "now" and end punctuation.
+  static String _bareCommand(String lower) {
+    final lead = RegExp(
+      r'^(ok(ay)?|alright|all right|right|so|um+|uh+|well|great|cool|'
+      r'(hey |hi )?cook ?along)[,.!]?\s+',
+    );
+    final tail = RegExp(r',?\s+(please|now|then|thanks|thank you)$');
+    final end = RegExp(r'[.!?,\s]+$');
+    var s = lower.trim().replaceFirst(end, '');
+    String before;
+    do {
+      before = s;
+      s = s.replaceFirst(lead, '').replaceFirst(tail, '').replaceFirst(end, '');
+    } while (s != before);
+    return s;
   }
 
   /// Asks something rather than tells CookTogether to do something.
@@ -210,7 +247,9 @@ class VoiceIntentParser {
   static bool _hasVisualIntent(String lower) {
     final visualPatterns = [
       r'^(help|help me|i need help|can you help( me)?)[.!?]*$',
-      r'\b(look at|take a look|see this|see my|what do you see)\b',
+      r'\b(look at|take a look|have a look|see this|see my|what do you see|can you see)\b',
+      // The script takes a photo when the cook says it looks good.
+      r'^(it|this|that) looks (good|done|right|ready)\b',
       r'\b(does this look|how does this look|do these look)\b',
       r'\b(is this|are these)\b.*\b(small enough|thin enough|done|ready|cooked|translucent|soft|wilted|chopped|diced|sliced|good|right|burnt|brown)\b',
       r'\b(check if|can you check)\b',
