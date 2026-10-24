@@ -294,7 +294,7 @@ class VoiceController extends ChangeNotifier {
     _autoRestartPaused = false;
     _fastFailures = 0;
     _restartListenTimer?.cancel();
-    _restartListenTimer = Timer(const Duration(milliseconds: 400), () {
+    _restartListenTimer = Timer(const Duration(milliseconds: 100), () {
       if (_isSessionActive &&
           !_isPaused &&
           _activityState == VoiceActivityState.idle) {
