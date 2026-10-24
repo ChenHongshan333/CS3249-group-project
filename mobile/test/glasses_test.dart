@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/camera/phone_camera.dart';
@@ -22,6 +24,36 @@ class _BrokenCameraGlasses extends MetaWearablesDatGlassesService {
     String? userPrompt,
   }) async {
     throw const GlassesCaptureException('Unfold your glasses to take a photo.');
+  }
+}
+
+class _PhotoGlasses extends MetaWearablesDatGlassesService {
+  int photos = 0;
+
+  @override
+  bool get usingRealGlasses => true;
+
+  @override
+  Future<VisionCapture> captureFrame({
+    required Recipe recipe,
+    required int stepIndex,
+    String? userPrompt,
+  }) async {
+    photos++;
+    return VisionCapture(
+      id: 'test-photo',
+      recipeId: recipe.id,
+      stepIndex: stepIndex,
+      source: 'glasses',
+      deviceName: 'Test glasses',
+      sceneDescription: recipe.steps[stepIndex].visionSceneDescription,
+      recipeIcon: recipe.icon,
+      recipeTone: recipe.tone,
+      jpegBytes: FakePhoneCamera.samplePhoto,
+      base64Jpeg: base64Encode(FakePhoneCamera.samplePhoto),
+      capturedAt: DateTime.now(),
+      userQuestion: userPrompt,
+    );
   }
 }
 
@@ -76,6 +108,9 @@ void main() {
 
   Future<void> tapCheck(WidgetTester tester) async {
     await tester.tap(find.text('Check'));
+    // Glasses without a native TTS plugin use the visual preparation delay.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 400));
@@ -102,6 +137,29 @@ void main() {
       findsOneWidget,
     );
     expect(camera.opened, 1);
+    expect(find.text('Looks ready'), findsOneWidget);
+    await finish(tester);
+  });
+
+  testWidgets('glasses wait for preparation and repeated checks take one photo', (
+    tester,
+  ) async {
+    final glasses = _PhotoGlasses();
+    final camera = FakePhoneCamera(photo: FakePhoneCamera.samplePhoto);
+    await openStepOne(tester, glasses: glasses, camera: camera);
+    await tester.tap(find.text('Check'));
+    await tester.pump();
+    expect(find.textContaining('Look at your food and hold still'), findsOneWidget);
+    expect(glasses.photos, 0);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.tap(find.text('Check'));
+    expect(glasses.photos, 0);
+    await tester.pump(const Duration(seconds: 1));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+    expect(glasses.photos, 1);
+    expect(camera.opened, 0);
     expect(find.text('Looks ready'), findsOneWidget);
     await finish(tester);
   });

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -67,6 +68,8 @@ class VoiceController extends ChangeNotifier {
   bool _isPaused = false;
   bool _audioMuted = false;
   bool _isAudioBusy = false;
+  bool _preparingPhoto = false;
+  int _photoPreparationId = 0;
   DateTime? _lastListenStartTime;
 
   Timer? _restartListenTimer;
@@ -273,6 +276,8 @@ class VoiceController extends ChangeNotifier {
   }
 
   void _onTtsFinished() {
+    // The countdown owns the microphone until the photo can be taken.
+    if (_preparingPhoto) return;
     _ttsSafetyTimer?.cancel();
     _ttsSafetyTimer = null;
     if (!_isSessionActive) return;
@@ -344,6 +349,7 @@ class VoiceController extends ChangeNotifier {
   Future<void> toggleAudioMuted() async {
     _audioMuted = !_audioMuted;
     if (_audioMuted) {
+      _photoPreparationId++;
       _ttsSafetyTimer?.cancel();
       try {
         await _tts.stop();
@@ -361,6 +367,7 @@ class VoiceController extends ChangeNotifier {
   }
 
   Future<void> setSessionPaused(bool paused) async {
+    if (paused) _photoPreparationId++;
     if (paused) _clearSentence();
     _isPaused = paused;
     _restartListenTimer?.cancel();
@@ -383,6 +390,7 @@ class VoiceController extends ChangeNotifier {
   /// always retries, even after errors stopped the automatic restarts. It
   /// never makes up an utterance.
   Future<MicTapResult> tapMic() async {
+    if (_preparingPhoto) return MicTapResult.stopped;
     if (_isPaused) return MicTapResult.stopped;
     if (_activityState == VoiceActivityState.speaking) await _stopSpeaking();
     if (_activityState == VoiceActivityState.listening &&
@@ -419,6 +427,7 @@ class VoiceController extends ChangeNotifier {
   }
 
   Future<void> _startListeningLoop({bool forceSingleTurn = false}) async {
+    if (_preparingPhoto) return;
     if (!_isSessionActive || _isPaused || _isAudioBusy) return;
     if (_activityState == VoiceActivityState.speaking ||
         _activityState == VoiceActivityState.capturingVision ||
@@ -497,7 +506,57 @@ class VoiceController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Waits for the whole countdown before allowing a glasses photo. Normal
+  /// replies don't await speech completion, so they can't be used here.
+  Future<bool> prepareForPhoto({required bool voiceGuidanceEnabled}) async {
+    if (!_isSessionActive || _isPaused || _preparingPhoto) return false;
+    _preparingPhoto = true;
+    final preparationId = ++_photoPreparationId;
+    _awaitingAnswer = false;
+    _cancelTimers();
+    _clearSentence();
+    _turnDelivered = true;
+    try {
+      await stopListening();
+      setActivityState(
+        VoiceActivityState.capturingVision,
+        hint: 'Look at your food and hold still… 3, 2, 1',
+      );
+      await _tts.stop();
+      if (!_audioMuted && voiceGuidanceEnabled) {
+        await _tts.awaitSpeakCompletion(true);
+        final result = await _tts
+            .speak('Look at your food and hold still. 3, 2, 1.')
+            .timeout(const Duration(seconds: 15));
+        if (result != 1) return false;
+      } else {
+        await Future<void>.delayed(const Duration(seconds: 3));
+      }
+      return preparationId == _photoPreparationId &&
+          _isSessionActive &&
+          !_isPaused;
+    } on MissingPluginException {
+      // Web/tests without TTS still get time to aim, with the hint visible.
+      await Future<void>.delayed(const Duration(seconds: 3));
+      return preparationId == _photoPreparationId &&
+          _isSessionActive &&
+          !_isPaused;
+    } catch (_) {
+      return false;
+    } finally {
+      try {
+        await _tts.awaitSpeakCompletion(false);
+      } catch (_) {}
+      _preparingPhoto = false;
+    }
+  }
+
+  Future<void> playPhotoShutter() async {
+    if (!_audioMuted) await _audioRoute.playShutter();
+  }
+
   Future<void> speak(String text, {required bool voiceGuidanceEnabled}) async {
+    if (_preparingPhoto) _photoPreparationId++;
     _restartListenTimer?.cancel();
     _ttsSafetyTimer?.cancel();
     _awaitingAnswer = text.contains('?');
@@ -540,6 +599,7 @@ class VoiceController extends ChangeNotifier {
   }
 
   Future<void> shutdownSession() async {
+    _photoPreparationId++;
     _bluetoothMic = null;
     _audioRoute.clear();
     _clearSentence();
