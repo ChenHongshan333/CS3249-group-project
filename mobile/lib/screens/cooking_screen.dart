@@ -83,6 +83,7 @@ class _CookingScreenState extends State<CookingScreen>
   bool _confirmEndOpen = false;
   bool _waitingForReply = false;
   bool _confirmSkipOpen = false;
+  bool _visualCheckInProgress = false;
 
   /// Steps the user has checked with a photo, so Next doesn't ask again.
   final Set<int> _checkedSteps = {};
@@ -429,16 +430,32 @@ class _CookingScreenState extends State<CookingScreen>
     final useGlasses =
         glasses.usingRealGlasses || widget.preferences.simulatedGlassesPhotos;
     if (useGlasses) {
+      final step = _currentStep;
+      final ready = await widget.voiceController.prepareForPhoto(
+        voiceGuidanceEnabled: widget.preferences.voiceGuidance,
+      );
+      if (!mounted || _isPaused || !widget.isVisible || _currentStep != step) {
+        return null;
+      }
+      if (!ready) {
+        _appendAiMessage('Photo cancelled. Say "check this" to try again.');
+        return null;
+      }
       widget.voiceController.setActivityState(
         VoiceActivityState.capturingVision,
         hint: 'Taking a photo with your glasses…',
       );
       try {
-        return await glasses.captureFrame(
+        final capture = await glasses.captureFrame(
           recipe: widget.recipe,
           stepIndex: _currentStep,
           userPrompt: promptText,
         );
+        if (!mounted || _isPaused || !widget.isVisible || _currentStep != step) {
+          return null;
+        }
+        await widget.voiceController.playPhotoShutter();
+        return capture;
       } on GlassesCaptureException catch (e) {
         if (mounted) {
           _appendAiMessage(
@@ -447,6 +464,7 @@ class _CookingScreenState extends State<CookingScreen>
         }
       }
     }
+    if (!mounted || _isPaused || !widget.isVisible) return null;
     return _takePhonePhoto(promptText);
   }
 
@@ -514,6 +532,16 @@ class _CookingScreenState extends State<CookingScreen>
   }
 
   Future<void> _triggerVisualCheck({String? userQuestion}) async {
+    if (_visualCheckInProgress) return;
+    _visualCheckInProgress = true;
+    try {
+      await _performVisualCheck(userQuestion: userQuestion);
+    } finally {
+      _visualCheckInProgress = false;
+    }
+  }
+
+  Future<void> _performVisualCheck({String? userQuestion}) async {
     if (_opening) {
       _appendAiMessage("Let's start the first step, then I can take a look.");
       return;
@@ -538,6 +566,7 @@ class _CookingScreenState extends State<CookingScreen>
     final capture = forced != null
         ? _forcedCapture(promptText, forced)
         : await _takeStepPhoto(promptText);
+    if (!mounted) return;
     if (capture == null) {
       widget.voiceController.setActivityState(VoiceActivityState.idle);
       return;
@@ -1570,7 +1599,8 @@ class _CookingScreenState extends State<CookingScreen>
             : switch (state) {
                 VoiceActivityState.listening => 'Listening…',
                 VoiceActivityState.capturingVision =>
-                  'Looking through your glasses…',
+                  widget.voiceController.statusHint ??
+                      'Looking through your glasses…',
                 VoiceActivityState.thinking => 'Thinking…',
                 VoiceActivityState.speaking => 'Speaking…',
                 VoiceActivityState.idle =>
