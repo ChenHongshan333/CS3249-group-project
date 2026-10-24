@@ -152,6 +152,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               _SwitchRow(
+                title: 'Say "hold on" to interrupt',
+                value: _draft.voiceInterrupt,
+                onChanged: (v) =>
+                    setState(() => _draft = _draft.copyWith(voiceInterrupt: v)),
+              ),
+              _SwitchRow(
                 title: 'Show the full conversation',
                 value: _draft.showCaptions,
                 onChanged: (v) =>
