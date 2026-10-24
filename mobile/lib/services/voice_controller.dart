@@ -27,6 +27,11 @@ class VoiceController extends ChangeNotifier {
   /// immediately with nothing heard. A tap on the microphone always retries.
   static const int _maxFastFailures = 3;
 
+  /// Android ends a listen at the first short pause. Words heard before a
+  /// pause are kept and listening restarts at once; the sentence is only
+  /// sent after this much silence, so a pause doesn't cut it in two.
+  static const Duration _sentenceGap = Duration(milliseconds: 2500);
+
   final SpeechToText _speech = SpeechToText();
   final FlutterTts _tts = FlutterTts();
 
@@ -38,6 +43,10 @@ class VoiceController extends ChangeNotifier {
   /// True once this listen's words were sent, so a late final result from
   /// the recognizer doesn't send them a second time.
   bool _turnDelivered = false;
+
+  /// Words heard in earlier listens of the sentence the user is still saying.
+  String _sentence = '';
+  Timer? _sentenceGapTimer;
   bool _isSessionActive = false;
   bool _isPaused = false;
   bool _audioMuted = false;
@@ -56,7 +65,12 @@ class VoiceController extends ChangeNotifier {
 
   VoiceListeningMode get listeningMode => _listeningMode;
   VoiceActivityState get activityState => _activityState;
-  String get partialTranscript => _partialTranscript;
+
+  /// Everything heard of the current sentence, across pauses.
+  String get partialTranscript => [
+    _sentence,
+    _partialTranscript.trim(),
+  ].where((w) => w.isNotEmpty).join(' ');
   bool get audioMuted => _audioMuted;
   bool get speechAvailable => _speechAvailable;
   String? get statusHint => _statusHint;
@@ -136,11 +150,12 @@ class VoiceController extends ChangeNotifier {
     return _speechAvailable;
   }
 
-  /// Called when a listen ends, by a pause, a timeout or an error. Sends any
-  /// words already heard, then restarts listening in hands-free mode.
+  /// Called when a listen ends, by a pause, a timeout or an error. Keeps any
+  /// words already heard and listens again so the sentence can continue;
+  /// otherwise restarts listening in hands-free mode.
   void _onListenEnded() {
     final heardSomething = _partialTranscript.trim().isNotEmpty;
-    _deliverPartialTranscript();
+    _keepHeardWords();
 
     final startedAt = _lastListenStartTime;
     final elapsedMs = startedAt != null
@@ -161,6 +176,12 @@ class VoiceController extends ChangeNotifier {
       notifyListeners();
     }
 
+    if (_sentence.isNotEmpty && !_isPaused) {
+      // Mid-sentence: listen again straight away for the rest of it.
+      _startListeningLoop(forceSingleTurn: true);
+      return;
+    }
+
     if (_listeningMode == VoiceListeningMode.handsFree &&
         !_isPaused &&
         !_autoRestartPaused &&
@@ -169,19 +190,57 @@ class VoiceController extends ChangeNotifier {
     }
   }
 
-  /// Sends the words heard so far as one utterance, so nothing the user
-  /// said is lost when a listen ends before the recognizer's final result.
-  void _deliverPartialTranscript() {
+  /// Adds the words of the listen that just ended to the sentence, so
+  /// nothing is lost, and waits [_sentenceGap] for more before sending it.
+  void _keepHeardWords() {
     final words = _partialTranscript.trim();
     if (words.isEmpty) return;
     _turnDelivered = true;
     _partialTranscript = '';
-    _activityState = VoiceActivityState.idle;
+    _sentence = _sentence.isEmpty ? words : '$_sentence $words';
+    _sentenceGapTimer?.cancel();
+    _sentenceGapTimer = Timer(_sentenceGap, _finishSentence);
+    notifyListeners();
+  }
+
+  /// Sends the sentence once the user has been quiet for [_sentenceGap].
+  void _finishSentence() {
+    if (_speech.isListening && _partialTranscript.trim().isNotEmpty) {
+      // Still talking; wait for the next pause.
+      _sentenceGapTimer = Timer(_sentenceGap, _finishSentence);
+      return;
+    }
+    _sendSentence();
+  }
+
+  void _sendSentence() {
+    _sentenceGapTimer?.cancel();
+    _sentenceGapTimer = null;
+    final words = [
+      _sentence,
+      _partialTranscript.trim(),
+    ].where((w) => w.isNotEmpty).join(' ');
+    // Ignore the rest of the current listen only if its words were sent.
+    if (_partialTranscript.trim().isNotEmpty) _turnDelivered = true;
+    _sentence = '';
+    _partialTranscript = '';
+    if (words.isEmpty) return;
+    if (_listeningMode == VoiceListeningMode.tapToSpeak) {
+      stopListening();
+    }
     notifyListeners();
     onFinalUtterance?.call(words);
   }
 
+  void _clearSentence() {
+    _sentenceGapTimer?.cancel();
+    _sentenceGapTimer = null;
+    _sentence = '';
+  }
+
   void _cancelTimers() {
+    _sentenceGapTimer?.cancel();
+    _sentenceGapTimer = null;
     _restartListenTimer?.cancel();
     _restartListenTimer = null;
     _ttsSafetyTimer?.cancel();
@@ -256,6 +315,7 @@ class VoiceController extends ChangeNotifier {
   }
 
   Future<void> setSessionPaused(bool paused) async {
+    if (paused) _clearSentence();
     _isPaused = paused;
     _restartListenTimer?.cancel();
     _ttsSafetyTimer?.cancel();
@@ -279,7 +339,9 @@ class VoiceController extends ChangeNotifier {
     if (_activityState == VoiceActivityState.listening &&
         _speechAvailable &&
         _speech.isListening) {
+      _keepHeardWords();
       await stopListening();
+      _sendSentence();
       return MicTapResult.stopped;
     }
     _autoRestartPaused = false;
@@ -342,11 +404,13 @@ class VoiceController extends ChangeNotifier {
   }
 
   void _onSpeechResult(SpeechRecognitionResult result) {
-    // Words from this listen were already sent when it ended early.
+    // Words from this listen were already kept when it ended early.
     if (_turnDelivered) return;
     _partialTranscript = result.recognizedWords;
+    // The user is speaking again, so the sentence isn't finished yet.
+    if (_partialTranscript.trim().isNotEmpty) _sentenceGapTimer?.cancel();
     notifyListeners();
-    if (result.finalResult) _deliverPartialTranscript();
+    if (result.finalResult) _keepHeardWords();
   }
 
   Future<void> stopListening() async {
@@ -403,6 +467,7 @@ class VoiceController extends ChangeNotifier {
   }
 
   Future<void> shutdownSession() async {
+    _clearSentence();
     _isSessionActive = false;
     _cancelTimers();
     try {
