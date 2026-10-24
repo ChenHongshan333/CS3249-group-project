@@ -78,6 +78,7 @@ Write **Pass**, **Fail**, or what happened.
 | P4 | If you cook meat: cut it open → ask "Is it cooked?" | It describes what it sees and says a photo can't confirm it is cooked. It never says it's safe | |
 | P5 | Turn the glasses off → **Check** | It says the glasses couldn't take the photo, then the phone camera opens. Take a photo: you get a reply about it | |
 | P6 | **Check**, then close the phone camera without taking a photo | It says no photo was taken. Nothing is sent to the AI | |
+| P7 | On **Get ready**, tap **Test camera**. Then fold the glasses and tap **Try again** | The glasses photo is shown with "Your camera works". Folded, it says to unfold them and that the phone camera will be used instead | |
 | **Timing** | | | |
 | T1 | Note roughly how long Q1 and P1 take from asking to hearing the answer | Under 6 s and 8 s | |
 

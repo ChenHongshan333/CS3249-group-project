@@ -292,6 +292,8 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
         return PrepScreen(
           recipe: _selectedRecipe,
           glassesService: _glassesService,
+          phoneCamera: _phoneCamera,
+          simulatedGlassesPhotos: _preferences.simulatedGlassesPhotos,
           initialListeningMode: _preferences.handsFreeListening
               ? VoiceListeningMode.handsFree
               : VoiceListeningMode.tapToSpeak,
