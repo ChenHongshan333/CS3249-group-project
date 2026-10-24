@@ -42,6 +42,7 @@ class AssistantAction {
     'start_cooking',
     'tick_ingredient',
     'adapt_steps',
+    'custom_swap',
   };
 
   final String type;
@@ -53,9 +54,15 @@ class AssistantAction {
   /// only [name].
   final List<String> names;
 
-  /// For `adapt_steps`: the new instruction for each changed step, by step
-  /// index.
+  /// For `adapt_steps` and `custom_swap`: the new instruction for each
+  /// changed step, by step index.
   final Map<int, String> steps;
+
+  /// For `custom_swap`: the cook's own swap, and whether CookAlong judged
+  /// it healthier and a fit for the dish.
+  final String? swap;
+  final bool? healthier;
+  final bool? fits;
 
   const AssistantAction(
     this.type, {
@@ -64,6 +71,9 @@ class AssistantAction {
     this.name,
     this.names = const [],
     this.steps = const {},
+    this.swap,
+    this.healthier,
+    this.fits,
   });
 
   static AssistantAction? fromJson(Object? json) {
@@ -81,6 +91,16 @@ class AssistantAction {
           s['step'] as int: (s['text'] as String).trim(),
     };
     if (type == 'adapt_steps' && steps.isEmpty) return null;
+    final swap = json['swap'];
+    final healthier = json['healthier'];
+    final fits = json['fits'];
+    if (type == 'custom_swap' &&
+        (swap is! String ||
+            swap.trim().isEmpty ||
+            healthier is! bool ||
+            fits is! bool)) {
+      return null;
+    }
     return AssistantAction(
       type,
       seconds: seconds,
@@ -90,6 +110,9 @@ class AssistantAction {
         for (final n in json['names'] as List? ?? const []) ?(n as String?),
       ],
       steps: steps,
+      swap: swap is String ? swap.trim() : null,
+      healthier: healthier is bool ? healthier : null,
+      fits: fits is bool ? fits : null,
     );
   }
 
@@ -104,6 +127,9 @@ class AssistantAction {
         for (final MapEntry(key: step, value: text) in steps.entries)
           {'step': step, 'text': text},
       ],
+    'swap': ?swap,
+    'healthier': ?healthier,
+    'fits': ?fits,
   };
 }
 
