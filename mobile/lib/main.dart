@@ -63,6 +63,16 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
   List<CookingHistoryItem> _history = const [];
   String _selectedRecipeId = kStarterRecipes.first.id;
 
+  /// The recipe of the cooking session, kept while it's paused and left so
+  /// it can be resumed from Home. Null when no session is open.
+  /// Tests and the screenshot harness can open straight on cooking.
+  late Recipe? _sessionRecipe = widget.initialScreen == AppScreen.cook
+      ? _selectedRecipe
+      : null;
+
+  /// A new key for each session, so starting one never reuses the last.
+  Key _sessionKey = UniqueKey();
+
   Set<String> _sessionCheckedIngredients = {};
   Set<String> _sessionAcceptedSwapIds = {};
   VoiceListeningMode _sessionListeningMode = VoiceListeningMode.handsFree;
@@ -167,11 +177,12 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
     ];
     final formattedDate = '${now.day} ${months[now.month - 1]} ${now.year}';
 
+    final recipe = _sessionRecipe ?? _selectedRecipe;
     final item = CookingHistoryItem(
       id: 'hist-${now.millisecondsSinceEpoch}',
-      recipeId: _selectedRecipe.id,
-      recipeName: _selectedRecipe.name,
-      recipeIcon: _selectedRecipe.icon,
+      recipeId: recipe.id,
+      recipeName: recipe.name,
+      recipeIcon: recipe.icon,
       date: formattedDate,
       durationSeconds: elapsedSeconds,
       stepsCompleted: stepsCompleted,
@@ -180,6 +191,8 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
 
     final nextHistory = [item, ..._history];
     setState(() {
+      _selectedRecipeId = recipe.id;
+      _sessionRecipe = null;
       _lastElapsedSeconds = elapsedSeconds;
       _lastVisualChecksCount = visualChecksCount;
       _history = nextHistory;
@@ -245,7 +258,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
                       children: [
                         Column(
                           children: [
-                            Expanded(child: _buildCurrentScreen()),
+                            Expanded(child: _buildScreens()),
                             if (_showBottomNav) _buildBottomNav(),
                           ],
                         ),
@@ -264,6 +277,50 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
     );
   }
 
+  /// The current screen, with the cooking session underneath it while it's
+  /// paused and left, so it keeps its chat, step and timers.
+  Widget _buildScreens() {
+    final session = _sessionRecipe;
+    final cooking = _screen == AppScreen.cook;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (!cooking) _buildCurrentScreen(),
+        if (session != null)
+          Offstage(
+            offstage: !cooking,
+            child: TickerMode(
+              enabled: cooking,
+              child: _buildCookingScreen(session, visible: cooking),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCookingScreen(Recipe recipe, {required bool visible}) {
+    return CookingScreen(
+      key: _sessionKey,
+      isVisible: visible,
+      recipe: recipe,
+      preferences: _preferences,
+      glassesService: _glassesService,
+      assistantService: _assistantService,
+      voiceController: _voiceController,
+      phoneCamera: _phoneCamera,
+      initialCheckedIngredients: _sessionCheckedIngredients,
+      initialListeningMode: _sessionListeningMode,
+      acceptedSwapIds: _sessionAcceptedSwapIds,
+      onFinishCooking: _recordCompletedSession,
+      onExitToHome: () => setState(() {
+        _sessionRecipe = null;
+        _screen = AppScreen.home;
+      }),
+      onPauseAndLeave: () => setState(() => _screen = AppScreen.home),
+      onShowToast: _showToast,
+    );
+  }
+
   Widget _buildCurrentScreen() {
     switch (_screen) {
       case AppScreen.home:
@@ -276,6 +333,8 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
             _selectedRecipeId = recipeId;
             _openPrep();
           },
+          pausedRecipe: _sessionRecipe,
+          onResumeSession: () => setState(() => _screen = AppScreen.cook),
         );
 
       case AppScreen.recipes:
@@ -301,7 +360,12 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
                 required VoiceListeningMode listeningMode,
                 required Set<String> acceptedSwapIds,
               }) {
+                if (_sessionRecipe != null) {
+                  _showToast('Your paused session was ended');
+                }
                 setState(() {
+                  _sessionRecipe = _selectedRecipe;
+                  _sessionKey = UniqueKey();
                   _sessionCheckedIngredients = checkedIngredients;
                   _sessionAcceptedSwapIds = acceptedSwapIds;
                   _sessionListeningMode = listeningMode;
@@ -313,20 +377,8 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
         );
 
       case AppScreen.cook:
-        return CookingScreen(
-          recipe: _selectedRecipe,
-          preferences: _preferences,
-          glassesService: _glassesService,
-          assistantService: _assistantService,
-          voiceController: _voiceController,
-          phoneCamera: _phoneCamera,
-          initialCheckedIngredients: _sessionCheckedIngredients,
-          initialListeningMode: _sessionListeningMode,
-          acceptedSwapIds: _sessionAcceptedSwapIds,
-          onFinishCooking: _recordCompletedSession,
-          onExitToHome: () => setState(() => _screen = AppScreen.home),
-          onShowToast: _showToast,
-        );
+        // Drawn by _buildScreens, so it survives leaving the screen.
+        return const SizedBox.shrink();
 
       case AppScreen.finish:
         return FinishScreen(
