@@ -200,7 +200,7 @@ void main() {
 
     // Nothing was ticked on Get ready, so every ingredient is listed.
     expect(find.text('Before we start'), findsOneWidget);
-    expect(find.text('Still to check'), findsOneWidget);
+    expect(find.text("You don't have"), findsOneWidget);
     expect(find.text('Cucumber'), findsOneWidget);
     expect(find.text('Start'), findsOneWidget);
 

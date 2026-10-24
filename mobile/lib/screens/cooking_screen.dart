@@ -217,7 +217,8 @@ class _CookingScreenState extends State<CookingScreen>
     final listed = missing.length == 1
         ? missing.first
         : '${missing.sublist(0, missing.length - 1).join(', ')} and ${missing.last}';
-    return "Today we're making $name, right? Have you got the $listed?";
+    return "Today we're making $name, right? You said you don't have the "
+        '$listed. Shall we sort that out first?';
   }
 
   /// Leaves the opening, once, and records how it went.
@@ -1334,7 +1335,8 @@ class _CookingScreenState extends State<CookingScreen>
               style: textTheme.bodyLarge,
             )
           else ...[
-            Text('Still to check', style: textTheme.titleSmall),
+            // Tick one if it turns up after all.
+            Text("You don't have", style: textTheme.titleSmall),
             for (final ingredient in _openingAsked)
               CheckRow(
                 label: ingredient[0].toUpperCase() + ingredient.substring(1),
