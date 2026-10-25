@@ -59,7 +59,7 @@ void main() {
     final preparation = voice.prepareForPhoto(voiceGuidanceEnabled: true)
         .then((value) => ready = value);
     await tester.pump();
-    expect(spoken, ['Look at your food and hold still. 3, 2, 1.']);
+    expect(spoken, ['Look at your food and hold still.']);
     expect(ready, isNull);
     expect(voice.activityState, VoiceActivityState.capturingVision);
     await channels.ttsDone();
