@@ -39,7 +39,7 @@ Optional fields (added 23 Oct; requests without them still work):
 | `phase` | `"cooking"` (default) or `"opening"`, the short conversation before step 1. In the opening, `step` and `stepText` may be left out. |
 | `ingredients` | `[{ "name": "garlic", "ready": true }]`. `ready` is the tick on the Get ready screen. Since 24 Oct the cook must tick each ingredient or mark it "Don't have" before starting, so `ready: false` means they don't have it. In the opening, CookAlong only talks about ingredients that are not ready. Since 25 Oct a missing ingredient may also carry `use`, the substitute the cook picked on Get ready (`{ "name": "tomatoes", "ready": false, "use": "passata" }`); without `use` they are leaving it out. The steps are already adapted for these choices. Sent in both phases, so answers while cooking don't bring a missing ingredient back. |
 | `pendingOffer` | The `offer` from the previous reply, if the user has not answered it yet. Send it back exactly as received, then forget it. |
-| `steps` | Opening only (added 24 Oct): every step as the user will see it, `[{ "title": "Wash & prepare", "text": "Rinse the greens…" }]`, in order, so CookAlong can adapt them to missing ingredients. Send the adapted text once steps were changed. |
+| `steps` | Opening only (added 24 Oct): every step as the user will see it, `[{ "title": "Wash & prepare", "text": "Rinse the greens…", "check": "The vegetables look clean…" }]`, in order, so CookAlong can adapt them to missing ingredients. `check` (since 25 Oct) is what the finished step looks like. Send the adapted steps once they were changed. |
 
 Response:
 
