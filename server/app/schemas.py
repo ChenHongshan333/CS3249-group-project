@@ -34,10 +34,20 @@ PHASE_ACTIONS: dict[str, set[str]] = {
 
 
 class StepChange(_Body):
-    """One step rewritten for a missing ingredient or the cook's own swap."""
+    """One step rewritten for a missing ingredient or the cook's own swap,
+    or removed when nothing is left to do in it."""
 
     step: int = Field(ge=0)
-    text: str = Field(min_length=1, max_length=600)
+    text: str | None = Field(default=None, min_length=1, max_length=600)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    check: str | None = Field(default=None, min_length=1, max_length=1000)
+    remove: bool | None = None
+
+    @model_validator(mode="after")
+    def _text_unless_removed(self):
+        if not self.remove and not self.text:
+            raise ValueError("text is required unless the step is removed")
+        return self
 
 
 class Action(_Body):
@@ -58,6 +68,9 @@ class Action(_Body):
 class Ingredient(_Body):
     name: str = Field(max_length=100)
     ready: bool = False
+    # A missing ingredient's substitute, chosen on Get ready. None while
+    # missing means the cook is leaving it out.
+    use: str | None = Field(default=None, max_length=100)
 
 
 class RecipeStep(_Body):
@@ -65,6 +78,7 @@ class RecipeStep(_Body):
 
     title: str = Field(default="", max_length=200)
     text: str = Field(max_length=2000)
+    check: str = Field(default="", max_length=1000)
 
 
 class AskRequest(_Body):
