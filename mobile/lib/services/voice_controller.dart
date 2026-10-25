@@ -22,13 +22,12 @@ enum MicTapResult {
   unavailable,
 }
 
-/// Whether speech can be recorded through the glasses' mic. Off for now:
-/// on Android that needs Bluetooth call mode, which muffles CookTogether's
-/// voice and jams glasses photos (#40). Set to true to bring it back.
-const bool kGlassesMicEnabled = false;
+/// Whether speech can be recorded through the glasses' mic.
+const bool kGlassesMicEnabled = true;
 
 /// Manages on-device Speech-to-Text (`speech_to_text`) and Text-to-Speech (`flutter_tts`)
-/// for the Cooking screen, supporting both Hands-Free Continuous Listening and Tap-to-Speak.
+/// for the Cooking screen, supporting both Hands-Free Wake-Word Listening ("Hey Cooky")
+/// and Tap-to-Speak with strict turn-taking.
 class VoiceController extends ChangeNotifier {
   /// Listens that end almost at once with nothing heard (kitchen noise,
   /// Android's quick "no match") are retried at once at first, then after
@@ -41,6 +40,20 @@ class VoiceController extends ChangeNotifier {
   /// pause are kept and listening restarts at once; the sentence is only
   /// sent after this much silence, so a pause doesn't cut it in two.
   static const Duration _sentenceGap = Duration(milliseconds: 1500);
+
+  /// How long CookTogether stays awake waiting for a command after hearing
+  /// "Hey Cooky" on its own before returning to wake-word standby.
+  static const Duration _awakeWindow = Duration(seconds: 8);
+
+  /// Matches the "Hey Cooky" wake phrase and common STT phonetic spellings
+  /// on iOS and Android ("Hey Cookie", "Hey Kooky", "Hey Cook", "Hi Cooky",
+  /// "Okay Cooky", "Hey CookAlong", "Hey CookTogether").
+  static final RegExp wakeWordPattern = RegExp(
+    r'(?:^|\b)(?:(?:hey|hi|hay|okay|ok|yo|hello)[,!.?;:\s]+'
+    r'(?:cooky|cookie|cookies|kooky|cuki|cook\s*along|cook\s*together|cook(?:ie|y|ing|er)?)'
+    r'|^(?:cooky|cookie|kooky|cook\s*along|cook\s*together))\b[,!.?;:\s]*',
+    caseSensitive: false,
+  );
 
   /// Tests pass their own [speech] and [tts]; the app uses the plugins'.
   VoiceController({SpeechToText? speech, FlutterTts? tts})
@@ -87,9 +100,23 @@ class VoiceController extends ChangeNotifier {
   bool _askedAgain = false;
 
   /// Saying "hold on" (or "wait", "stop"…) while CookTogether speaks cuts
-  /// it off, like a mic tap. Off in Profile when the phone beeps whenever
-  /// it starts listening.
-  bool interruptByVoice = true;
+  /// it off, like a mic tap. Off by default for strict turn-taking so
+  /// speech recognition never interrupts Bluetooth TTS playback.
+  bool interruptByVoice = false;
+
+  /// Requires the "Hey Cooky" wake word in hands-free mode before speech is
+  /// transcribed and sent. Tapping the mic or answering a direct question
+  /// wakes listening immediately without the wake word.
+  bool requireWakeWord = true;
+
+  /// True once "Hey Cooky" (or a mic tap / direct question) has activated
+  /// the current listening turn.
+  bool _isAwake = false;
+  Timer? _awakeTimeoutTimer;
+
+  /// True while stopping a previous TTS utterance before starting a new one,
+  /// so the asynchronous iOS cancel callback doesn't end the new speech.
+  bool _ignoringTtsCancel = false;
 
   /// True while listening for "hold on" during speech. That listen only
   /// reacts to short stop phrases, never to what CookTogether is saying.
@@ -140,6 +167,13 @@ class VoiceController extends ChangeNotifier {
   bool get listeningStopped =>
       _autoRestartPaused && _listeningMode == VoiceListeningMode.handsFree;
 
+  /// True while hands-free listening is in standby waiting for "Hey Cooky".
+  bool get waitingForWakeWord =>
+      _activityState == VoiceActivityState.listening &&
+      _listeningMode == VoiceListeningMode.handsFree &&
+      requireWakeWord &&
+      !_isAwake;
+
   VoiceListeningMode get listeningMode => _listeningMode;
   VoiceActivityState get activityState => _activityState;
 
@@ -165,6 +199,8 @@ class VoiceController extends ChangeNotifier {
     _autoRestartPaused = false;
     _fastFailures = 0;
     _isAudioBusy = false;
+    _isAwake = false;
+    _ignoringTtsCancel = false;
     _keepGlassesMic = false;
     if (useGlassesMic) {
       await _routeToBluetoothMic();
@@ -179,10 +215,11 @@ class VoiceController extends ChangeNotifier {
       await _tts.autoStopSharedSession(false);
       await _tts.setIosAudioCategory(
         IosTextToSpeechAudioCategory.playAndRecord,
-        const [
+        [
           IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
           IosTextToSpeechAudioCategoryOptions.allowBluetooth,
-          IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+          if (_bluetoothMic == null)
+            IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
           IosTextToSpeechAudioCategoryOptions.mixWithOthers,
         ],
         IosTextToSpeechAudioMode.defaultMode,
@@ -195,8 +232,19 @@ class VoiceController extends ChangeNotifier {
       await _tts.setLanguage('en-US');
       await _tts.setSpeechRate(0.48);
       _tts.setCompletionHandler(_onTtsFinished);
-      _tts.setCancelHandler(_onTtsFinished);
-      _tts.setErrorHandler((_) => _onTtsFinished());
+      _tts.setCancelHandler(() {
+        if (_ignoringTtsCancel) return;
+        _onTtsFinished();
+      });
+      _tts.setErrorHandler((_) {
+        if (_ignoringTtsCancel) return;
+        _onTtsFinished();
+      });
+      _tts.setProgressHandler((_, _, _, _) {
+        if (_activityState == VoiceActivityState.speaking) {
+          _extendTtsSafetyTimer();
+        }
+      });
     } catch (_) {
       // Ignore in test environments without native TTS plugin channel.
     }
@@ -302,6 +350,13 @@ class VoiceController extends ChangeNotifier {
       return;
     }
 
+    if (_isAwake && (_awakeTimeoutTimer?.isActive ?? false)) {
+      // Heard "Hey Cooky" before a pause: keep listening for the command.
+      _startListeningLoop(forceSingleTurn: true, expectSpeech: false);
+      return;
+    }
+    _isAwake = false;
+
     if (expectedSpeech && !heardSomething) {
       if (!_askedAgain) {
         // Ask once more ("Sorry, I didn't catch that…"); the question
@@ -348,17 +403,14 @@ class VoiceController extends ChangeNotifier {
 
   /// Sends the sentence once the user has been quiet for [_sentenceGap].
   void _finishSentence() {
-    if (_speech.isListening && _partialTranscript.trim().isNotEmpty) {
-      // Still talking; wait for the next pause.
-      _sentenceGapTimer = Timer(_sentenceGap, _finishSentence);
-      return;
-    }
     _sendSentence();
   }
 
   void _sendSentence() {
     _sentenceGapTimer?.cancel();
     _sentenceGapTimer = null;
+    _awakeTimeoutTimer?.cancel();
+    _awakeTimeoutTimer = null;
     final words = [
       _sentence,
       _partialTranscript.trim(),
@@ -367,23 +419,57 @@ class VoiceController extends ChangeNotifier {
     if (_partialTranscript.trim().isNotEmpty) _turnDelivered = true;
     _sentence = '';
     _partialTranscript = '';
+    _isAwake = false;
     if (words.isEmpty) return;
-    if (_listeningMode == VoiceListeningMode.tapToSpeak) {
-      stopListening();
-    }
+    stopListening();
     notifyListeners();
     onFinalUtterance?.call(words);
+    if (_isSessionActive &&
+        !_isPaused &&
+        !_autoRestartPaused &&
+        _listeningMode == VoiceListeningMode.handsFree &&
+        _activityState == VoiceActivityState.idle) {
+      _scheduleListeningRestart(delayMs: 650);
+    }
   }
+
+  void _scheduleAwakeTimeout() {
+    _awakeTimeoutTimer?.cancel();
+    _awakeTimeoutTimer = Timer(_awakeWindow, () {
+      if (!_isSessionActive || _isPaused) return;
+      if (_partialTranscript.trim().isEmpty && _sentence.isEmpty) {
+        _isAwake = false;
+        _expectingSpeech = false;
+        if (_activityState == VoiceActivityState.listening) {
+          _statusHint = _withMicName('Say "Hey Cooky" or tap the mic');
+        }
+        notifyListeners();
+      }
+    });
+  }
+
+  void _extendTtsSafetyTimer() {
+    _ttsSafetyTimer?.cancel();
+    _ttsSafetyTimer = Timer(const Duration(seconds: 15), _onTtsFinished);
+  }
+
+  String _withMicName(String base) =>
+      _bluetoothMic != null ? '$base (through $_bluetoothMic)' : base;
 
   void _clearSentence() {
     _sentenceGapTimer?.cancel();
     _sentenceGapTimer = null;
+    _awakeTimeoutTimer?.cancel();
+    _awakeTimeoutTimer = null;
     _sentence = '';
+    _isAwake = false;
   }
 
   void _cancelTimers() {
     _sentenceGapTimer?.cancel();
     _sentenceGapTimer = null;
+    _awakeTimeoutTimer?.cancel();
+    _awakeTimeoutTimer = null;
     _restartListenTimer?.cancel();
     _restartListenTimer = null;
     _ttsSafetyTimer?.cancel();
@@ -528,9 +614,21 @@ class VoiceController extends ChangeNotifier {
     if (_activityState == VoiceActivityState.listening &&
         _speechAvailable &&
         _speech.isListening) {
-      // Hands-free is already listening: a tap means "listen to me", so
-      // keep going rather than cutting off what the user is saying.
+      // Hands-free is already listening: a tap wakes it up immediately without
+      // needing "Hey Cooky", or sends what was already said.
       if (_listeningMode == VoiceListeningMode.handsFree) {
+        if (!_isAwake) {
+          _isAwake = true;
+          _expectingSpeech = true;
+          _statusHint = _withMicName('Listening… speak now');
+          _scheduleAwakeTimeout();
+          notifyListeners();
+        } else if (partialTranscript.isNotEmpty) {
+          _keepHeardWords();
+          await stopListening();
+          _sendSentence();
+          return MicTapResult.stopped;
+        }
         return MicTapResult.listening;
       }
       _keepHeardWords();
@@ -632,9 +730,13 @@ class VoiceController extends ChangeNotifier {
     // The user is about to talk, so don't also listen for an answer.
     _awaitingAnswer = false;
     _activityState = VoiceActivityState.idle;
+    _ignoringTtsCancel = true;
     try {
       await _tts.stop();
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _ignoringTtsCancel = false;
+    }
     // Stopping fires the TTS cancel handler, which may schedule a restart.
     _restartListenTimer?.cancel();
   }
@@ -672,17 +774,25 @@ class VoiceController extends ChangeNotifier {
       // Show "listening" only once the recognizer is really starting.
       _partialTranscript = '';
       _turnDelivered = false;
+      final keepAwake =
+          forceSingleTurn ||
+          _sentence.isNotEmpty ||
+          (_isAwake && (_awakeTimeoutTimer?.isActive ?? false));
+      _isAwake =
+          !requireWakeWord ||
+          _listeningMode != VoiceListeningMode.handsFree ||
+          keepAwake;
       // Not when continuing a sentence: words were already heard.
       _expectingSpeech = expectSpeech && forceSingleTurn && _sentence.isEmpty;
       _listenEndHandled = false;
       _activityState = VoiceActivityState.listening;
-      _statusHint =
-          _listeningMode == VoiceListeningMode.handsFree && !forceSingleTurn
-          ? 'Listening hands-free… say a command or ask a question'
-          : 'Listening… speak now';
-      if (_bluetoothMic != null) {
-        _statusHint = '$_statusHint (through $_bluetoothMic)';
-      }
+      _statusHint = _withMicName(
+        waitingForWakeWord
+            ? 'Say "Hey Cooky" or tap the mic'
+            : _listeningMode == VoiceListeningMode.handsFree && !forceSingleTurn
+            ? 'Listening hands-free… say a command or ask a question'
+            : 'Listening… speak now',
+      );
       notifyListeners();
 
       _lastListenStartTime = DateTime.now();
@@ -690,7 +800,7 @@ class VoiceController extends ChangeNotifier {
         onResult: _onSpeechResult,
         listenOptions: SpeechListenOptions(
           listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 3),
+          pauseFor: const Duration(seconds: 5),
           // Free-form sentences rather than short search phrases.
           listenMode: ListenMode.dictation,
           // Keep the words heard so far when Android reports "no match" or
@@ -709,15 +819,46 @@ class VoiceController extends ChangeNotifier {
   void _onSpeechResult(SpeechRecognitionResult result) {
     // Words from this listen were already kept when it ended early.
     if (_turnDelivered) return;
-    _partialTranscript = result.recognizedWords;
-    // The user is speaking again, so the sentence isn't finished yet.
-    if (_partialTranscript.trim().isNotEmpty) _sentenceGapTimer?.cancel();
+    final rawWords = result.recognizedWords.trim();
+    if (rawWords.isEmpty) return;
+
+    var commandWords = rawWords;
+    if (_listeningMode == VoiceListeningMode.handsFree && requireWakeWord) {
+      final match = wakeWordPattern.firstMatch(rawWords);
+      if (match != null) {
+        if (!_isAwake) {
+          _isAwake = true;
+          _statusHint = _withMicName('Listening… speak now');
+        }
+        commandWords = rawWords.substring(match.end).trim();
+      } else if (!_isAwake) {
+        // Still waiting for "Hey Cooky": ignore background speech/noise.
+        return;
+      }
+    }
+
+    if (commandWords.isEmpty) {
+      // Heard "Hey Cooky" alone so far; stay awake waiting for the command.
+      _scheduleAwakeTimeout();
+      notifyListeners();
+      return;
+    }
+
+    _awakeTimeoutTimer?.cancel();
+    _awakeTimeoutTimer = null;
+    final changed = commandWords != _partialTranscript.trim();
+    _partialTranscript = commandWords;
+    if (changed) {
+      _sentenceGapTimer?.cancel();
+      _sentenceGapTimer = Timer(_sentenceGap, _finishSentence);
+    }
     notifyListeners();
     if (result.finalResult) _keepHeardWords();
   }
 
   Future<void> stopListening() async {
     _restartListenTimer?.cancel();
+    _listenEndHandled = true;
     try {
       if (_speechAvailable && _speech.isListening) {
         await _speech.stop();
@@ -757,6 +898,9 @@ class VoiceController extends ChangeNotifier {
       } else {
         await Future<void>.delayed(const Duration(seconds: 3));
       }
+      // Release the Bluetooth HFP mic link before the glasses open their
+      // camera stream so call mode never blocks photo capture (#40).
+      if (_keepGlassesMic) await _audioRoute.clear();
       return preparationId == _photoPreparationId &&
           _isSessionActive &&
           !_isPaused;
@@ -784,7 +928,10 @@ class VoiceController extends ChangeNotifier {
     if (_preparingPhoto) _photoPreparationId++;
     _restartListenTimer?.cancel();
     _ttsSafetyTimer?.cancel();
-    _awaitingAnswer = text.contains('?');
+    _awakeTimeoutTimer?.cancel();
+    _awakeTimeoutTimer = null;
+    _isAwake = false;
+    _awaitingAnswer = text.trimRight().endsWith('?');
 
     if (!_isSessionActive || _audioMuted || !voiceGuidanceEnabled) {
       if (_awaitingAnswer && !_isPaused) {
@@ -805,16 +952,22 @@ class VoiceController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _tts.stop();
+      _ignoringTtsCancel = true;
+      try {
+        await _tts.stop();
+      } finally {
+        _ignoringTtsCancel = false;
+      }
       final result = await _tts.speak(text);
       if (result == null) {
         // In widget tests where no native MethodChannel is registered, finish immediately.
         _onTtsFinished();
         return;
       }
-      // Safety fallback timeout based on utterance length so TTS is never cut off at 900ms,
-      // while ensuring the state still recovers if the OS drops the completion callback.
-      final timeoutMs = (text.length * 80).clamp(4000, 15000);
+      // Generous fallback timeout based on utterance length (also extended on
+      // word progress) so Bluetooth TTS is never cut off mid-sentence, while
+      // still recovering if the OS drops the completion callback.
+      final timeoutMs = (text.length * 150 + 6000).clamp(15000, 90000);
       _ttsSafetyTimer = Timer(
         Duration(milliseconds: timeoutMs),
         _onTtsFinished,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/main.dart';
 import 'package:mobile/models/conversation.dart';
+import 'package:mobile/models/user_preferences.dart';
 import 'package:mobile/services/assistant_service.dart';
 import 'package:mobile/services/voice_controller.dart';
 import 'package:mobile/services/voice_intent_parser.dart';
@@ -82,6 +83,9 @@ void main() {
       SharedPreferences.setMockInitialValues({
         'cooktogether.seen': true,
         'cooktogether.stepHintSeen': true,
+        'cooktogether.preferences': const UserPreferences(
+          voiceInterrupt: true,
+        ).encode(),
       });
       tester.view.physicalSize = const Size(430, 932);
       tester.view.devicePixelRatio = 1.0;

@@ -104,7 +104,7 @@ class VoiceIntentParser {
 
     // 3. Explicit step check ("check this step", "check my progress", "verify step")
     if (RegExp(
-      r'^(check this step|check step|check this|verify this step|check my bowl|check my pan|check my food)$',
+      r'^(check|check it|check this step|check step|check this|verify this step|check my bowl|check my pan|check my food)$',
     ).hasMatch(command)) {
       return ParsedVoiceIntent(
         type: VoiceIntentType.visualCheckStep,
@@ -124,7 +124,7 @@ class VoiceIntentParser {
 
     // 5. Step navigation
     if (RegExp(
-      r'^(next|next step|move on|done with this step|i finished this step|go to (the )?next step)$',
+      r'^(next|next step|next up|move on|done with this step|i finished this step|go to (the )?next step)$',
     ).hasMatch(command)) {
       return ParsedVoiceIntent(type: VoiceIntentType.nextStep, rawText: trimmed);
     }
@@ -199,17 +199,19 @@ class VoiceIntentParser {
   /// The user is ready to leave the opening chat and start step 1, as in
   /// the script's "I've got everything" or "let's start".
   static bool isReadyToStart(String input) => RegExp(
-    r"^(let's (start|go|cook|begin)|start( cooking)?|i'?m ready|(we'?re )?ready|"
+    r"^(let'?s (start|go|cook|begin)|let (us )?(start|go|cook|begin)|"
+    r"start( cooking)?|i'?m ready|(we'?re )?ready|"
     r"(i'?ve |i have )?got (it all|everything)|i have everything|"
     r"that'?s everything|everything'?s (here|ready)|(yes,? )?all set|yes)$",
   ).hasMatch(_bareCommand(input.toLowerCase().replaceAll('’', "'")));
 
   /// Strips what people say around a command: "okay, ", "all right, ",
-  /// "please", "now" and end punctuation.
+  /// "hey cooky, ", "please", "now" and end punctuation.
   static String _bareCommand(String lower) {
     final lead = RegExp(
       r'^(ok(ay)?|alright|all right|right|so|um+|uh+|well|great|cool|'
-      r'(hey |hi )?cook ?along)[,.!]?\s+',
+      r'(hey[,!.?;:\s]+|hi[,!.?;:\s]+|okay[,!.?;:\s]+|ok[,!.?;:\s]+|yo[,!.?;:\s]+|hello[,!.?;:\s]+)?'
+      r'(cooky|cookie|cookies|kooky|cuki|cook ?along|cook ?together|cook))[,.!?]?\s+',
     );
     final tail = RegExp(r',?\s+(please|now|then|thanks|thank you)$');
     final end = RegExp(r'[.!?,\s]+$');

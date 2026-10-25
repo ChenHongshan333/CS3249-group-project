@@ -122,4 +122,56 @@ void main() {
     expect(voice.listeningStopped, isFalse);
     await finish(tester);
   });
+
+  testWidgets('hands-free ignores speech until "Hey Cooky" is said', (
+    tester,
+  ) async {
+    await start(VoiceListeningMode.handsFree, listenNow: true);
+    final sent = <String>[];
+    voice.onFinalUtterance = sent.add;
+
+    await channels.speechStatus('listening');
+    expect(voice.waitingForWakeWord, isTrue);
+
+    // Background speech without the wake word is ignored.
+    await channels.heard('pass me the salt please');
+    await tester.pump(const Duration(seconds: 2));
+    expect(sent, isEmpty);
+    expect(voice.partialTranscript, isEmpty);
+
+    // Saying "Hey Cooky" (or iOS STT's "Hey cookie") wakes it and strips the prefix.
+    await channels.heard('Hey cookie, how small should I cut it');
+    await tester.pump();
+    expect(voice.waitingForWakeWord, isFalse);
+    expect(voice.partialTranscript, 'how small should I cut it');
+
+    await tester.pump(const Duration(seconds: 2));
+    expect(sent, ['how small should I cut it']);
+    await finish(tester);
+  });
+
+  testWidgets('saying "Hey Cooky" then pausing keeps listening for the command', (
+    tester,
+  ) async {
+    await start(VoiceListeningMode.handsFree, listenNow: true);
+    final sent = <String>[];
+    voice.onFinalUtterance = sent.add;
+
+    await channels.speechStatus('listening');
+    await channels.heard('Hey Cooky');
+    await tester.pump();
+    expect(voice.waitingForWakeWord, isFalse);
+    expect(voice.partialTranscript, isEmpty);
+
+    // Even if the recognizer ends that listen during the pause, it stays awake.
+    await channels.speechStatus('done');
+    await tester.pump();
+    expect(voice.waitingForWakeWord, isFalse);
+
+    await channels.speechStatus('listening');
+    await channels.heard('next step');
+    await tester.pump(const Duration(seconds: 2));
+    expect(sent, ['next step']);
+    await finish(tester);
+  });
 }

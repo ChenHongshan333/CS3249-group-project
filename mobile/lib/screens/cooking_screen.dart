@@ -358,7 +358,6 @@ class _CookingScreenState extends State<CookingScreen>
   }
 
   Future<void> _initializeVoiceAndAnnounce(String openingText) async {
-    widget.voiceController.interruptByVoice = widget.preferences.voiceInterrupt;
     widget.voiceController.useGlassesMic =
         kGlassesMicEnabled && !widget.preferences.phoneMicOnly;
     await widget.voiceController.initialize(
@@ -367,6 +366,7 @@ class _CookingScreenState extends State<CookingScreen>
       startListeningImmediately: false,
     );
     if (!mounted) return;
+    widget.voiceController.interruptByVoice = widget.preferences.voiceInterrupt;
     await widget.voiceController.speak(
       openingText,
       voiceGuidanceEnabled: widget.preferences.voiceGuidance,
@@ -391,6 +391,11 @@ class _CookingScreenState extends State<CookingScreen>
   @override
   void didUpdateWidget(CookingScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.preferences.voiceInterrupt !=
+        oldWidget.preferences.voiceInterrupt) {
+      widget.voiceController.interruptByVoice =
+          widget.preferences.voiceInterrupt;
+    }
     if (widget.isVisible && !oldWidget.isVisible && _pausedByLeaving) {
       _pausedByLeaving = false;
       // After this frame: resuming updates the app's toast too.
@@ -1976,9 +1981,12 @@ class _CookingScreenState extends State<CookingScreen>
       builder: (context, _) {
         final state = widget.voiceController.activityState;
         final mode = widget.voiceController.listeningMode;
+        final waitingForWake = widget.voiceController.waitingForWakeWord;
 
         final orbColor = switch (state) {
-          VoiceActivityState.listening => CookTogetherTheme.success,
+          VoiceActivityState.listening when !waitingForWake =>
+            CookTogetherTheme.success,
+          VoiceActivityState.listening => const Color(0xFF55664F),
           VoiceActivityState.capturingVision ||
           VoiceActivityState.thinking => CookTogetherTheme.warning,
           VoiceActivityState.speaking => CookTogetherTheme.ink,
@@ -1988,6 +1996,8 @@ class _CookingScreenState extends State<CookingScreen>
         final statusLabel = _isPaused
             ? 'Paused'
             : switch (state) {
+                VoiceActivityState.listening when waitingForWake =>
+                  'Say "Hey Cooky" or tap the mic',
                 VoiceActivityState.listening => 'Listening…',
                 VoiceActivityState.capturingVision =>
                   widget.voiceController.statusHint ??
@@ -1999,8 +2009,8 @@ class _CookingScreenState extends State<CookingScreen>
                       ? 'Tap the mic when you need me'
                       : mode == VoiceListeningMode.handsFree
                       ? (_opening
-                            ? 'Say "let\'s start" or ask a question'
-                            : 'Say "next step" or ask a question')
+                            ? 'Say "Hey Cooky, let\'s start"'
+                            : 'Say "Hey Cooky" or tap the mic')
                       : 'Tap the mic to talk',
               };
 
@@ -2141,7 +2151,8 @@ class _CookingScreenState extends State<CookingScreen>
           animation: _orbPulseController,
           builder: (context, child) {
             final pulsing =
-                state == VoiceActivityState.listening ||
+                (state == VoiceActivityState.listening &&
+                    !widget.voiceController.waitingForWakeWord) ||
                 state == VoiceActivityState.speaking;
             return Transform.scale(
               scale: pulsing ? 1.0 + (_orbPulseController.value * 0.06) : 1.0,
