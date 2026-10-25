@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobile/models/conversation.dart';
+import 'package:mobile/models/missing_options.dart';
 import 'package:mobile/models/recipe.dart';
 import 'package:mobile/services/assistant_service.dart';
 import 'package:mobile/services/step_adapter.dart';
@@ -46,57 +46,55 @@ void main() {
     });
   });
 
+  // #94: the demo never says "that's fine" without changing the steps.
   group('the demo assistant in the opening', () {
     const assistant = MockAssistantService();
-    final history = <ChatMessage>[];
 
-    Future<AssistantResponse> say(String text) async {
-      history.add(
-        ChatMessage(
-          id: 'u${history.length}',
-          sender: MessageSender.user,
-          text: text,
-          timestamp: DateTime(2026),
-        ),
-      );
-      final response = await assistant.askQuestion(
+    Future<AssistantResponse> say(
+      String text, {
+      Recipe? recipe,
+      Set<String> missing = const {},
+    }) {
+      final r = recipe ?? _rice;
+      return assistant.askQuestion(
         sessionId: 's',
-        recipe: _salad,
+        recipe: r,
         stepIndex: 0,
         question: text,
-        history: history,
+        history: const [],
         phase: 'opening',
-        ingredients: {for (final i in _salad.ingredients) i: false},
+        ingredients: {for (final i in r.ingredients) i: !missing.contains(i)},
       );
-      history.add(
-        ChatMessage(
-          id: 'a${history.length}',
-          sender: MessageSender.ai,
-          text: response.reply,
-          timestamp: DateTime(2026),
-        ),
-      );
-      return response;
     }
 
-    setUp(history.clear);
-
-    test('offers a substitute, then leaves it out when asked', () async {
-      final asked = await say("I don't have cherry tomatoes.");
-      expect(asked.reply, contains('red pepper'));
-      expect(asked.action, isNull);
-
-      final adapted = await say("I'll leave them out.");
+    test('leaves out an ingredient the cook says they lack, the written '
+        'way', () async {
+      final adapted = await say("Oh, I don't have any onions.");
       expect(adapted.action?.type, 'adapt_steps');
-      expect(adapted.action?.steps.keys, [0, 1]);
-      expect(adapted.reply, contains('steps 1 and 2'));
+      expect(adapted.action?.steps, waysWithout(_rice, 'onion').first.steps);
+      expect(adapted.reply, contains("I've adjusted the steps"));
+      expect(adapted.reply, isNot(contains('step 1')));
     });
 
-    test('uses the substitute the cook picks', () async {
-      await say("I don't have cherry tomatoes.");
-      final adapted = await say('Use red pepper instead.');
-      expect(adapted.action?.steps[1], startsWith('Cut the red pepper'));
-      expect(adapted.reply, contains('use the red pepper'));
+    test('falls back to the rule-based rewrite on changed steps', () async {
+      final changed = StepAdapter.forChoices(_rice, {
+        'tomatoes': waysWithout(_rice, 'tomatoes').first,
+      }).recipe;
+      final adapted = await say(
+        "I don't have the onion.",
+        recipe: changed,
+        missing: {'tomatoes'},
+      );
+      expect(
+        adapted.action?.steps[0],
+        const StepEdit(text: 'Rinse and drain the chickpeas.'),
+      );
+    });
+
+    test('does not ask again about what was decided on Get ready', () async {
+      final reply = await say("I don't have tomatoes.", missing: {'tomatoes'});
+      expect(reply.action, isNull);
+      expect(reply.reply, contains('already adjusted the steps'));
     });
   });
 }

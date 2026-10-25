@@ -79,14 +79,18 @@ void main() {
       find.descendant(of: row('Chickpeas'), matching: find.text('Missing')),
       findsOneWidget,
     );
-    expect(find.text("I'll help with the 1 you don't have"), findsOneWidget);
+    expect(
+      find.text("I'll adjust the steps for what you don't have"),
+      findsOneWidget,
+    );
 
     await startCooking(tester);
     expect(find.text('Before we start'), findsOneWidget);
     expect(
       find.text(
-        "Today we're making Rainbow salad bowl, right? You said you don't "
-        'have the chickpeas. Shall we sort that out first?',
+        "Today we're making Rainbow salad bowl. You don't have the "
+        "chickpeas, that's fine. I've adjusted the steps. Say 'let's start' "
+        "when you're ready.",
       ),
       findsOneWidget,
     );
@@ -123,7 +127,10 @@ void main() {
 
     expect(tester.widget<CheckRow>(row('Olive oil')).missing, isTrue);
     expect(tester.widget<CheckRow>(row('Cucumber')).checked, isTrue);
-    expect(find.text("I'll help with the 1 you don't have"), findsOneWidget);
+    expect(
+      find.text("I'll adjust the steps for what you don't have"),
+      findsOneWidget,
+    );
     await finish(tester);
   });
 

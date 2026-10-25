@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
+import '../models/missing_options.dart';
 import '../models/recipe.dart';
 import 'step_adapter.dart';
 
@@ -54,9 +55,10 @@ class AssistantAction {
   /// only [name].
   final List<String> names;
 
-  /// For `adapt_steps` and `custom_swap`: the new instruction for each
-  /// changed step, by step index.
-  final Map<int, String> steps;
+  /// For `adapt_steps` and `custom_swap`: the change to each step, by step
+  /// index. A change can also give a new title and check, or remove the
+  /// step.
+  final Map<int, StepEdit> steps;
 
   /// For `custom_swap`: the cook's own swap, and whether CookAlong judged
   /// it healthier and a fit for the dish.
@@ -82,13 +84,9 @@ class AssistantAction {
     if (type is! String || !knownTypes.contains(type)) return null;
     final seconds = (json['seconds'] as num?)?.toInt();
     if (type == 'start_timer' && (seconds == null || seconds < 1)) return null;
-    final steps = <int, String>{
+    final steps = <int, StepEdit>{
       for (final s in json['steps'] as List? ?? const [])
-        if (s is Map &&
-            s['step'] is int &&
-            s['text'] is String &&
-            (s['text'] as String).trim().isNotEmpty)
-          s['step'] as int: (s['text'] as String).trim(),
+        if (s is Map && s['step'] is int) s['step'] as int: ?_stepEdit(s),
     };
     if (type == 'adapt_steps' && steps.isEmpty) return null;
     final swap = json['swap'];
@@ -116,6 +114,19 @@ class AssistantAction {
     );
   }
 
+  /// A change from the backend: removes the step, or needs new text.
+  static StepEdit? _stepEdit(Map<dynamic, dynamic> json) {
+    if (json['remove'] == true) return const StepEdit.remove();
+    String? field(String key) {
+      final value = json[key];
+      return value is String && value.trim().isNotEmpty ? value.trim() : null;
+    }
+
+    final text = field('text');
+    if (text == null) return null;
+    return StepEdit(text: text, title: field('title'), check: field('check'));
+  }
+
   Map<String, dynamic> toJson() => {
     'type': type,
     'seconds': ?seconds,
@@ -124,8 +135,15 @@ class AssistantAction {
     if (names.isNotEmpty) 'names': names,
     if (steps.isNotEmpty)
       'steps': [
-        for (final MapEntry(key: step, value: text) in steps.entries)
-          {'step': step, 'text': text},
+        for (final MapEntry(key: step, value: edit) in steps.entries)
+          edit.remove
+              ? {'step': step, 'remove': true}
+              : {
+                  'step': step,
+                  'text': ?edit.text,
+                  'title': ?edit.title,
+                  'check': ?edit.check,
+                },
       ],
     'swap': ?swap,
     'healthier': ?healthier,
@@ -146,6 +164,7 @@ abstract class AssistantService {
     List<String> acceptedSwaps = const [],
     String phase = 'cooking',
     Map<String, bool> ingredients = const {},
+    Map<String, String> substitutes = const {},
     AssistantAction? pendingOffer,
   });
 
@@ -188,6 +207,7 @@ class MockAssistantService implements AssistantService {
     List<String> acceptedSwaps = const [],
     String phase = 'cooking',
     Map<String, bool> ingredients = const {},
+    Map<String, String> substitutes = const {},
     AssistantAction? pendingOffer,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 280));
@@ -296,25 +316,23 @@ class MockAssistantService implements AssistantService {
         .where((e) => !e.value)
         .map((e) => e.key)
         .toList();
-
-    // An answer to "leave it out, or use …?" adapts the steps.
-    final asked = _askedAbout(missing, history);
-    if (asked != null) {
-      final adapted = _adaptTo(lower, asked, recipe);
-      if (adapted != null) return adapted;
-    }
-
-    final mentioned = missing.where((name) => lower.contains(name)).toList();
+    final mentioned = recipe.ingredients.where(lower.contains).toList();
     if (mentioned.isNotEmpty &&
         RegExp(r"don'?t have|no |out of|missing").hasMatch(lower)) {
       final name = mentioned.first;
-      final swap = StepAdapter.substitutes[name];
+      if (missing.contains(name)) {
+        return AssistantResponse(
+          reply:
+              "That's fine, I've already adjusted the steps for the $name. "
+              "Say 'let's start' when you're ready.",
+        );
+      }
+      // Never "that's fine" without changing the steps too (#94).
       return AssistantResponse(
-        reply: swap == null
-            ? 'No problem, it still works without the $name. '
-                  'Shall I leave it out of the steps?'
-            : 'No problem, it still works without the $name, or you could '
-                  'use $swap. Would you like to leave it out, or use $swap?',
+        reply:
+            "That's fine, it works without the $name. I've adjusted the "
+            "steps. Say 'let's start' when you're ready.",
+        action: AssistantAction('adapt_steps', steps: _leaveOut(recipe, name)),
       );
     }
     if (mentioned.isNotEmpty) {
@@ -331,69 +349,27 @@ class MockAssistantService implements AssistantService {
     );
   }
 
-  /// The missing ingredient CookAlong just asked about ("…it still works
-  /// without the X…"), if its last reply was that question.
-  static String? _askedAbout(List<String> missing, List<ChatMessage> history) {
-    final lastReply = history.lastWhere(
-      (m) => m.sender == MessageSender.ai,
-      orElse: () => ChatMessage(
-        id: '',
-        sender: MessageSender.ai,
-        text: '',
-        timestamp: DateTime(0),
-      ),
-    );
-    if (!lastReply.text.contains('?')) return null;
-    for (final name in missing) {
-      if (lastReply.text.contains('without the $name')) return name;
-    }
-    return null;
-  }
-
-  /// Leaves [name] out, or uses what the cook says instead, and says which
-  /// steps changed. Null when the answer is neither.
-  static AssistantResponse? _adaptTo(String lower, String name, Recipe recipe) {
-    final swap = StepAdapter.substitutes[name];
-    String? replacement;
-    if (swap != null && lower.contains(swap)) {
-      replacement = swap;
-    } else {
-      final said = RegExp(
-        r"\buse (?:the |some |a |an )?(.+?)(?: instead.*)?[.!?]*$",
-      ).firstMatch(lower);
-      replacement = said?[1]?.trim();
-    }
-    final leaveOut =
-        replacement == null &&
-        RegExp(r'\b(leave|skip|without|yes|sure|ok|okay)\b').hasMatch(lower);
-    if (replacement == null && !leaveOut) return null;
-
-    final changes = replacement != null
-        ? StepAdapter.substitute(recipe, name, replacement)
-        : StepAdapter.leaveOut(recipe, name);
-    final what = replacement != null
-        ? 'use the $replacement'
-        : 'leave out the $name';
-    if (changes.isEmpty) {
-      return AssistantResponse(
-        reply:
-            "Okay, we'll $what. None of the "
-            "steps need to change. Say 'let's start' when you're ready.",
-      );
-    }
-    final numbers = (changes.keys.toList()..sort())
-        .map((i) => '${i + 1}')
-        .toList();
-    final steps = numbers.length == 1
-        ? 'step ${numbers.first}'
-        : 'steps ${numbers.sublist(0, numbers.length - 1).join(', ')} '
-              'and ${numbers.last}';
-    return AssistantResponse(
-      reply:
-          "Okay, I've changed $steps to $what. "
-          "Say 'let's start' when you're ready.",
-      action: AssistantAction('adapt_steps', steps: changes),
-    );
+  /// Leaves [name] out: the hand-written way while the steps it changes are
+  /// as written, otherwise the rule-based rewrite.
+  static Map<int, StepEdit> _leaveOut(Recipe recipe, String name) {
+    final original = kStarterRecipes
+        .where((r) => r.id == recipe.id)
+        .firstOrNull;
+    final written = waysWithout(recipe, name).first.steps;
+    final asWritten =
+        original != null &&
+        written.isNotEmpty &&
+        original.steps.length == recipe.steps.length &&
+        written.keys.every(
+          (i) =>
+              i < recipe.steps.length &&
+              recipe.steps[i].instruction == original.steps[i].instruction,
+        );
+    if (asWritten) return written;
+    return {
+      for (final e in StepAdapter.leaveOut(recipe, name).entries)
+        e.key: StepEdit(text: e.value),
+    };
   }
 
   @override
@@ -516,6 +492,7 @@ class HttpAssistantService implements AssistantService {
     List<String> acceptedSwaps = const [],
     String phase = 'cooking',
     Map<String, bool> ingredients = const {},
+    Map<String, String> substitutes = const {},
     AssistantAction? pendingOffer,
   }) async {
     // If a visual snapshot is attached, route through `/check-step` or hybrid vision flow
@@ -539,6 +516,7 @@ class HttpAssistantService implements AssistantService {
         visionCapture: visionCapture,
         phase: phase,
         ingredients: ingredients,
+        substitutes: substitutes,
         pendingOffer: pendingOffer,
       );
     }
@@ -583,14 +561,18 @@ class HttpAssistantService implements AssistantService {
               'phase': phase,
               'ingredients': [
                 for (final e in ingredients.entries)
-                  {'name': e.key, 'ready': e.value},
+                  {
+                    'name': e.key,
+                    'ready': e.value,
+                    if (!e.value) 'use': ?substitutes[e.key],
+                  },
               ],
               'pendingOffer': ?pendingOffer?.toJson(),
               // So CookAlong can adapt them to a missing ingredient.
               if (phase == 'opening')
                 'steps': [
                   for (final s in recipe.steps)
-                    {'title': s.title, 'text': s.instruction},
+                    {'title': s.title, 'text': s.instruction, 'check': s.check},
                 ],
             }),
           )
