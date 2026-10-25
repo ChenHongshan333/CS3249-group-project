@@ -28,6 +28,7 @@ class _ScriptedAssistant implements AssistantService {
     List<String> acceptedSwaps = const [],
     String phase = 'cooking',
     Map<String, bool> ingredients = const {},
+    Map<String, String> substitutes = const {},
     AssistantAction? pendingOffer,
   }) async {
     stepTexts.add(recipe.steps[stepIndex].instruction);
@@ -72,7 +73,7 @@ void main() {
         ],
       });
       expect(action?.type, 'adapt_steps');
-      expect(action?.steps, {0: _noTomatoes});
+      expect(action?.steps, {0: const StepEdit(text: _noTomatoes)});
     });
 
     test('without changes is ignored', () {
@@ -107,6 +108,7 @@ void main() {
       expect(steps.first, {
         'title': recipe.steps.first.title,
         'text': recipe.steps.first.instruction,
+        'check': recipe.steps.first.check,
       });
       expect(bodies[1].containsKey('steps'), isFalse);
     });
@@ -116,8 +118,11 @@ void main() {
       'questions', (tester) async {
     final assistant = _ScriptedAssistant([
       const AssistantResponse(
-        reply: "No problem. I've changed step 1 to leave them out.",
-        action: AssistantAction('adapt_steps', steps: {0: _noTomatoes}),
+        reply: "No problem. I've adjusted the steps.",
+        action: AssistantAction(
+          'adapt_steps',
+          steps: {0: StepEdit(text: _noTomatoes)},
+        ),
       ),
       const AssistantResponse(reply: 'Pat them gently.'),
     ]);

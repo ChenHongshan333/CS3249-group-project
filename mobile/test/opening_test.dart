@@ -29,6 +29,7 @@ class _ScriptedAssistant implements AssistantService {
     List<String> acceptedSwaps = const [],
     String phase = 'cooking',
     Map<String, bool> ingredients = const {},
+    Map<String, String> substitutes = const {},
     AssistantAction? pendingOffer,
   }) async {
     asked.add({

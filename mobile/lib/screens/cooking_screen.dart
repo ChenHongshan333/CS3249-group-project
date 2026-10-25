@@ -12,6 +12,7 @@ import '../models/recipe.dart';
 import '../models/user_preferences.dart';
 import '../services/assistant_service.dart';
 import '../services/cue_sounds.dart';
+import '../services/step_adapter.dart';
 import '../services/voice_controller.dart';
 import '../services/voice_intent_parser.dart';
 import '../theme/app_theme.dart';
@@ -50,6 +51,10 @@ class CookingScreen extends StatefulWidget {
   final VoidCallback onPauseAndLeave;
   final ValueChanged<String> onShowToast;
 
+  /// How the cook manages without each missing ingredient, chosen on Get
+  /// ready. The steps are adapted for these before the opening (#98).
+  final Map<String, MissingOption> missingChoices;
+
   /// False while the session is paused and left. Coming back resumes it.
   final bool isVisible;
 
@@ -63,6 +68,7 @@ class CookingScreen extends StatefulWidget {
     this.phoneCamera,
     this.cueSounds,
     required this.initialCheckedIngredients,
+    this.missingChoices = const {},
     required this.initialListeningMode,
     this.acceptedSwapIds = const {},
     required this.onFinishCooking,
@@ -195,7 +201,10 @@ class _CookingScreenState extends State<CookingScreen>
     _openingAsked = _recipe.ingredients
         .where((i) => !_checkedIngredients.contains(i))
         .toList();
-    final openingText = _openingLine();
+    final adapted = StepAdapter.forChoices(widget.recipe, _activeChoices);
+    _recipe = adapted.recipe;
+    _adaptedSteps.addAll(adapted.changed);
+    final openingText = _openingLine(adjusted: adapted.changed.isNotEmpty);
     _messages.add(
       ChatMessage(
         id: 'init-0',
@@ -204,21 +213,98 @@ class _CookingScreenState extends State<CookingScreen>
         timestamp: DateTime.now(),
       ),
     );
+    if (_changesNote(adapted) case final note?) _messages.add(_note(note));
     _initializeVoiceAndAnnounce(openingText);
   }
 
-  String _openingLine() {
+  /// The Get ready choices for ingredients that are still missing.
+  Map<String, MissingOption> get _activeChoices => {
+    for (final e in widget.missingChoices.entries)
+      if (!_checkedIngredients.contains(e.key)) e.key: e.value,
+  };
+
+  /// What the cook chose instead of each missing ingredient, for the
+  /// backend.
+  Map<String, String> get _substitutes => {
+    for (final e in _activeChoices.entries) e.key: ?e.value.use,
+  };
+
+  /// A short summary of the missing ingredients, with no question about
+  /// them: they were decided on Get ready (#98).
+  String _openingLine({required bool adjusted}) {
     final name = _recipe.name;
     final missing = _openingAsked;
     if (missing.isEmpty) {
       return "Today we're making $name, right? You've got everything, "
           "so say 'let's start' when you're ready.";
     }
-    final listed = missing.length == 1
-        ? missing.first
-        : '${missing.sublist(0, missing.length - 1).join(', ')} and ${missing.last}';
-    return "Today we're making $name, right? You said you don't have the "
-        '$listed. Shall we sort that out first?';
+    final choices = widget.missingChoices;
+    final leaving = [
+      for (final i in missing)
+        if (choices[i]?.use == null) i,
+    ];
+    final using = [
+      for (final i in missing)
+        if (choices[i]?.use case final use?) '$use instead of the $i',
+    ];
+    final prepare = {for (final i in missing) ?choices[i]?.prepare};
+    // "That's fine" only once the steps match (#94); tests and screenshots
+    // can open the cooking screen without Get ready choices.
+    final decided = leaving.every(choices.containsKey);
+    return [
+      "Today we're making $name.",
+      if (leaving.isNotEmpty)
+        "You don't have the ${_listed(leaving)}${decided ? ", that's fine" : ''}.",
+      if (using.isNotEmpty) "You're using ${_listed(using)}.",
+      if (adjusted) "I've adjusted the steps.",
+      ...prepare,
+      "Say 'let's start' when you're ready.",
+    ].join(' ');
+  }
+
+  static String _listed(List<String> items) => items.length == 1
+      ? items.first
+      : '${items.sublist(0, items.length - 1).join(', ')} and ${items.last}';
+
+  ChatMessage _note(String text) => ChatMessage(
+    id: 'sys-${DateTime.now().microsecondsSinceEpoch}',
+    sender: MessageSender.system,
+    text: text,
+    timestamp: DateTime.now(),
+  );
+
+  /// The changed and removed steps, shown in the chat but not spoken.
+  String? _changesNote(AdaptedRecipe adapted) {
+    if (adapted.changed.isEmpty && adapted.removed.isEmpty) return null;
+    final steps = adapted.recipe.steps;
+    return [
+      'Changed for you:',
+      for (final i in adapted.changed.toList()..sort())
+        'Step ${i + 1}, ${steps[i].title}: ${steps[i].instruction}',
+      for (final title in adapted.removed) 'No longer needed: $title',
+    ].join('\n');
+  }
+
+  /// A missing ingredient turned up in the opening, or went missing again:
+  /// the steps follow the Get ready choices that still apply. Changes made
+  /// in the chat are dropped then, since they were for other steps.
+  void _followChoices(Set<String> before) {
+    final choices = _activeChoices;
+    if (choices.keys.toSet().containsAll(before) &&
+        before.containsAll(choices.keys)) {
+      return;
+    }
+    final adapted = StepAdapter.forChoices(widget.recipe, choices);
+    setState(() {
+      _recipe = adapted.recipe;
+      _adaptedSteps
+        ..clear()
+        ..addAll(adapted.changed);
+      _messages.add(
+        _note(_changesNote(adapted) ?? 'Back to the steps as written.'),
+      );
+    });
+    _scrollToBottom();
   }
 
   /// Leaves the opening, once, and records how it went.
@@ -237,6 +323,7 @@ class _CookingScreenState extends State<CookingScreen>
         'missing': _recipe.ingredients
             .where((i) => !_checkedIngredients.contains(i))
             .toList(),
+        'using': _substitutes,
       },
     );
   }
@@ -929,6 +1016,7 @@ class _CookingScreenState extends State<CookingScreen>
       ingredients: {
         for (final i in _recipe.ingredients) i: _checkedIngredients.contains(i),
       },
+      substitutes: _substitutes,
       pendingOffer: offer,
     ).whenComplete(() {
       if (mounted) setState(() => _waitingForReply = false);
@@ -998,48 +1086,35 @@ class _CookingScreenState extends State<CookingScreen>
         _customSwap(action, reason: reply ?? '');
       case 'tick_ingredient' when _opening:
         final names = {...action.names, ?action.name};
+        final before = _activeChoices.keys.toSet();
         setState(
           () => _checkedIngredients.addAll(
             names.where(_recipe.ingredients.contains),
           ),
         );
+        _followChoices(before);
       default:
         // Doesn't fit the current phase; the backend should not send it.
         if (lead != null) _appendAiMessage(lead);
     }
   }
 
-  /// Replaces steps for a missing ingredient, and notes the changes in the
-  /// chat. The reply already said so aloud, so the note isn't spoken.
-  /// Returns whether any step changed.
+  /// Changes or removes steps for a missing ingredient, and notes the
+  /// changes in the chat. The reply already said so aloud, so the note
+  /// isn't spoken. Returns whether any step changed.
   ///
   /// The cook's own swaps log as `custom_swap` instead of `swap` (#22).
-  bool _adaptSteps(Map<int, String> changes, {bool logAsSwap = true}) {
-    final valid = {
-      for (final e in changes.entries)
-        if (e.key >= 0 && e.key < _recipe.steps.length) e.key: e.value,
-    };
-    if (valid.isEmpty) return false;
-    final steps = [
-      for (final (i, step) in _recipe.steps.indexed)
-        valid.containsKey(i) ? step.copyWith(instruction: valid[i]) : step,
-    ];
-    final note = [
-      'Changed for you:',
-      for (final i in valid.keys.toList()..sort())
-        'Step ${i + 1}, ${steps[i].title}: ${steps[i].instruction}',
-    ].join('\n');
+  bool _adaptSteps(Map<int, StepEdit> changes, {bool logAsSwap = true}) {
+    final adapted = StepAdapter.apply(_recipe, changes);
+    final note = _changesNote(adapted);
+    if (note == null) return false;
     setState(() {
-      _recipe = _recipe.copyWith(steps: steps);
-      _adaptedSteps.addAll(valid.keys);
-      _messages.add(
-        ChatMessage(
-          id: 'sys-${DateTime.now().microsecondsSinceEpoch}',
-          sender: MessageSender.system,
-          text: note,
-          timestamp: DateTime.now(),
-        ),
-      );
+      _recipe = adapted.recipe;
+      final kept = {for (final i in _adaptedSteps) ?adapted.moved[i]};
+      _adaptedSteps
+        ..clear()
+        ..addAll({...kept, ...adapted.changed});
+      _messages.add(_note(note));
     });
     _scrollToBottom();
     if (logAsSwap) {
@@ -1047,7 +1122,7 @@ class _CookingScreenState extends State<CookingScreen>
         sessionId: _sessionId,
         type: 'swap',
         data: {
-          'adaptedSteps': [for (final i in valid.keys) i],
+          'adaptedSteps': [for (final i in changes.keys) i],
         },
       );
     }
@@ -1425,12 +1500,23 @@ class _CookingScreenState extends State<CookingScreen>
             for (final ingredient in _openingAsked)
               CheckRow(
                 label: ingredient[0].toUpperCase() + ingredient.substring(1),
+                detail: switch (widget.missingChoices[ingredient]?.use) {
+                  _ when _checkedIngredients.contains(ingredient) => null,
+                  final use? => 'Using $use',
+                  null when widget.missingChoices.containsKey(ingredient) =>
+                    'Leaving it out',
+                  null => null,
+                },
                 checked: _checkedIngredients.contains(ingredient),
-                onTap: () => setState(() {
-                  if (!_checkedIngredients.remove(ingredient)) {
-                    _checkedIngredients.add(ingredient);
-                  }
-                }),
+                onTap: () {
+                  final before = _activeChoices.keys.toSet();
+                  setState(() {
+                    if (!_checkedIngredients.remove(ingredient)) {
+                      _checkedIngredients.add(ingredient);
+                    }
+                  });
+                  _followChoices(before);
+                },
               ),
           ],
         ],

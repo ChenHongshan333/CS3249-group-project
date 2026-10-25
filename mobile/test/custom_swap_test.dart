@@ -24,6 +24,7 @@ class _ScriptedAssistant implements AssistantService {
     List<String> acceptedSwaps = const [],
     String phase = 'cooking',
     Map<String, bool> ingredients = const {},
+    Map<String, String> substitutes = const {},
     AssistantAction? pendingOffer,
   }) async => replies.removeAt(0);
 
@@ -71,7 +72,7 @@ void main() {
       expect(action?.swap, 'Lemon instead of some oil');
       expect(action?.healthier, isTrue);
       expect(action?.fits, isTrue);
-      expect(action?.steps, {3: _lessOil});
+      expect(action?.steps, {3: const StepEdit(text: _lessOil)});
     });
 
     for (final missing in ['swap', 'healthier', 'fits']) {
@@ -125,7 +126,8 @@ void main() {
   }
 
   testWidgets('a healthier swap that fits changes the steps', (tester) async {
-    const reason = "Yes, that's lighter and still fresh. I've changed step 4.";
+    const reason =
+        "Yes, that's lighter and still fresh. I've adjusted the steps.";
     final assistant = await suggest(
       tester,
       const AssistantResponse(
@@ -135,7 +137,7 @@ void main() {
           swap: 'Lemon instead of some oil',
           healthier: true,
           fits: true,
-          steps: {3: _lessOil},
+          steps: {3: StepEdit(text: _lessOil)},
         ),
       ),
     );
@@ -171,7 +173,7 @@ void main() {
           healthier: false,
           fits: true,
           // Ignored: it isn't healthier.
-          steps: {3: 'Dress with mayo.'},
+          steps: {3: StepEdit(text: 'Dress with mayo.')},
         ),
       ),
     );

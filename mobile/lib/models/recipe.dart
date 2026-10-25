@@ -29,6 +29,97 @@ class RecipeStep {
   );
 }
 
+/// A change to one step for a missing ingredient: written by hand for the
+/// choices on Get ready, or sent by CookAlong (adapt_steps). Fields left
+/// null stay as they were.
+class StepEdit {
+  final String? text;
+  final String? title;
+  final String? tip;
+  final String? check;
+  final String? timerLabel;
+
+  /// The new suggested timer; 0 takes the timer away.
+  final int? timerSeconds;
+
+  /// Nothing is left to do in the step, so it goes.
+  final bool remove;
+
+  const StepEdit({
+    this.text,
+    this.title,
+    this.tip,
+    this.check,
+    this.timerLabel,
+    this.timerSeconds,
+  }) : remove = false;
+
+  const StepEdit.remove()
+    : text = null,
+      title = null,
+      tip = null,
+      check = null,
+      timerLabel = null,
+      timerSeconds = null,
+      remove = true;
+
+  RecipeStep applyTo(RecipeStep step) {
+    final seconds = timerSeconds ?? step.suggestedTimerSeconds;
+    final hasTimer = seconds != null && seconds > 0;
+    return RecipeStep(
+      title: title ?? step.title,
+      instruction: text ?? step.instruction,
+      tip: tip ?? step.tip,
+      check: check ?? step.check,
+      suggestedTimerSeconds: hasTimer ? seconds : null,
+      suggestedTimerLabel: hasTimer
+          ? timerLabel ?? step.suggestedTimerLabel
+          : null,
+      visionSceneDescription: step.visionSceneDescription,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is StepEdit &&
+      other.text == text &&
+      other.title == title &&
+      other.tip == tip &&
+      other.check == check &&
+      other.timerLabel == timerLabel &&
+      other.timerSeconds == timerSeconds &&
+      other.remove == remove;
+
+  @override
+  int get hashCode =>
+      Object.hash(text, title, tip, check, timerLabel, timerSeconds, remove);
+
+  @override
+  String toString() => remove ? 'StepEdit.remove()' : 'StepEdit($text)';
+}
+
+/// One way to manage without a missing ingredient, picked on Get ready:
+/// leave it out, or [use] a substitute. The step changes are written by
+/// hand (lib/models/missing_options.dart), so they are the same for every
+/// participant and always make sense (#94, #98).
+class MissingOption {
+  /// The substitute, or null to leave the ingredient out.
+  final String? use;
+
+  /// The changes, by step index in the original recipe.
+  final Map<int, StepEdit> steps;
+
+  /// Something new to have at hand, said in the opening: "Keep a glass of
+  /// water at hand."
+  final String? prepare;
+
+  const MissingOption({this.use, this.steps = const {}, this.prepare});
+
+  bool get leavesOut => use == null;
+
+  String get label => use == null ? 'Leave it out' : 'Use $use';
+}
+
 /// A healthier choice offered before cooking, such as using less oil.
 /// Swaps live in the recipe data so every user sees the same ones.
 class HealthySwap {

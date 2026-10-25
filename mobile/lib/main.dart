@@ -89,6 +89,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
   Key _sessionKey = UniqueKey();
 
   Set<String> _sessionCheckedIngredients = {};
+  Map<String, MissingOption> _sessionMissingChoices = {};
   Set<String> _sessionAcceptedSwapIds = {};
   VoiceListeningMode _sessionListeningMode = VoiceListeningMode.handsFree;
   int _lastElapsedSeconds = 0;
@@ -376,6 +377,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
       phoneCamera: _phoneCamera,
       cueSounds: _cueSounds,
       initialCheckedIngredients: _sessionCheckedIngredients,
+      missingChoices: _sessionMissingChoices,
       initialListeningMode: _sessionListeningMode,
       acceptedSwapIds: _sessionAcceptedSwapIds,
       onFinishCooking: _recordCompletedSession,
@@ -427,6 +429,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           onStartCookingSession:
               ({
                 required Set<String> checkedIngredients,
+                required Map<String, MissingOption> missingChoices,
                 required VoiceListeningMode listeningMode,
                 required Set<String> acceptedSwapIds,
               }) {
@@ -437,6 +440,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
                   _sessionRecipe = _selectedRecipe;
                   _sessionKey = UniqueKey();
                   _sessionCheckedIngredients = checkedIngredients;
+                  _sessionMissingChoices = missingChoices;
                   _sessionAcceptedSwapIds = acceptedSwapIds;
                   _sessionListeningMode = listeningMode;
                   _screen = AppScreen.cook;

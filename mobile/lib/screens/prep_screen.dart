@@ -5,13 +5,15 @@ import 'package:flutter/material.dart';
 import '../camera/phone_camera.dart';
 import '../glasses/glasses_service.dart';
 import '../models/conversation.dart';
+import '../models/missing_options.dart';
 import '../models/recipe.dart';
 import '../theme/app_theme.dart';
 import '../theme/widgets.dart';
 
 /// Get ready: gather ingredients, pick optional swaps, check the setup.
 /// Every ingredient must be ticked or marked "Don't have" before the single
-/// "Start cooking" action (#31).
+/// "Start cooking" action (#31). A missing one shows how to manage without
+/// it, so the opening chat only sums that up (#98).
 class PrepScreen extends StatefulWidget {
   final Recipe recipe;
   final GlassesService glassesService;
@@ -23,6 +25,7 @@ class PrepScreen extends StatefulWidget {
   final VoiceListeningMode initialListeningMode;
   final void Function({
     required Set<String> checkedIngredients,
+    required Map<String, MissingOption> missingChoices,
     required VoiceListeningMode listeningMode,
     required Set<String> acceptedSwapIds,
   })
@@ -49,6 +52,9 @@ class PrepScreen extends StatefulWidget {
 class _PrepScreenState extends State<PrepScreen> {
   final Set<String> _checkedIngredients = {};
   final Set<String> _missingIngredients = {};
+
+  /// How the cook manages without each missing ingredient.
+  final Map<String, MissingOption> _choices = {};
   final Set<String> _acceptedSwapIds = {};
   late VoiceListeningMode _listeningMode;
 
@@ -73,6 +79,7 @@ class _PrepScreenState extends State<PrepScreen> {
       if (_allDecided) {
         _checkedIngredients.clear();
         _missingIngredients.clear();
+        _choices.clear();
       } else {
         _checkedIngredients.addAll(
           widget.recipe.ingredients.where(
@@ -83,10 +90,12 @@ class _PrepScreenState extends State<PrepScreen> {
     });
   }
 
-  /// Marks an ingredient missing, and turns off swaps that need it.
+  /// Marks an ingredient missing, to leave out unless the cook picks a
+  /// substitute, and turns off swaps that need it.
   void _markMissing(String ingredient) {
     setState(() {
       _missingIngredients.add(ingredient);
+      _choices[ingredient] = waysWithout(widget.recipe, ingredient).first;
       _acceptedSwapIds.removeWhere(
         (id) => widget.recipe.swaps.any(
           (s) => s.id == id && s.needs.contains(ingredient),
@@ -105,6 +114,7 @@ class _PrepScreenState extends State<PrepScreen> {
   /// A tap ticks or unticks; a missing ingredient that turns up is ticked.
   void _toggleIngredient(String ingredient) {
     setState(() {
+      _choices.remove(ingredient);
       if (_missingIngredients.remove(ingredient) ||
           !_checkedIngredients.remove(ingredient)) {
         _checkedIngredients.add(ingredient);
@@ -179,7 +189,7 @@ class _PrepScreenState extends State<PrepScreen> {
                   child: Text(_allDecided ? 'Clear' : 'Mark all'),
                 ),
               ),
-              for (final ingredient in recipe.ingredients)
+              for (final ingredient in recipe.ingredients) ...[
                 CheckRow(
                   label: _capitalise(ingredient),
                   checked: _checkedIngredients.contains(ingredient),
@@ -202,6 +212,14 @@ class _PrepScreenState extends State<PrepScreen> {
                         ),
                   onTap: () => _toggleIngredient(ingredient),
                 ),
+                if (_choices[ingredient] case final chosen?)
+                  _MissingChoices(
+                    options: waysWithout(recipe, ingredient),
+                    chosen: chosen,
+                    onChosen: (option) =>
+                        setState(() => _choices[ingredient] = option),
+                  ),
+              ],
               if (recipe.swaps.isNotEmpty) ...[
                 const SizedBox(height: 32),
                 SectionTitle(
@@ -313,7 +331,7 @@ class _PrepScreenState extends State<PrepScreen> {
               ? "Tick each ingredient, or tap Don't have"
               : _missingIngredients.isEmpty
               ? null
-              : "I'll help with the ${_missingIngredients.length} you don't have",
+              : "I'll adjust the steps for what you don't have",
           child: PrimaryButton(
             label: 'Start cooking',
             icon: Icons.arrow_forward_rounded,
@@ -321,6 +339,7 @@ class _PrepScreenState extends State<PrepScreen> {
                 ? null
                 : () => widget.onStartCookingSession(
                     checkedIngredients: _checkedIngredients,
+                    missingChoices: _choices,
                     listeningMode: _listeningMode,
                     acceptedSwapIds: _acceptedSwapIds,
                   ),
@@ -332,6 +351,47 @@ class _PrepScreenState extends State<PrepScreen> {
 
   static String _capitalise(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+}
+
+/// How to manage without a missing ingredient: leave it out (the default)
+/// or use a substitute. Lined up under the ingredient's name.
+class _MissingChoices extends StatelessWidget {
+  final List<MissingOption> options;
+  final MissingOption chosen;
+  final ValueChanged<MissingOption> onChosen;
+
+  const _MissingChoices({
+    required this.options,
+    required this.chosen,
+    required this.onChosen,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(left: 42, bottom: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          for (final option in options)
+            ChoiceChip(
+              label: Text(option.label),
+              selected: option == chosen,
+              showCheckmark: false,
+              selectedColor: CookTogetherTheme.successSoft,
+              labelStyle: textTheme.labelMedium?.copyWith(
+                color: option == chosen
+                    ? CookTogetherTheme.success
+                    : CookTogetherTheme.ink,
+              ),
+              onSelected: (_) => onChosen(option),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 /// One healthier swap with a switch: on means "use it".

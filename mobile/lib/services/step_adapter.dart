@@ -1,32 +1,99 @@
 import '../models/recipe.dart';
 
-/// Rewrites recipe steps for a missing ingredient, for the built-in demo
+/// The recipe after adapting it, with the steps that changed and the
+/// titles of those that went. [moved] maps each kept step's old index to
+/// its new one.
+typedef AdaptedRecipe = ({
+  Recipe recipe,
+  Set<int> changed,
+  List<String> removed,
+  Map<int, int> moved,
+});
+
+/// Adapts recipe steps to missing ingredients. The choices on Get ready
+/// come with hand-written changes (lib/models/missing_options.dart); the
+/// rule-based rewrites here are the fallback, and serve the built-in demo
 /// assistant. The real backend asks the AI instead (adapt_steps in
-/// docs/api.md). Returns only the steps that change, by index.
+/// docs/api.md).
 class StepAdapter {
   const StepAdapter._();
 
-  /// A common substitute for each starter recipe ingredient.
-  static const substitutes = {
-    'mixed greens': 'spinach',
-    'cherry tomatoes': 'red pepper',
-    'cucumber': 'celery',
-    'chickpeas': 'white beans',
-    'olive oil': 'sunflower oil',
-    'noodles': 'spaghetti',
-    'carrot': 'courgette',
-    'bell pepper': 'courgette',
-    'garlic': 'shallot',
-    'soy sauce': 'tamari',
-    'cooked rice': 'couscous',
-    'tomatoes': 'tinned tomatoes',
-    'onion': 'leek',
-    'paprika': 'cumin',
-    'eggs': 'tofu',
-    'spinach': 'kale',
-    'tortillas': 'pitta bread',
-    'yogurt': 'sour cream',
-  };
+  /// Applies [edits], by step index, and removes the steps they say to.
+  static AdaptedRecipe apply(Recipe recipe, Map<int, StepEdit> edits) {
+    final steps = [...recipe.steps];
+    final changed = <int>{};
+    final removed = <int>{};
+    for (final MapEntry(key: i, value: edit) in edits.entries) {
+      if (i < 0 || i >= steps.length) continue;
+      if (edit.remove) {
+        removed.add(i);
+      } else {
+        steps[i] = edit.applyTo(steps[i]);
+        changed.add(i);
+      }
+    }
+    return _rebuild(recipe, steps, changed, removed);
+  }
+
+  /// Adapts [recipe] for the ingredients the cook doesn't have, in recipe
+  /// order. The hand-written changes are each written against the original
+  /// step, so when a step was already changed for another ingredient, the
+  /// rule-based rewrite is used on it instead.
+  static AdaptedRecipe forChoices(
+    Recipe recipe,
+    Map<String, MissingOption> choices,
+  ) {
+    final steps = [...recipe.steps];
+    final changed = <int>{};
+    final removed = <int>{};
+    for (final ingredient in recipe.ingredients) {
+      final option = choices[ingredient];
+      if (option == null) continue;
+      final current = recipe.copyWith(steps: steps);
+      final rewritten = option.leavesOut
+          ? leaveOut(current, ingredient)
+          : substitute(current, ingredient, option.use!);
+      final edits = option.steps.isNotEmpty
+          ? option.steps
+          : {for (final e in rewritten.entries) e.key: StepEdit(text: e.value)};
+      for (final MapEntry(key: i, value: edit) in edits.entries) {
+        if (i < 0 || i >= steps.length) continue;
+        if (edit.remove) {
+          removed.add(i);
+        } else if (changed.contains(i)) {
+          final text = rewritten[i];
+          if (text != null) steps[i] = steps[i].copyWith(instruction: text);
+        } else {
+          steps[i] = edit.applyTo(steps[i]);
+          changed.add(i);
+        }
+      }
+    }
+    return _rebuild(recipe, steps, changed, removed);
+  }
+
+  static AdaptedRecipe _rebuild(
+    Recipe recipe,
+    List<RecipeStep> steps,
+    Set<int> changed,
+    Set<int> removed,
+  ) {
+    // A recipe needs at least one step.
+    final gone = removed.length < steps.length ? removed : const <int>{};
+    final moved = <int, int>{};
+    final kept = <RecipeStep>[];
+    for (final (i, step) in steps.indexed) {
+      if (gone.contains(i)) continue;
+      moved[i] = kept.length;
+      kept.add(step);
+    }
+    return (
+      recipe: recipe.copyWith(steps: kept),
+      changed: {for (final i in changed) ?moved[i]},
+      removed: [for (final i in gone.toList()..sort()) recipe.steps[i].title],
+      moved: moved,
+    );
+  }
 
   /// How steps may name [ingredient]: "cherry tomatoes", or just
   /// "tomatoes"; "tortillas", or "tortilla".
