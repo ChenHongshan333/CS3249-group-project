@@ -1082,8 +1082,8 @@ class VoiceController extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Waits for the whole countdown before allowing a glasses photo. Normal
-  /// replies don't await speech completion, so they can't be used here.
+  /// Waits for the spoken "hold still" prompt before allowing a glasses photo.
+  /// Normal replies don't await speech completion, so they can't be used here.
   Future<bool> prepareForPhoto({required bool voiceGuidanceEnabled}) async {
     if (!_isSessionActive || _isPaused || _preparingPhoto) return false;
     _preparingPhoto = true;
@@ -1097,13 +1097,13 @@ class VoiceController extends ChangeNotifier {
       await stopListening();
       setActivityState(
         VoiceActivityState.capturingVision,
-        hint: 'Look at your food and hold still… 3, 2, 1',
+        hint: 'Look at your food and hold still…',
       );
       await _tts.stop();
       if (!_audioMuted && voiceGuidanceEnabled) {
         await _tts.awaitSpeakCompletion(true);
         final result = await _tts
-            .speak('Look at your food and hold still. 3, 2, 1.')
+            .speak('Look at your food and hold still.')
             .timeout(const Duration(seconds: 15));
         if (result != 1) return false;
       } else {
