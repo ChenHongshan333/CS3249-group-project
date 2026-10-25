@@ -1142,7 +1142,7 @@ class VoiceController extends ChangeNotifier {
     _awakeTimeoutTimer?.cancel();
     _awakeTimeoutTimer = null;
     _isAwake = false;
-    _awaitingAnswer = text.trimRight().endsWith('?');
+    _awaitingAnswer = text.contains('?');
 
     if (!_isSessionActive || _audioMuted || !voiceGuidanceEnabled) {
       if (_awaitingAnswer && !_isPaused) {
