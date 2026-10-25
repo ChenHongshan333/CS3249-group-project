@@ -215,14 +215,46 @@ def _valid_custom_swap(action: Action, req: AskRequest) -> Action | None:
     )
 
 
+# Oil doesn't boil; long before that it smokes and can catch fire (#94).
+_BRING_OIL_TO_BOIL = re.compile(r"\bbring\s+(the\s+)?oil\s+to\s+(?:a\s+)?boil\b", re.IGNORECASE)
+_BOIL_OIL = re.compile(r"\bboil(?:ing)?(?=\s+(?:the\s+|some\s+|a\s+little\s+)?oil\b)", re.IGNORECASE)
+
+
+def _step_text(text: str | None) -> str:
+    """New step text, as it will be read aloud."""
+    text, _ = make_safe((text or "").strip())
+    def warm(m: re.Match, rest: str = "") -> str:
+        return ("Warm" if m[0][0].isupper() else "warm") + rest
+
+    text = _BRING_OIL_TO_BOIL.sub(lambda m: warm(m, f" {m[1] or ''}oil"), text)
+    return _BOIL_OIL.sub(warm, text)
+
+
 def _valid_step_changes(action: Action, req: AskRequest) -> list[StepChange]:
     """Keeps changes to steps the app sent that really change them. The new
-    text is read aloud later, so it gets the same safety pass as replies."""
-    changes: dict[int, str] = {}
+    text is read aloud later, so it gets the same safety pass as replies.
+    Removing every step is not a change the app can cook from."""
+    changes: dict[int, StepChange] = {}
     for change in action.steps or []:
         if change.step >= len(req.steps):
             continue
-        text, _ = make_safe(change.text.strip())
-        if text and text != req.steps[change.step].text.strip():
-            changes[change.step] = text
-    return [StepChange(step=i, text=t) for i, t in sorted(changes.items())]
+        old = req.steps[change.step]
+        if change.remove:
+            changes[change.step] = StepChange(step=change.step, remove=True)
+            continue
+        text = _step_text(change.text)
+        title = _step_text(change.title) or None
+        check = _step_text(change.check) or None
+        if not text:
+            continue
+        if text == old.text.strip() and title in (None, old.title) and check in (None, old.check):
+            continue
+        changes[change.step] = StepChange(
+            step=change.step,
+            text=text,
+            title=title if title != old.title else None,
+            check=check if check != old.check else None,
+        )
+    if changes and all(c.remove for c in changes.values()) and len(changes) == len(req.steps):
+        return []
+    return [changes[i] for i in sorted(changes)]

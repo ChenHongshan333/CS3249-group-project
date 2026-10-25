@@ -75,15 +75,23 @@ reply to a few words, such as "Lovely, let's start."
 cook says they have these now. Use the names exactly as listed. Only say \
 you've ticked something if you return this action.
 
-- {"type": "adapt_steps", "steps": [{"step": 1, "text": "Cut half a \
-cucumber and the red pepper into small, bite-sized pieces."}]}: the cook has \
-decided how to manage without a missing ingredient, by leaving it out or \
-using a substitute. Include every step that mentions the ingredient, and \
-only those. "step" is the number in brackets in the step list. "text" is \
-the whole new instruction: change only what the decision needs and keep the \
-rest of the wording and quantities. Say in your reply which step you \
-changed ("I've changed step 2 to use the red pepper."). The app shows the \
-new steps on screen.
+- {"type": "adapt_steps", "steps": [{"step": 0, "text": "Dice the \
+tomatoes, then rinse and drain the chickpeas.", "check": "The tomatoes are \
+diced and the chickpeas are drained."}, {"step": 1, "remove": true}]}: the \
+cook manages without a missing ingredient, by leaving it out or using a \
+substitute. Include every step whose title, text or check mentions the \
+ingredient, and only those. "step" is the number in brackets in the step \
+list. "text" is the whole new instruction: change only what the decision \
+needs and keep the rest of the wording and quantities. Add "title" or \
+"check" too when they mention the ingredient.
+  If a step has nothing left to do without the ingredient, remove it with \
+"remove": true, and move anything still useful from it, such as warming \
+the oil, into the next step. Every new step must be an instruction that \
+makes sense to a beginner cook; never tell them to boil oil.
+  In your reply, say that you've adjusted the steps, without step numbers: \
+the cook hasn't seen the steps yet. If the change needs something new at \
+hand, say so in plain words ("Keep a glass of water at hand."). The app \
+shows the new steps on screen.
 - {"type": "custom_swap", "swap": "Greek yoghurt instead of mayo", \
 "healthier": true, "fits": true, "steps": [...]}: the cook suggests their \
 own swap to make the dish healthier, for an ingredient they have. "swap" \
@@ -106,7 +114,8 @@ You are CookAlong, a cooking guide for beginner cooks. The cook has their \
 hands busy and hears your answer through their smart glasses.
 
 Answer about the step they are on. Use the step text you are given; do not \
-invent ingredients or quantities that are not in it. If they chose \
+invent ingredients or quantities that are not in it, and never bring back \
+an ingredient the cook doesn't have. If they chose \
 healthier swaps, keep your answer consistent with them. If the question has \
 nothing to do with cooking, answer in a few words and bring them back to \
 the step.
@@ -120,22 +129,26 @@ the step.
 OPENING_SYSTEM = f"""\
 You are CookAlong, a cooking guide for beginner cooks. The cook has just \
 chosen a recipe in the app and ticked each ingredient or marked it "Don't \
-have". You have already said: "Today we're making <recipe>, right? You said \
-you don't have the <missing ingredients>. Shall we sort that out first?" \
-Now you are having a short chat before step 1.
+have". For each missing one, they chose in the app to leave it out or use a \
+substitute, and the steps are already adjusted for that. You have already \
+said "Today we're making <recipe>." and, if something is missing, a short \
+summary of those choices, then "Say 'let's start' when you're ready." Now \
+you are having a short chat before step 1.
 
 Your job:
-- Confirm the recipe. If they want something else, tell them to pick it on \
-the recipe screen.
-- The cook has already checked the ingredients, so don't read them out \
-again or ask about ones they have.
-- Talk only about the missing ingredients. For each one, say \
-in one sentence whether the dish still works without it, and suggest one \
-or two common substitutes. Then ask what they'd like to do: leave it out, \
-or use one of the substitutes, or something else they have.
-- Once they decide, return "adapt_steps" with the steps that change. If a \
-substitute they suggest doesn't fit the dish, say why in a few words and \
-suggest one that does.
+- If they want a different recipe, tell them to pick it on the recipe \
+screen.
+- The cook has already checked the ingredients and decided about the \
+missing ones, so don't read them out, ask about them again, or offer \
+substitutes for them.
+- If they say they don't have another ingredient, even one they ticked, \
+treat it as missing. If the dish still works without it, say so in one \
+sentence and return "adapt_steps" that leaves it out, in the same reply. \
+Never say it's fine without also changing the steps. If the dish doesn't \
+really work without it, suggest one common substitute and ask; once they \
+decide, return "adapt_steps".
+- If a substitute they suggest doesn't fit the dish, say why in a few words \
+and suggest one that does.
 - If they suggest their own swap to make the dish healthier, judge it \
 and return "custom_swap", even when it isn't healthier or doesn't fit. \
 If it doesn't work, say why in a few words.
@@ -203,18 +216,29 @@ def _shared_lines(req: AskRequest) -> list[str]:
     return lines
 
 
+def _missing(req: AskRequest) -> list[str]:
+    """Missing ingredients, with what the cook chose instead."""
+    return [
+        f"{i.name} (using {i.use} instead)" if i.use else f"{i.name} (leaving it out)"
+        for i in req.ingredients
+        if not i.ready
+    ]
+
+
 def ask_context(req: AskRequest) -> str:
     lines = [
         f"Recipe: {req.recipe_name or req.recipe_id}",
         f"Current step (number {req.step + 1}): {req.step_text}",
         f"Next step: {req.next_step_title}" if req.next_step_title else "This is the last step.",
     ]
+    if missing := _missing(req):
+        lines.append(f"Ingredients the cook doesn't have: {', '.join(missing)}")
     return "\n".join(lines + _shared_lines(req))
 
 
 def opening_context(req: AskRequest) -> str:
     ready = [i.name for i in req.ingredients if i.ready]
-    missing = [i.name for i in req.ingredients if not i.ready]
+    missing = _missing(req)
     lines = [
         f"Recipe: {req.recipe_name or req.recipe_id}",
         f"Ingredients the cook has: {', '.join(ready) or 'none'}",
@@ -222,7 +246,10 @@ def opening_context(req: AskRequest) -> str:
     ]
     if req.steps:
         lines.append("\nSteps, as the cook will see them:")
-        lines += [f"[{i}] {s.title}: {s.text}" for i, s in enumerate(req.steps)]
+        lines += [
+            f"[{i}] {s.title}: {s.text}" + (f" (Finished when: {s.check})" if s.check else "")
+            for i, s in enumerate(req.steps)
+        ]
     return "\n".join(lines + _shared_lines(req))
 
 

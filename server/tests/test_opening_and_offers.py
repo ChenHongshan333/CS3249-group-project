@@ -103,8 +103,42 @@ def test_opening_uses_its_own_prompt_and_context(client, fake_llm):
     call = fake_llm.calls[0]
     assert "short chat before step 1" in call["system"]
     assert "Ingredients the cook has: chicken thigh" in call["text"]
-    assert "Ingredients the cook doesn't have: cherry tomatoes, garlic" in call["text"]
-    assert "You said you don't have the <missing ingredients>" in call["system"]
+    assert (
+        "Ingredients the cook doesn't have: cherry tomatoes (leaving it out), "
+        "garlic (leaving it out)" in call["text"]
+    )
+    assert "Say 'let's start' when you're ready." in call["system"]
+
+
+# Choices made on Get ready (#98)
+
+
+def test_opening_context_has_the_get_ready_choices(client, fake_llm):
+    ingredients = [
+        {"name": "chicken thigh", "ready": True},
+        {"name": "cherry tomatoes", "ready": False, "use": "passata"},
+        {"name": "garlic", "ready": False},
+    ]
+    client.post("/ask", json={**OPENING_BODY, "ingredients": ingredients})
+    assert (
+        "Ingredients the cook doesn't have: cherry tomatoes (using passata instead), "
+        "garlic (leaving it out)" in fake_llm.calls[0]["text"]
+    )
+    # Already decided, so the opening doesn't ask about them again.
+    assert "ask about them again" in fake_llm.calls[0]["system"]
+
+
+def test_cooking_context_names_what_is_missing(client, fake_llm):
+    client.post(
+        "/ask",
+        json={**ASK_BODY, "ingredients": [{"name": "onion", "ready": False}]},
+    )
+    assert "Ingredients the cook doesn't have: onion (leaving it out)" in fake_llm.calls[0]["text"]
+
+
+def test_cooking_context_without_ingredients_is_unchanged(client, fake_llm):
+    client.post("/ask", json=ASK_BODY)
+    assert "doesn't have" not in fake_llm.calls[0]["text"]
 
 
 def test_opening_needs_no_step_text(client, fake_llm):
@@ -263,7 +297,7 @@ def test_opening_context_lists_the_steps(client, fake_llm):
 
 def test_adapt_steps_is_returned(client, fake_llm):
     fake_llm.next_reply = reply_json(
-        reply="No problem. I've changed steps 1 and 3.",
+        reply="No problem. I've adjusted the steps.",
         action=adapt((0, "Slice the garlic."), (2, "Soften the garlic.")),
     )
     body = client.post("/ask", json=ADAPT_BODY).json()
@@ -301,6 +335,94 @@ def test_adapted_steps_get_the_safety_pass(client, fake_llm):
     assert text.startswith("Pan-fry the chicken thigh.")
 
 
+def test_adapt_steps_prompt_keeps_step_numbers_out_of_the_reply(client, fake_llm):
+    client.post("/ask", json=ADAPT_BODY)
+    system = fake_llm.calls[0]["system"]
+    assert "without step numbers" in system
+    assert "I've changed step" not in system
+
+
+# Steps that change or go when an ingredient is left out (#94)
+
+
+def test_opening_context_has_each_steps_check(client, fake_llm):
+    steps = [{**STEPS[0], "check": "The tomatoes are halved."}, *STEPS[1:]]
+    client.post("/ask", json={**ADAPT_BODY, "steps": steps})
+    text = fake_llm.calls[0]["text"]
+    assert "[0] Prepare: Halve the cherry tomatoes and slice the garlic. " \
+        "(Finished when: The tomatoes are halved.)" in text
+    assert "[1] Cook the chicken: Pan-fry the chicken thigh skin-side down.\n" in text
+
+
+def test_adapt_steps_can_change_title_and_check(client, fake_llm):
+    fake_llm.next_reply = reply_json(
+        action={
+            "type": "adapt_steps",
+            "steps": [
+                {"step": 2, "text": "Soften the garlic.", "title": "Soften the garlic",
+                 "check": "The garlic smells sweet."},
+            ],
+        }
+    )
+    body = client.post("/ask", json=ADAPT_BODY).json()
+    assert body["action"]["steps"] == [
+        {"step": 2, "text": "Soften the garlic.", "title": "Soften the garlic",
+         "check": "The garlic smells sweet."},
+    ]
+
+
+def test_adapt_steps_can_remove_a_step(client, fake_llm):
+    fake_llm.next_reply = reply_json(
+        action={
+            "type": "adapt_steps",
+            "steps": [{"step": 0, "text": "Slice the garlic."}, {"step": 2, "remove": True}],
+        }
+    )
+    body = client.post("/ask", json=ADAPT_BODY).json()
+    assert body["action"]["steps"] == [
+        {"step": 0, "text": "Slice the garlic."},
+        {"step": 2, "remove": True},
+    ]
+
+
+def test_adapt_steps_cannot_remove_every_step(client, fake_llm):
+    fake_llm.next_reply = reply_json(
+        action={"type": "adapt_steps", "steps": [{"step": i, "remove": True} for i in range(3)]}
+    )
+    assert "action" not in client.post("/ask", json=ADAPT_BODY).json()
+
+
+def test_a_change_needs_text_unless_it_removes_the_step(client, fake_llm):
+    fake_llm.next_reply = reply_json(
+        action={"type": "adapt_steps", "steps": [{"step": 0, "title": "Prepare"}]}
+    )
+    assert "action" not in client.post("/ask", json=ADAPT_BODY).json()
+
+
+def test_a_change_to_only_the_title_is_kept(client, fake_llm):
+    fake_llm.next_reply = reply_json(
+        action={
+            "type": "adapt_steps",
+            "steps": [{"step": 1, "text": STEPS[1]["text"], "title": "Fry the chicken"}],
+        }
+    )
+    body = client.post("/ask", json=ADAPT_BODY).json()
+    assert body["action"]["steps"] == [
+        {"step": 1, "text": STEPS[1]["text"], "title": "Fry the chicken"},
+    ]
+
+
+@pytest.mark.parametrize("said, kept", [
+    ("Boil the oil for a minute.", "Warm the oil for a minute."),
+    ("Heat the pan and boil a little oil.", "Heat the pan and warm a little oil."),
+    ("Bring the oil to a boil, then add the chickpeas.", "Warm the oil, then add the chickpeas."),
+    ("Bring water to a boil and add a little oil.", "Bring water to a boil and add a little oil."),
+])
+def test_adapted_steps_never_boil_oil(client, fake_llm, said, kept):
+    fake_llm.next_reply = reply_json(action=adapt((1, said)))
+    assert client.post("/ask", json=ADAPT_BODY).json()["action"]["steps"][0]["text"] == kept
+
+
 def test_opening_has_room_for_rewritten_steps(client, fake_llm):
     client.post("/ask", json=ADAPT_BODY)
     client.post("/ask", json=ASK_BODY)
@@ -326,7 +448,7 @@ def test_custom_swap_is_in_the_opening_prompt(client, fake_llm):
 
 def test_custom_swap_with_steps_is_returned(client, fake_llm):
     fake_llm.next_reply = reply_json(
-        reply="Yes, that's lighter and still tasty. I've changed step 2.",
+        reply="Yes, that's lighter and still tasty. I've adjusted the steps.",
         action=custom(True, True, (1, "Pan-fry the chicken thigh in a teaspoon of oil.")),
     )
     body = client.post("/ask", json=SWAP_BODY).json()
