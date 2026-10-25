@@ -37,7 +37,7 @@ Optional fields (added 23 Oct; requests without them still work):
 | Field | Meaning |
 | --- | --- |
 | `phase` | `"cooking"` (default) or `"opening"`, the short conversation before step 1. In the opening, `step` and `stepText` may be left out. |
-| `ingredients` | `[{ "name": "garlic", "ready": true }]`. `ready` is the tick on the Get ready screen. Since 24 Oct the cook must tick each ingredient or mark it "Don't have" before starting, so `ready: false` means they don't have it. In the opening, CookAlong only talks about ingredients that are not ready. |
+| `ingredients` | `[{ "name": "garlic", "ready": true }]`. `ready` is the tick on the Get ready screen. Since 24 Oct the cook must tick each ingredient or mark it "Don't have" before starting, so `ready: false` means they don't have it. In the opening, CookAlong only talks about ingredients that are not ready. Since 25 Oct a missing ingredient may also carry `use`, the substitute the cook picked on Get ready (`{ "name": "tomatoes", "ready": false, "use": "passata" }`); without `use` they are leaving it out. The steps are already adapted for these choices. Sent in both phases, so answers while cooking don't bring a missing ingredient back. |
 | `pendingOffer` | The `offer` from the previous reply, if the user has not answered it yet. Send it back exactly as received, then forget it. |
 | `steps` | Opening only (added 24 Oct): every step as the user will see it, `[{ "title": "Wash & prepare", "text": "Rinse the greens…" }]`, in order, so CookAlong can adapt them to missing ingredients. Send the adapted text once steps were changed. |
 
@@ -63,7 +63,7 @@ Both use the same shape. The app ignores any `type` it does not know.
 | `repeat_step` | | "Say that again?" |
 | `start_cooking` | | Opening only: the user is ready for step 1. |
 | `tick_ingredient` | `names`, a list of the request's `ingredients` (also `name`, the first of them, for older apps) | Opening only: "I've got the garlic and the sauce now." |
-| `adapt_steps` | `steps`, the changed steps only: `[{ "step": 0, "text": "Rinse the greens and cucumber." }]`. `step` indexes the request's `steps`; `text` is the whole new instruction | Opening only (added 24 Oct): the cook has decided how to manage without a missing ingredient, by leaving it out or using a substitute. The app replaces those steps and shows the changes in the chat. |
+| `adapt_steps` | `steps`, the changed steps only: `[{ "step": 0, "text": "Rinse the greens and cucumber." }]`. `step` indexes the request's `steps`; `text` is the whole new instruction. Since 25 Oct a change may also carry a new `title` and `check` (what the finished step looks like), or be `{ "step": 1, "remove": true }` for a step with nothing left to do | Opening only (added 24 Oct): the cook has decided how to manage without a missing ingredient, by leaving it out or using a substitute. The app replaces those steps and shows the changes in the chat. |
 | `custom_swap` | `swap`, the cook's idea in a few words; `healthier` and `fits`, both true or false; `steps` as in `adapt_steps`, only when both are true | Opening only (added 24 Oct): the cook suggests their own healthier swap, such as "Can I use Greek yoghurt instead of mayo?". `reply` says in one sentence whether it is healthier and fits the dish, and why. When both are true, the app changes `steps` as for `adapt_steps`. Either way the app logs it as `custom_swap`. |
 
 Example of an offer, then the user accepting it:
@@ -90,26 +90,34 @@ Example of an offer, then the user accepting it:
 }
 ```
 
+### Missing ingredients on Get ready
+
+Since 25 Oct (#98), when the user marks an ingredient "Don't have", Get ready offers the ways to manage without it right there: one or two substitutes, or "Leave it out" (the default). The choices and the adapted steps for each are written by hand in the app's recipe data, so they are the same for every participant and need no backend call. The opening then only sums them up.
+
 ### The opening conversation
 
 After the user starts a recipe, and before step 1, the app speaks a fixed first line. Every participant hears the same opening, and it needs no backend call:
 
-- Some ingredients marked "Don't have": "Today we're making {recipe}, right? You said you don't have the {missing ingredients}. Shall we sort that out first?"
+- Some ingredients marked "Don't have": a short summary with no question about them, such as "Today we're making {recipe}. You don't have the tomatoes, that's fine, I've adjusted the steps. Keep some water at hand. Say 'let's start' when you're ready." A substitute reads "You're using passata instead of the tomatoes". The last part before "Say 'let's start'" is what to have ready for the adapted steps, if anything.
 - All ticked: "Today we're making {recipe}, right? You've got everything, so say 'let's start' when you're ready."
 
-The user's replies go to `/ask` with `"phase": "opening"`. CookAlong confirms what is missing, suggests what to leave out or swap, and returns `start_cooking` when the user is ready. Saying "let's start" or tapping Start also begins step 1 without a backend call.
+The user's replies go to `/ask` with `"phase": "opening"`, and CookAlong returns `start_cooking` when the user is ready. Saying "let's start" or tapping Start also begins step 1 without a backend call. CookAlong doesn't ask again about the choices made on Get ready.
 
-When an ingredient is missing, CookAlong says whether the recipe still works without it and talks through substitutes. Once the cook decides, it returns `adapt_steps` with the steps that change:
+If the user says in the chat that they don't have something else, even an ingredient they ticked, CookAlong treats it as missing. When the dish works without it, it says so and returns `adapt_steps` in the same reply, so the steps match what it said. Otherwise it suggests a substitute and adapts the steps once the cook decides. The changed steps stay sensible instructions: a step with nothing left to do is removed, and anything useful in it (such as warming the oil) moves into the next step. The reply never refers to step numbers, which the user hasn't seen yet; it says in plain words what to have ready.
 
 ```json
 // Request (phase "opening", with "steps")
-{ "question": "I'll use a red pepper instead.", "...": "..." }
+{ "question": "Oh, I don't have any onions.", "...": "..." }
 // Response
 {
-  "reply": "Good choice. I've changed step 2 to use the red pepper. Just let me know when you're ready.",
+  "reply": "That's fine, it works without onion. I've adjusted the steps. Just let me know when you're ready.",
   "action": {
     "type": "adapt_steps",
-    "steps": [{ "step": 1, "text": "Cut half a cucumber and the red pepper into small, bite-sized pieces." }]
+    "steps": [
+      { "step": 0, "text": "Dice the tomatoes, then rinse and drain the chickpeas.", "check": "Tomatoes are diced and chickpeas are drained within reach." },
+      { "step": 1, "remove": true },
+      { "step": 2, "text": "Warm a little oil over medium heat. Add the tomatoes, chickpeas and a pinch of paprika, and simmer for 4 minutes until the tomatoes soften." }
+    ]
   }
 }
 ```
@@ -123,7 +131,7 @@ The cook can also suggest their own healthier swap before step 1, for an ingredi
 { "question": "Could I use Greek yoghurt instead of the mayo?", "...": "..." }
 // Response
 {
-  "reply": "Yes, Greek yoghurt has far less fat and works well in the dressing. I've changed step 3.",
+  "reply": "Yes, Greek yoghurt has far less fat and works well in the dressing. I've changed the dressing to use it.",
   "action": {
     "type": "custom_swap",
     "swap": "Greek yoghurt instead of mayo",
@@ -198,7 +206,7 @@ Request:
 | `swap` | `{ "swapId": "yoghurt-instead-of-mayo", "accepted": true }` |
 | `custom_swap` | `{ "swap": "Greek yoghurt instead of mayo", "healthier": true, "fits": true, "applied": true, "reason": "Yes, Greek yoghurt has far less fat…" }`: a swap the cook suggested (added 24 Oct). Kept apart from `swap`, so the fixed swaps stay the same for every participant. `applied` is true when steps changed; `reason` is CookAlong's reply |
 | `misheard` | `{ "heard": "next step", "meant": "repeat" }` |
-| `opening_end` | `{ "ms": 41200, "turns": 3, "missing": ["cherry tomatoes"] }`: how long the opening took, how many user replies, and what was still unticked at step 1 |
+| `opening_end` | `{ "ms": 41200, "turns": 3, "missing": ["cherry tomatoes"], "using": { "cherry tomatoes": "red pepper" } }`: how long the opening took, how many user replies, what was still unticked at step 1, and (since 25 Oct) the substitutes picked on Get ready |
 | `session_end` | `{ "completed": true }` |
 
 `ms` is how long the backend took to answer, for the reply-time measure.
@@ -226,6 +234,7 @@ Agreed by team poll on 23 Oct.
 - **Recipes live in the app.** The app sends the current step's text with each request, so the backend never holds a second copy that could drift. If the backend later turns recipe links into recipes, recipes move to the backend and the app loads them from a new `GET /recipes`.
 - **The opening conversation confirms, it does not choose.** Agreed 23 Oct: the user picks the recipe in the app, and CookAlong opens with "Today we're making …, right?". The Get ready checklist stays; the opening only asks about ingredients that are not ticked.
 - **Ingredients are checked before starting** (#31, team poll 24 Oct). Listening to a long list through the glasses and answering from memory was hard. Start cooking now needs every ingredient ticked or marked "Don't have", and the opening only talks about the missing ones.
+- **Substitutes are chosen on Get ready, not in the chat** (#98, 25 Oct). Talking through substitutes by voice took several turns before cooking started, and asked again about what the user had already said. The choices and their adapted steps are written by hand for each recipe, so they are the same for every participant and can't come out wrong (#94); only an ingredient the user mentions in the chat is adapted by the AI. The opening sums the choices up in one line and then waits for "let's start".
 - **Cooks may suggest their own swaps** (#22, team poll 24 Oct). The study needs the same fixed swaps for every participant, so suggestions are allowed but logged as `custom_swap`, apart from the fixed `swap` events.
 - **Offers are confirmed through `/ask`.** When CookAlong proposes something ("Would you like a timer?"), the app sends the offer back with the user's next words, so "please" or "no thanks" is understood without the app parsing it.
 - **No streaming for now.** `/ask` returns the whole reply in one response. Reply times are measured from the log (`ms`); streaming is reconsidered later if replies are too slow after trying a faster model and shorter prompts.
