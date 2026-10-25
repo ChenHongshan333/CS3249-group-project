@@ -210,8 +210,11 @@ class VoiceIntentParser {
   static String _bareCommand(String lower) {
     final lead = RegExp(
       r'^(ok(ay)?|alright|all right|right|so|um+|uh+|well|great|cool|'
-      r'(hey[,!.?;:\s]+|hi[,!.?;:\s]+|okay[,!.?;:\s]+|ok[,!.?;:\s]+|yo[,!.?;:\s]+|hello[,!.?;:\s]+)?'
-      r'(cooky|cookie|cookies|kooky|cuki|cook ?along|cook ?together|cook))[,.!?]?\s+',
+      r'(hey[,!.?;:\s]+|hi[,!.?;:\s]+|hay[,!.?;:\s]+|okay[,!.?;:\s]+|ok[,!.?;:\s]+|yo[,!.?;:\s]+|hello[,!.?;:\s]+)'
+      r'(cooky|cookie|cookies|kooky|cooki|cuki|cook ?along|cook ?together|cook(?:ie|y|ing|er)?|'
+      r'cody|corey|courtney|kelly|corgi|coffee|cutie|copy|quickie|googley)|'
+      r'(a[,!.?;:\s]+|the[,!.?;:\s]+|he[,!.?;:\s]+|oh[,!.?;:\s]+|ay[,!.?;:\s]+|eh[,!.?;:\s]+)?'
+      r'(cooky|cookie|cookies|kooky|cooki|cuki|cook ?along|cook ?together|cook))[,.!?]?\s+',
     );
     final tail = RegExp(r',?\s+(please|now|then|thanks|thank you)$');
     final end = RegExp(r'[.!?,\s]+$');

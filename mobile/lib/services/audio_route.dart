@@ -2,16 +2,103 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
-/// Chooses which microphone speech is recorded from. Backed by native code
-/// in `android/app/src/main/kotlin/.../MainActivity.kt`; on other platforms,
-/// the web build and tests, routing does nothing and shutter feedback falls
-/// back to a system click.
+/// Chooses which microphone speech is recorded from and manages native 16 kHz
+/// mono PCM Voice Activity Detection (VAD) audio capture for Whisper. Backed by
+/// native code in `ios/Runner/AppDelegate.swift` and
+/// `android/app/src/main/kotlin/.../MainActivity.kt`; on other platforms, the
+/// web build and tests, routing does nothing and shutter feedback falls back to
+/// a system click.
 class AudioRoute {
   const AudioRoute();
 
   static const MethodChannel _channel = MethodChannel(
     'cooktogether/audio_route',
   );
+
+  static void Function()? _onVadSpeechStart;
+  static void Function(String wavPath)? _onVadUtterance;
+  static bool _handlerRegistered = false;
+
+  /// Registers callbacks invoked by the native 16 kHz VAD recorder when voice
+  /// activity starts and when a complete utterance `.wav` file is ready.
+  void setVadCallbacks({
+    void Function()? onSpeechStart,
+    void Function(String wavPath)? onUtterance,
+  }) {
+    _onVadSpeechStart = onSpeechStart;
+    _onVadUtterance = onUtterance;
+    if (!_handlerRegistered) {
+      _handlerRegistered = true;
+      _channel.setMethodCallHandler(_handleNativeCall);
+    }
+  }
+
+  static Future<dynamic> _handleNativeCall(MethodCall call) async {
+    switch (call.method) {
+      case 'onVadSpeechStart':
+        _onVadSpeechStart?.call();
+        return null;
+      case 'onVadUtterance':
+        final args = call.arguments;
+        if (args is Map) {
+          final path = args['path'] as String?;
+          if (path != null && path.isNotEmpty) {
+            _onVadUtterance?.call(path);
+          }
+        } else if (args is String && args.isNotEmpty) {
+          _onVadUtterance?.call(args);
+        }
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  /// Starts continuous 16 kHz mono PCM recording with a pre-roll ring buffer
+  /// and energy-based Voice Activity Detection (VAD). Emits `onVadSpeechStart`
+  /// when speech begins and `onVadUtterance` with a `.wav` file path after
+  /// [silenceDurationMs] of silence following speech.
+  Future<bool> startVadListening({
+    int silenceDurationMs = 850,
+    int maxUtteranceMs = 12000,
+    int preRollMs = 350,
+  }) async {
+    try {
+      final started = await _channel
+          .invokeMethod<bool>('startVadListening', <String, dynamic>{
+            'silenceDurationMs': silenceDurationMs,
+            'maxUtteranceMs': maxUtteranceMs,
+            'preRollMs': preRollMs,
+          })
+          .timeout(const Duration(seconds: 4));
+      return started ?? false;
+    } on TimeoutException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Stops native VAD recording. When [flush] is true and the user was in the
+  /// middle of speaking, writes the partial speech to a `.wav` file and returns
+  /// its path.
+  Future<String?> stopVadListening({bool flush = false}) async {
+    try {
+      return await _channel
+          .invokeMethod<String>('stopVadListening', <String, dynamic>{
+            'flush': flush,
+          })
+          .timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
 
   /// Records through a connected Bluetooth headset's mic, such as the
   /// glasses. Returns the headset's name, or null when the phone's own mic
@@ -46,6 +133,22 @@ class AudioRoute {
       }
     } on PlatformException {
       // A missing sound must not discard an otherwise successful photo.
+    }
+  }
+
+  /// Returns the local directory where on-device Whisper models
+  /// (`ggml-tiny.bin`) are stored.
+  Future<String?> getWhisperModelDir() async {
+    try {
+      return await _channel
+          .invokeMethod<String>('getWhisperModelDir')
+          .timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
     }
   }
 

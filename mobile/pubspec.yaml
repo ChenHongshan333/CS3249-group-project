@@ -42,6 +42,7 @@ dependencies:
   image_picker: ^1.2.4
   audioplayers: ^6.8.1
   image: ^4.12.0
+  whisper_kit: ^0.3.1
 
 dev_dependencies:
   flutter_test:

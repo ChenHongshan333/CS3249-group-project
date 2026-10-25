@@ -30,6 +30,42 @@ flutter_ios_podfile_setup
 target 'Runner' do
   use_frameworks!
 
+  whisper_podspec = File.expand_path(File.join('.symlinks', 'plugins', 'whisper_kit', 'ios', 'whisper_kit.podspec'), __dir__)
+  whisper_main_src = File.expand_path('whisper_main.cpp', __dir__)
+  whisper_main_dst = File.expand_path(File.join('.symlinks', 'plugins', 'whisper_kit', 'ios', 'src', 'main.cpp'), __dir__)
+  if File.exist?(whisper_main_src) && File.exist?(File.dirname(whisper_main_dst))
+    File.write(whisper_main_dst, File.read(whisper_main_src))
+  end
+  if File.exist?(whisper_podspec)
+    File.write(whisper_podspec, <<~RUBY)
+      Pod::Spec.new do |s|
+        s.name             = 'whisper_kit'
+        s.version          = '0.0.1'
+        s.summary          = 'Offline speech-to-text using whisper.cpp FFI.'
+        s.description      = 'Offline speech-to-text using whisper.cpp FFI.'
+        s.homepage         = 'https://github.com/CodeSagePath/whisper_flutter'
+        s.license          = { :file => '../LICENSE' }
+        s.author           = { 'CodeSagePath' => 'email@example.com' }
+        s.source           = { :path => '.' }
+        s.source_files     = 'src/**/*.{h,c,cpp}'
+        s.public_header_files = 'src/main.h', 'src/whisper.cpp/whisper.h', 'src/whisper.cpp/ggml.h'
+        s.dependency 'Flutter'
+        s.platform = :ios, '12.0'
+        s.pod_target_xcconfig = {
+          'DEFINES_MODULE' => 'YES',
+          'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
+          'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
+          'CLANG_CXX_LIBRARY' => 'libc++',
+          'GCC_OPTIMIZATION_LEVEL' => '3',
+          'OTHER_CFLAGS' => '-O3 -DGGML_USE_ACCELERATE -DACCELERATE_NEW_LAPACK -Wno-shorten-64-to-32 -Wno-deprecated-declarations',
+          'OTHER_CPLUSPLUSFLAGS' => '-std=c++17 -O3 -DGGML_USE_ACCELERATE -DACCELERATE_NEW_LAPACK -Wno-shorten-64-to-32 -Wno-deprecated-declarations'
+        }
+        s.library = 'c++'
+        s.frameworks = 'Foundation', 'Accelerate'
+      end
+    RUBY
+  end
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths

@@ -8,6 +8,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import '../models/conversation.dart';
 import 'audio_route.dart';
+import 'whisper_transcriber.dart';
 
 /// What happened when the user tapped the microphone.
 enum MicTapResult {
@@ -45,24 +46,45 @@ class VoiceController extends ChangeNotifier {
   /// "Hey Cooky" on its own before returning to wake-word standby.
   static const Duration _awakeWindow = Duration(seconds: 8);
 
-  /// Matches the "Hey Cooky" wake phrase and common STT phonetic spellings
-  /// on iOS and Android ("Hey Cookie", "Hey Kooky", "Hey Cook", "Hi Cooky",
-  /// "Okay Cooky", "Hey CookAlong", "Hey CookTogether").
+  /// Matches the "Hey Cooky" wake phrase and common STT / Whisper phonetic
+  /// spellings on iOS and Android ("Hey Cookie", "Hey Kooky", "Hey Cook",
+  /// "Hi Cooky", "Okay Cooky", "Hey Cody", "A cookie", "Hey CookTogether").
   static final RegExp wakeWordPattern = RegExp(
-    r'(?:^|\b)(?:(?:hey|hi|hay|okay|ok|yo|hello)[,!.?;:\s]+'
-    r'(?:cooky|cookie|cookies|kooky|cuki|cook\s*along|cook\s*together|cook(?:ie|y|ing|er)?)'
-    r'|^(?:cooky|cookie|kooky|cook\s*along|cook\s*together))\b[,!.?;:\s]*',
+    r'(?:^|\b)(?:(?:hey|hi|hay|okay|ok|yo|hello)[,!.?;:\s-]*'
+    r'(?:cooky|cookie|cookies|kooky|cooki|cuki|kuki|kuky|cook\s*along|cook\s*together|cook(?:ie|y|ing|er)?|'
+    r'cody|corey|courtney|kelly|corgi|coffee|cutie|copy|quickie|googley|'
+    r'pookie|pooky|bookie|rookie|tookie|wookie|lucky|chucky|gookie|hookie)'
+    r'|^(?:(?:a|the|he|oh|ay|eh)[,!.?;:\s]+)?(?:cooky|cookie|cookies|kooky|cooki|cuki|kuki|kuky|cook\s*along|cook\s*together))\b[,!.?;:\s-]*',
     caseSensitive: false,
   );
 
-  /// Tests pass their own [speech] and [tts]; the app uses the plugins'.
-  VoiceController({SpeechToText? speech, FlutterTts? tts})
-    : _speech = speech ?? SpeechToText(),
-      _tts = tts ?? FlutterTts();
+  /// Tests pass their own [speech], [tts], [whisperTranscriber], or
+  /// [audioRoute]; the app uses the default plugins.
+  VoiceController({
+    SpeechToText? speech,
+    FlutterTts? tts,
+    WhisperTranscriber? whisperTranscriber,
+    AudioRoute? audioRoute,
+  }) : _speech = speech ?? SpeechToText(),
+       _tts = tts ?? FlutterTts(),
+       _whisper = whisperTranscriber ?? WhisperTranscriber(),
+       _audioRoute = audioRoute ?? const AudioRoute();
 
   final SpeechToText _speech;
   final FlutterTts _tts;
-  final AudioRoute _audioRoute = const AudioRoute();
+  final WhisperTranscriber _whisper;
+  final AudioRoute _audioRoute;
+
+  /// Uses `whisper_kit` (`WhisperModel.tiny`) with native 16 kHz PCM VAD when
+  /// available, falling back to `SpeechToText` while the model is downloading
+  /// or in test environments.
+  bool useWhisper = true;
+
+  /// True while the native 16 kHz VAD engine is actively recording for Whisper.
+  bool _vadListening = false;
+  bool get isUsingWhisper => _vadListening;
+
+  Timer? _expectingSpeechTimer;
 
   /// Name of the Bluetooth headset (the glasses) speech is recorded from, or
   /// null when the phone's own mic is used.
@@ -186,6 +208,22 @@ class VoiceController extends ChangeNotifier {
   bool get speechAvailable => _speechAvailable;
   String? get statusHint => _statusHint;
 
+  /// Downloads the lightweight Whisper model (`ggml-tiny.bin`) on app startup
+  /// if it is not already stored on disk.
+  void prepareWhisperOnAppStartup() {
+    if (useWhisper) {
+      unawaited(_whisper.ensureModelDownloaded());
+    }
+  }
+
+  /// Preloads `ggml-tiny.bin` into native RAM so it is ready before the first
+  /// utterance is transcribed.
+  void preloadWhisperModel() {
+    if (useWhisper) {
+      unawaited(_whisper.preloadModel());
+    }
+  }
+
   Future<void> initialize({
     VoiceListeningMode initialMode = VoiceListeningMode.handsFree,
     bool initialMuted = false,
@@ -200,8 +238,16 @@ class VoiceController extends ChangeNotifier {
     _fastFailures = 0;
     _isAudioBusy = false;
     _isAwake = false;
+    _vadListening = false;
     _ignoringTtsCancel = false;
     _keepGlassesMic = false;
+    _audioRoute.setVadCallbacks(
+      onSpeechStart: _onVadSpeechStart,
+      onUtterance: _onVadUtterance,
+    );
+    if (useWhisper) {
+      unawaited(_whisper.preloadModel());
+    }
     if (useGlassesMic) {
       await _routeToBluetoothMic();
       _keepGlassesMic = _bluetoothMic != null;
@@ -470,6 +516,8 @@ class VoiceController extends ChangeNotifier {
     _sentenceGapTimer = null;
     _awakeTimeoutTimer?.cancel();
     _awakeTimeoutTimer = null;
+    _expectingSpeechTimer?.cancel();
+    _expectingSpeechTimer = null;
     _restartListenTimer?.cancel();
     _restartListenTimer = null;
     _ttsSafetyTimer?.cancel();
@@ -613,7 +661,7 @@ class VoiceController extends ChangeNotifier {
     }
     if (_activityState == VoiceActivityState.listening &&
         _speechAvailable &&
-        _speech.isListening) {
+        (_speech.isListening || _vadListening)) {
       // Hands-free is already listening: a tap wakes it up immediately without
       // needing "Hey Cooky", or sends what was already said.
       if (_listeningMode == VoiceListeningMode.handsFree) {
@@ -622,7 +670,13 @@ class VoiceController extends ChangeNotifier {
           _expectingSpeech = true;
           _statusHint = _withMicName('Listening… speak now');
           _scheduleAwakeTimeout();
+          if (_vadListening) _scheduleExpectingSpeechTimeout();
           notifyListeners();
+        } else if (_vadListening) {
+          await _flushVadAndSendIfAny();
+          if (_activityState != VoiceActivityState.listening) {
+            return MicTapResult.stopped;
+          }
         } else if (partialTranscript.isNotEmpty) {
           _keepHeardWords();
           await stopListening();
@@ -631,6 +685,10 @@ class VoiceController extends ChangeNotifier {
         }
         return MicTapResult.listening;
       }
+      if (_vadListening) {
+        await _flushVadAndSendIfAny(stopRegardless: true);
+        return MicTapResult.stopped;
+      }
       _keepHeardWords();
       await stopListening();
       _sendSentence();
@@ -638,9 +696,41 @@ class VoiceController extends ChangeNotifier {
     }
     _autoRestartPaused = false;
     _fastFailures = 0;
-    if (!await _ensureSpeechInitialized()) return MicTapResult.unavailable;
+    final whisperReady = useWhisper && await _whisper.checkLocalModelReady();
+    if (!whisperReady && !await _ensureSpeechInitialized()) {
+      return MicTapResult.unavailable;
+    }
     await _startListeningLoop(forceSingleTurn: true);
-    return MicTapResult.listening;
+    return _activityState == VoiceActivityState.listening
+        ? MicTapResult.listening
+        : MicTapResult.unavailable;
+  }
+
+  Future<void> _flushVadAndSendIfAny({bool stopRegardless = false}) async {
+    _expectingSpeechTimer?.cancel();
+    _expectingSpeechTimer = null;
+    _vadListening = false;
+    final flushedPath = await _audioRoute.stopVadListening(flush: true);
+    if (flushedPath != null && flushedPath.isNotEmpty) {
+      final text = await _whisper.transcribeFile(flushedPath);
+      if (text != null && text.trim().isNotEmpty) {
+        var words = text.trim();
+        final match = wakeWordPattern.firstMatch(words);
+        if (match != null) {
+          words = words.substring(match.end).trim();
+        }
+        if (words.isNotEmpty) {
+          _sentence = _sentence.isEmpty ? words : '$_sentence $words';
+        }
+      }
+    }
+    if (partialTranscript.isNotEmpty || stopRegardless) {
+      _keepHeardWords();
+      await stopListening();
+      _sendSentence();
+    } else if (_isSessionActive && !_isPaused) {
+      await _startListeningLoop(forceSingleTurn: true);
+    }
   }
 
   /// Listens during speech for "hold on". What the phone hears of its own
@@ -758,6 +848,49 @@ class VoiceController extends ChangeNotifier {
 
     _isAudioBusy = true;
     try {
+      final keepAwake =
+          forceSingleTurn ||
+          _sentence.isNotEmpty ||
+          (_isAwake && (_awakeTimeoutTimer?.isActive ?? false));
+
+      if (useWhisper && await _whisper.checkLocalModelReady()) {
+        if (_keepGlassesMic) {
+          await _reopenGlassesMic();
+          if (!_isSessionActive || _isPaused) return;
+        }
+        final vadStarted = _vadListening || await _audioRoute.startVadListening();
+        if (vadStarted && _isSessionActive && !_isPaused) {
+          _vadListening = true;
+          _speechAvailable = true;
+          _partialTranscript = '';
+          _turnDelivered = false;
+          _isAwake =
+              !requireWakeWord ||
+              _listeningMode != VoiceListeningMode.handsFree ||
+              keepAwake;
+          _expectingSpeech = expectSpeech && forceSingleTurn && _sentence.isEmpty;
+          _listenEndHandled = false;
+          _activityState = VoiceActivityState.listening;
+          _statusHint = _withMicName(
+            waitingForWakeWord
+                ? 'Say "Hey Cooky" or tap the mic'
+                : _listeningMode == VoiceListeningMode.handsFree &&
+                      !forceSingleTurn
+                ? 'Listening hands-free… say a command or ask a question'
+                : 'Listening… speak now',
+          );
+          _lastListenStartTime = DateTime.now();
+          if (_expectingSpeech) {
+            _scheduleExpectingSpeechTimeout();
+          } else {
+            _expectingSpeechTimer?.cancel();
+            _expectingSpeechTimer = null;
+          }
+          notifyListeners();
+          return;
+        }
+      }
+
       final ready = await _ensureSpeechInitialized();
       if (!ready || !_isSessionActive || _isPaused) {
         _activityState = VoiceActivityState.idle;
@@ -774,10 +907,6 @@ class VoiceController extends ChangeNotifier {
       // Show "listening" only once the recognizer is really starting.
       _partialTranscript = '';
       _turnDelivered = false;
-      final keepAwake =
-          forceSingleTurn ||
-          _sentence.isNotEmpty ||
-          (_isAwake && (_awakeTimeoutTimer?.isActive ?? false));
       _isAwake =
           !requireWakeWord ||
           _listeningMode != VoiceListeningMode.handsFree ||
@@ -814,6 +943,79 @@ class VoiceController extends ChangeNotifier {
     } finally {
       _isAudioBusy = false;
     }
+  }
+
+  void _scheduleExpectingSpeechTimeout([
+    Duration duration = const Duration(seconds: 8),
+  ]) {
+    _expectingSpeechTimer?.cancel();
+    _expectingSpeechTimer = Timer(duration, () {
+      _expectingSpeechTimer = null;
+      if (!_isSessionActive || _isPaused || !_vadListening || !_expectingSpeech) {
+        return;
+      }
+      _vadListening = false;
+      unawaited(_audioRoute.stopVadListening(flush: false));
+      _onListenEnded();
+    });
+  }
+
+  void _onVadSpeechStart() {
+    if (!_isSessionActive || _isPaused || !_vadListening) return;
+    if (_expectingSpeech && (_expectingSpeechTimer?.isActive ?? false)) {
+      _scheduleExpectingSpeechTimeout(const Duration(seconds: 14));
+    }
+    if (_isAwake && (_awakeTimeoutTimer?.isActive ?? false)) {
+      _scheduleAwakeTimeout();
+    }
+  }
+
+  Future<void> _onVadUtterance(String wavPath) async {
+    if (!_isSessionActive || _isPaused || !_vadListening) {
+      unawaited(_whisper.transcribeFile(wavPath));
+      return;
+    }
+    final text = await _whisper.transcribeFile(wavPath);
+    if (!_isSessionActive || _isPaused || !_vadListening) return;
+    if (text == null || text.trim().isEmpty) return;
+    _onWhisperRecognizedWords(text.trim());
+  }
+
+  void _onWhisperRecognizedWords(String rawWords) {
+    if (rawWords.isEmpty) return;
+
+    var commandWords = rawWords;
+    if (_listeningMode == VoiceListeningMode.handsFree && requireWakeWord) {
+      final match = wakeWordPattern.firstMatch(rawWords);
+      if (match != null) {
+        if (!_isAwake) {
+          _isAwake = true;
+          _statusHint = _withMicName('Listening… speak now');
+        }
+        commandWords = rawWords.substring(match.end).trim();
+      } else if (!_isAwake) {
+        // Still waiting for "Hey Cooky": ignore background speech/noise.
+        return;
+      }
+    }
+
+    if (commandWords.isEmpty) {
+      // Heard "Hey Cooky" alone so far; stay awake waiting for the command.
+      _scheduleAwakeTimeout();
+      notifyListeners();
+      return;
+    }
+
+    _awakeTimeoutTimer?.cancel();
+    _awakeTimeoutTimer = null;
+    _expectingSpeechTimer?.cancel();
+    _expectingSpeechTimer = null;
+    _expectingSpeech = false;
+    _askedAgain = false;
+    _fastFailures = 0;
+    _sentence = _sentence.isEmpty ? commandWords : '$_sentence $commandWords';
+    _partialTranscript = '';
+    _sendSentence();
   }
 
   void _onSpeechResult(SpeechRecognitionResult result) {
@@ -858,17 +1060,26 @@ class VoiceController extends ChangeNotifier {
 
   Future<void> stopListening() async {
     _restartListenTimer?.cancel();
+    _expectingSpeechTimer?.cancel();
+    _expectingSpeechTimer = null;
     _listenEndHandled = true;
-    try {
-      if (_speechAvailable && _speech.isListening) {
-        await _speech.stop();
-      }
-    } catch (_) {}
+    final wasVadListening = _vadListening;
+    _vadListening = false;
     if (_activityState == VoiceActivityState.listening) {
       _activityState = VoiceActivityState.idle;
     }
     _partialTranscript = '';
     notifyListeners();
+    if (wasVadListening) {
+      try {
+        await _audioRoute.stopVadListening(flush: false);
+      } catch (_) {}
+    }
+    try {
+      if (_speechAvailable && _speech.isListening) {
+        await _speech.stop();
+      }
+    } catch (_) {}
   }
 
   /// Waits for the whole countdown before allowing a glasses photo. Normal
@@ -983,6 +1194,7 @@ class VoiceController extends ChangeNotifier {
   Future<void> shutdownSession() async {
     _photoPreparationId++;
     _interruptListening = false;
+    _vadListening = false;
     _bluetoothMic = null;
     _keepGlassesMic = false;
     _heldReply = null;

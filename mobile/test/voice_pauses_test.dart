@@ -1,9 +1,50 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/models/conversation.dart';
+import 'package:mobile/services/audio_route.dart';
 import 'package:mobile/services/voice_controller.dart';
+import 'package:mobile/services/whisper_transcriber.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import 'fake_voice_channels.dart';
+
+class _FakeVadAudioRoute extends AudioRoute {
+  void Function()? onSpeechStart;
+  void Function(String wavPath)? onUtterance;
+  bool vadActive = false;
+
+  @override
+  void setVadCallbacks({
+    void Function()? onSpeechStart,
+    void Function(String wavPath)? onUtterance,
+  }) {
+    this.onSpeechStart = onSpeechStart;
+    this.onUtterance = onUtterance;
+  }
+
+  @override
+  Future<bool> startVadListening({
+    int silenceDurationMs = 1000,
+    int maxUtteranceMs = 12000,
+    int preRollMs = 600,
+  }) async {
+    vadActive = true;
+    return true;
+  }
+
+  @override
+  Future<String?> stopVadListening({bool flush = false}) async {
+    vadActive = false;
+    return null;
+  }
+
+  @override
+  Future<String?> useBluetoothMic() async => 'Ray-Ban Meta';
+
+  @override
+  Future<void> clear() async {
+    vadActive = false;
+  }
+}
 
 void main() {
   final channels = FakeVoiceChannels();
@@ -172,6 +213,79 @@ void main() {
     await channels.heard('next step');
     await tester.pump(const Duration(seconds: 2));
     expect(sent, ['next step']);
+    await finish(tester);
+  });
+
+  testWidgets('Whisper + VAD pipeline transcribes "Hey Cooky" and commands', (
+    tester,
+  ) async {
+    final fakeAudioRoute = _FakeVadAudioRoute();
+    final transcripts = <String, String>{
+      '/tmp/noise.wav': WhisperTranscriber.cleanWhisperTranscript(
+        '[BLANK_AUDIO] (music)',
+      ),
+      '/tmp/chatter.wav': 'Pass me the olive oil',
+      '/tmp/wake_only.wav': 'Hey Cooky.',
+      '/tmp/command.wav': 'How thin should I slice the garlic?',
+      '/tmp/combined.wav': 'Hey Cody, next step please.',
+    };
+    final whisper = WhisperTranscriber(
+      transcribeOverride: (path) async => transcripts[path],
+    );
+
+    voice = VoiceController(
+      speech: SpeechToText.withMethodChannel(),
+      whisperTranscriber: whisper,
+      audioRoute: fakeAudioRoute,
+    )..interruptByVoice = false;
+
+    final sent = <String>[];
+    voice.onFinalUtterance = sent.add;
+
+    await voice.initialize(
+      initialMode: VoiceListeningMode.handsFree,
+      startListeningImmediately: true,
+    );
+    expect(voice.isUsingWhisper, isTrue);
+    expect(voice.waitingForWakeWord, isTrue);
+    expect(voice.bluetoothMic, 'Ray-Ban Meta');
+
+    // 1. Blank audio / background noise and non-wake-word chatter are ignored.
+    fakeAudioRoute.onUtterance?.call('/tmp/noise.wav');
+    await tester.pump();
+    fakeAudioRoute.onUtterance?.call('/tmp/chatter.wav');
+    await tester.pump();
+    expect(sent, isEmpty);
+    expect(voice.waitingForWakeWord, isTrue);
+
+    // 2. Saying "Hey Cooky" alone wakes it up and waits for the command.
+    fakeAudioRoute.onUtterance?.call('/tmp/wake_only.wav');
+    await tester.pump();
+    expect(voice.waitingForWakeWord, isFalse);
+    expect(sent, isEmpty);
+
+    // 3. The follow-up utterance is transcribed by Whisper and sent immediately.
+    fakeAudioRoute.onUtterance?.call('/tmp/command.wav');
+    await tester.pump();
+    expect(sent, ['How thin should I slice the garlic?']);
+
+    // Wait for hands-free listening to restart in wake-word standby.
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(voice.waitingForWakeWord, isTrue);
+
+    // 4. Phonetic variant ("Hey Cody, next step please.") in a single breath works.
+    fakeAudioRoute.onUtterance?.call('/tmp/combined.wav');
+    await tester.pump();
+    expect(sent, [
+      'How thin should I slice the garlic?',
+      'next step please.',
+    ]);
+
+    expect(whisper.isReady, isTrue);
+    expect(whisper.isLoadedInMemory, isTrue);
+    expect(VoiceController.wakeWordPattern.hasMatch('Hey Pookie'), isTrue);
+    expect(VoiceController.wakeWordPattern.hasMatch('Hey-Cooky'), isTrue);
+
     await finish(tester);
   });
 }

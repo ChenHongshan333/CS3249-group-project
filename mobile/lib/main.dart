@@ -122,6 +122,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
     // Real glasses if this app is already registered with Meta AI,
     // otherwise the Mock Device Kit.
     _glassesService.start();
+    _voiceController.prepareWhisperOnAppStartup();
     _loadPersistedState();
   }
 
@@ -182,6 +183,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
       _screen = AppScreen.prep;
     });
     _assistantService.warmUp();
+    _voiceController.preloadWhisperModel();
   }
 
   /// The screen the system back gesture goes to, the same as each screen's
