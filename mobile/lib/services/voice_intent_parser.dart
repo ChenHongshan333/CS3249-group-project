@@ -1,3 +1,5 @@
+import 'tflite_intent_classifier.dart';
+
 /// Structured intents parsed from user voice utterances on the Cooking screen.
 enum VoiceIntentType {
   nextStep,
@@ -62,6 +64,82 @@ class VoiceIntentParser {
     'sixty': 60,
   };
 
+  /// Asynchronously parses a spoken or typed command using the on-device
+  /// TFLite semantic classifier if ready and confident, falling back to
+  /// the deterministic rule-based parser.
+  static Future<ParsedVoiceIntent> parseAsync(
+    String input, {
+    int? defaultStepTimerSeconds,
+    String? defaultStepTimerLabel,
+    TfliteIntentClassifier? classifier,
+  }) async {
+    final clf = classifier ?? TfliteIntentClassifier.instance;
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) {
+      return parse(input);
+    }
+
+    final lower = trimmed.toLowerCase().replaceAll('’', "'");
+    final command = _bareCommand(lower);
+    final isQ = _isQuestion(lower) || _isQuestion(command);
+    final isReq = _isRequest(lower) || _isRequest(command);
+
+    // 1. Guardrail for conversational questions:
+    // If the cook asks a question ("am I doing the right thing", "how fine does
+    // the garlic need to be"), unless it is an explicit visual question or a
+    // polite request for a command ("can you set a timer..."), it must go to
+    // the AI assistant as a general question, never an accidental command.
+    if (isQ && !isReq) {
+      if (_hasVisualIntent(lower) || _hasVisualIntent(command)) {
+        return ParsedVoiceIntent(
+          type: VoiceIntentType.visualQuestion,
+          rawText: trimmed,
+          requiresVision: true,
+        );
+      }
+      return ParsedVoiceIntent(
+        type: VoiceIntentType.generalQuestion,
+        rawText: trimmed,
+        requiresVision: false,
+      );
+    }
+
+    // 2. TFLite Semantic Classification on the stripped command
+    if (clf.isReady) {
+      final query = command.isNotEmpty ? command : lower;
+      final tfliteResult = clf.classify(query);
+      if (tfliteResult != null &&
+          tfliteResult.confidence >= clf.confidenceThreshold) {
+        int? timerSeconds;
+        String? timerLabel;
+
+        if (tfliteResult.type == VoiceIntentType.startTimer) {
+          timerSeconds =
+              _extractDurationSeconds(lower) ?? defaultStepTimerSeconds ?? 180;
+          timerLabel = defaultStepTimerLabel ?? 'Cooking timer';
+        }
+
+        final requiresVision =
+            tfliteResult.type == VoiceIntentType.visualCheckStep ||
+            tfliteResult.type == VoiceIntentType.visualQuestion;
+
+        return ParsedVoiceIntent(
+          type: tfliteResult.type,
+          rawText: trimmed,
+          timerSeconds: timerSeconds,
+          timerLabel: timerLabel,
+          requiresVision: requiresVision,
+        );
+      }
+    }
+
+    return parse(
+      input,
+      defaultStepTimerSeconds: defaultStepTimerSeconds,
+      defaultStepTimerLabel: defaultStepTimerLabel,
+    );
+  }
+
   /// Parses a spoken or typed command into a [ParsedVoiceIntent].
   static ParsedVoiceIntent parse(
     String input, {
@@ -72,11 +150,13 @@ class VoiceIntentParser {
     final lower = trimmed.toLowerCase().replaceAll('’', "'");
     // Commands said naturally: "Okay, next step please."
     final command = _bareCommand(lower);
+    final isQ = _isQuestion(lower) || _isQuestion(command);
+    final isReq = _isRequest(lower) || _isRequest(command);
 
     // 1-2. Timer commands. A question that mentions a timer ("what do I do
     // if it's sticky before the timer hits 3 minutes?") goes to the AI;
     // only a request ("can you set a timer…") counts as a command.
-    if (lower.contains('timer') && (!_isQuestion(lower) || _isRequest(lower))) {
+    if (lower.contains('timer') && (!isQ || isReq)) {
       if (RegExp(
         r'\b(cancel|clear|remove|delete|reset|stop|end|turn off)\b.*\btimer\b',
       ).hasMatch(lower)) {

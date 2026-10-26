@@ -43,6 +43,7 @@ dependencies:
   audioplayers: ^6.8.1
   image: ^4.12.0
   whisper_kit: ^0.3.1
+  tflite_flutter: ^0.12.1
 
 dev_dependencies:
   flutter_test:
@@ -68,6 +69,7 @@ flutter:
 
   assets:
     - assets/sounds/
+    - assets/models/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
