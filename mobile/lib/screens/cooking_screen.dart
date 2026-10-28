@@ -936,12 +936,12 @@ class _CookingScreenState extends State<CookingScreen>
         if (_timers.isEmpty) {
           _appendAiMessage('There is no active timer running right now.');
         } else {
-          setState(() {
-            for (int i = 0; i < _timers.length; i++) {
-              _timers[i] = _timers[i].copyWith(isRunning: false);
-            }
-          });
-          _appendAiMessage('I paused your timer.');
+          // Timers don't pause (#93): with no resume button, a paused one
+          // would be stuck. Letting it run is the way to wait longer.
+          _appendAiMessage(
+            'The timer keeps running. Say "stop the timer" if you '
+            "don't need it.",
+          );
         }
         return;
 
