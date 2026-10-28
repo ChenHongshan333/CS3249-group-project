@@ -151,7 +151,8 @@ void main() {
       expect(find.text('Step 3 of 4'), findsOneWidget);
       await tester.tap(find.text('Start 1 min timer'));
       await tester.pump();
-      expect(find.text('Toss salad gently'), findsOneWidget);
+      // The timer runs as a small chip next to the step count.
+      expect(find.byTooltip('Dismiss timer'), findsOneWidget);
 
       // Glasses visual check from the dock
       await tester.tap(find.text('Check'));
