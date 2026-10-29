@@ -196,10 +196,10 @@ class MainActivity : FlutterFragmentActivity() {
             vadSilenceDurationMs = max(400, silenceDurationMs)
             vadMaxUtteranceSamples = max(16000 * 3, maxUtteranceMs * 16)
             vadPreRollMaxSamples = max(3200, preRollMs * 16)
-            resetVadStateLocked(keepPreRoll = true)
             if (vadListening && vadThread?.isAlive == true) {
                 return true
             }
+            resetVadStateLocked(keepPreRoll = true)
         }
         stopVadListening(flush = false)
 

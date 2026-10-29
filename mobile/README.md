@@ -55,6 +55,44 @@ After that, **Check** on the cooking screen takes a photo with the glasses. The 
 
 Speech and the spoken replies go through the glasses as a normal Bluetooth headset, so they work without this registration.
 
+## Voice Control & Wake Word
+
+CookTogether features hands-free voice assistance powered by on-device Voice Activity Detection (VAD) and local Whisper (`base.en` model).
+
+### Wake Phrase
+
+To trigger CookTogether hands-free, use the wake word:
+
+* **Primary wake word:** **"Hey Cooky"**
+* **Accepted variations & greetings:**
+  * Greeting prefixes: `"Hey"`, `"Hi"`, `"OK" / "Okay"`, `"Hello"`, `"Yo"`
+  * Phonetic / name variants: `"Cooky"`, `"Cookie"`, `"CookTogether"`, `"Cook Along"`, or standalone `"Cooky"` / `"Cookie"`
+
+### How to Speak Commands
+
+1. **In one breath:**
+   * *"Hey Cooky, next step"*
+   * *"Hey Cooky, how much salt do I add?"*
+   * *"Hey Cooky, set a timer for 5 minutes"*
+   * *"Hey Cooky, does this look ready?"* / *"check this step"*
+2. **Wake word first, then command:**
+   * Say *"Hey Cooky"* alone.
+   * The status changes to **"Listening… speak now"**.
+   * Speak your command or question within the 8-second window.
+
+### Direct Question Answering (No Wake Word Needed)
+
+When CookTogether asks you a direct question (for example, *"Skip this step without checking? Say check to take a look, or skip to move on"* or *"Would you like a timer?"*):
+
+* The microphone automatically turns on in active listening mode immediately after the prompt is spoken.
+* **You do not need to say "Hey Cooky"**—simply answer directly with *"skip"*, *"check"*, *"yes"*, *"no"*, etc.
+
+### Other Input Modes
+
+* **Tap-to-Speak:** Tap the microphone button in the cooking dock to speak immediately without the wake word.
+* **Text Input:** Tap the keyboard icon or **More ("...") → Type instead** to type commands or questions manually.
+* **Microphone Routing:** Audio is recorded through the Meta glasses' Bluetooth microphone if connected, or automatically falls back to the phone's built-in microphone when glasses are unavailable.
+
 ### Where the setup lives
 
 These are already done. Keep them when you change the app ID or name:

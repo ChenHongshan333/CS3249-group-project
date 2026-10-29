@@ -169,6 +169,12 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
       _preferences = updated;
       _screen = AppScreen.home;
     });
+    unawaited(_voiceController.configureVoice(
+      voiceName: updated.ttsVoiceName,
+      voiceLocale: updated.ttsVoiceLocale,
+      pitch: updated.ttsPitch,
+      rate: updated.ttsRate,
+    ));
     _showToast('Preferences saved');
     _assistantService.warmUp();
     try {
@@ -486,6 +492,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           history: _history,
           onSavePreferences: _savePreferences,
           onOpenHistory: () => setState(() => _screen = AppScreen.history),
+          voiceController: _voiceController,
           glassesService: _glassesService,
           onShowToast: _showToast,
           onBack: () => setState(() => _screen = AppScreen.home),

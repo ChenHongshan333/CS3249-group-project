@@ -360,13 +360,18 @@ class _CookingScreenState extends State<CookingScreen>
   Future<void> _initializeVoiceAndAnnounce(String openingText) async {
     widget.voiceController.useGlassesMic =
         kGlassesMicEnabled && !widget.preferences.phoneMicOnly;
+    await widget.voiceController.configureVoice(
+      voiceName: widget.preferences.ttsVoiceName,
+      voiceLocale: widget.preferences.ttsVoiceLocale,
+      pitch: widget.preferences.ttsPitch,
+      rate: widget.preferences.ttsRate,
+    );
     await widget.voiceController.initialize(
       initialMode: widget.initialListeningMode,
       initialMuted: !widget.preferences.voiceGuidance,
       startListeningImmediately: false,
     );
     if (!mounted) return;
-    widget.voiceController.interruptByVoice = widget.preferences.voiceInterrupt;
     await widget.voiceController.speak(
       openingText,
       voiceGuidanceEnabled: widget.preferences.voiceGuidance,
@@ -391,11 +396,6 @@ class _CookingScreenState extends State<CookingScreen>
   @override
   void didUpdateWidget(CookingScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.preferences.voiceInterrupt !=
-        oldWidget.preferences.voiceInterrupt) {
-      widget.voiceController.interruptByVoice =
-          widget.preferences.voiceInterrupt;
-    }
     if (widget.isVisible && !oldWidget.isVisible && _pausedByLeaving) {
       _pausedByLeaving = false;
       // After this frame: resuming updates the app's toast too.
@@ -473,6 +473,7 @@ class _CookingScreenState extends State<CookingScreen>
     VisionCapture? visionCapture,
     bool isStepAnnouncement = false,
     int? stepIndex,
+    bool? isQuestion,
   }) {
     setState(() {
       _messages.add(
@@ -497,6 +498,7 @@ class _CookingScreenState extends State<CookingScreen>
     widget.voiceController.speak(
       text,
       voiceGuidanceEnabled: widget.preferences.voiceGuidance,
+      isQuestion: isQuestion,
     );
   }
 
@@ -547,7 +549,10 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
-  void _startOrUpdateTimer({required int seconds, required String label}) {
+  Future<void> _startOrUpdateTimer({
+    required int seconds,
+    required String label,
+  }) async {
     setState(() {
       // One timer per step: a new one for this step replaces the old one,
       // whatever it's called (the button, voice and the AI name it
@@ -569,7 +574,9 @@ class _CookingScreenState extends State<CookingScreen>
         _timers.add(timer);
       }
     });
-    widget.cueSounds?.play(Cue.timerStart);
+    try {
+      await widget.cueSounds?.play(Cue.timerStart);
+    } catch (_) {}
     final mins = (seconds / 60).ceil();
     widget.onShowToast('$label started ($mins min)');
   }
@@ -581,8 +588,6 @@ class _CookingScreenState extends State<CookingScreen>
     }
     _endOpening();
     _pendingOffer = null;
-    // A reply cut off on the old step is no longer worth repeating.
-    widget.voiceController.takeHeldReply();
     if (targetStep >= _recipe.steps.length) {
       _completeSession();
       return;
@@ -864,6 +869,17 @@ class _CookingScreenState extends State<CookingScreen>
         _moveOn(fromVoice: true);
         return;
       }
+      if (RegExp(
+        r"^(check|check first|check it|check this|take a look|inspect|look at this)\b",
+      ).hasMatch(text.toLowerCase())) {
+        _triggerVisualCheck(userQuestion: text);
+        return;
+      }
+      if (RegExp(
+        r"^(no|nope|don'?t|stay|cancel)\b",
+      ).hasMatch(text.toLowerCase())) {
+        return;
+      }
     }
 
     // "It's done" ends the step's timer quietly, so it doesn't announce
@@ -883,12 +899,8 @@ class _CookingScreenState extends State<CookingScreen>
         return;
 
       case VoiceIntentType.carryOn:
-        final held = widget.voiceController.takeHeldReply();
         if (_isPaused) {
           _togglePause(forcePause: false);
-        } else if (held != null) {
-          // Already in the chat; just say it again.
-          _speakOnly(held);
         } else {
           _nextOrFinish(fromVoice: true);
         }
@@ -925,7 +937,10 @@ class _CookingScreenState extends State<CookingScreen>
       case VoiceIntentType.startTimer:
         final seconds = intent.timerSeconds ?? 180;
         final label = intent.timerLabel ?? _step.title;
-        _startOrUpdateTimer(seconds: seconds, label: label);
+        await _startOrUpdateTimer(seconds: seconds, label: label);
+        // Beep chime plays before the assistant confirms aloud
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        if (!mounted) return;
         final mins = (seconds / 60).ceil();
         _appendAiMessage(
           'I set a $mins-minute timer for ${label.toLowerCase()}. Keep going—I will let you know when it finishes.',
@@ -1041,13 +1056,24 @@ class _CookingScreenState extends State<CookingScreen>
           'repeat_step',
           'start_cooking',
         }.contains(action.type);
-    if (!leadsIn) _appendAiMessage(response.reply, stepIndex: askedOnStep);
-    if (action != null) {
-      _runAction(
-        action,
-        lead: leadsIn ? response.reply : null,
-        reply: response.reply,
+    if (action != null && action.type == 'start_timer' && !_opening) {
+      await _startOrUpdateTimer(
+        seconds: action.seconds ?? _step.suggestedTimerSeconds ?? 180,
+        label: action.label ?? _step.suggestedTimerLabel ?? _step.title,
       );
+      // Give start chime time to play before the reply is spoken
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      if (!mounted) return;
+      _appendAiMessage(response.reply, stepIndex: askedOnStep);
+    } else {
+      if (!leadsIn) _appendAiMessage(response.reply, stepIndex: askedOnStep);
+      if (action != null) {
+        _runAction(
+          action,
+          lead: leadsIn ? response.reply : null,
+          reply: response.reply,
+        );
+      }
     }
 
     widget.assistantService.logEvent(
@@ -1218,12 +1244,10 @@ class _CookingScreenState extends State<CookingScreen>
   void _nextOrFinish({bool fromVoice = false}) {
     if (!_isPaused && !_checkedSteps.contains(_currentStep)) {
       setState(() => _confirmSkipOpen = true);
-      if (fromVoice) {
-        _appendAiMessage(
-          "You haven't checked this step yet. Say skip to move on, or check "
-          'and I will take a look.',
-        );
-      }
+      _appendAiMessage(
+        "You haven't checked this step yet. Would you like to skip, or check first?",
+        isQuestion: true,
+      );
       return;
     }
     _moveOn(fromVoice: fromVoice);

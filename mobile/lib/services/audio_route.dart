@@ -137,7 +137,7 @@ class AudioRoute {
   }
 
   /// Returns the local directory where on-device Whisper models
-  /// (`ggml-tiny.bin`) are stored.
+  /// (`ggml-base.en.bin`) are stored.
   Future<String?> getWhisperModelDir() async {
     try {
       return await _channel

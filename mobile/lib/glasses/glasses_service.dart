@@ -178,8 +178,12 @@ class MetaWearablesDatGlassesService extends GlassesService {
           await request.continueRegistration();
         } catch (_) {}
       }, onError: (_) {});
-      if (state == RegistrationState.registered && await connectRealGlasses()) {
-        return;
+      if (state == RegistrationState.registered) {
+        final connected = await connectRealGlasses().timeout(
+          const Duration(seconds: 4),
+          onTimeout: () => false,
+        );
+        if (connected) return;
       }
     } catch (_) {
       // Web, tests, or a phone without the Meta AI app.
@@ -213,38 +217,45 @@ class MetaWearablesDatGlassesService extends GlassesService {
             .timeout(const Duration(minutes: 2));
       }
 
-      // Ask only when it isn't granted yet: Meta AI shows its prompt every
-      // time it's asked, even after "Always allow" (#84).
-      var permission = await MetaWearablesDat.checkPermissionStatus(
-        Permission.camera,
-      );
-      if (!permission.isGranted) {
-        permission = await MetaWearablesDat.requestPermission(
-          Permission.camera,
-        );
-      }
-      if (!permission.isGranted) {
-        return _fail(
-          'Allow camera access for CookTogether in the Meta AI app.',
-        );
-      }
-
+      // 1. Discover the active device from the stream.
+      // The DAT SDK selects the connected, worn device automatically.
       final device = await MetaWearablesDat.activeDeviceStream()
-          .firstWhere((d) => d != null)
-          .timeout(const Duration(seconds: 15));
+          .firstWhere((d) => d != null && d.linkState != LinkState.disconnected)
+          .timeout(const Duration(seconds: 8));
+
       _usingRealGlasses = true;
       _applyDevice(device!);
+
       await _deviceSub?.cancel();
       _deviceSub = MetaWearablesDat.activeDeviceStream().listen((d) {
-        if (d == null) {
+        if (d == null || d.linkState == LinkState.disconnected) {
           _connectionState = GlassesConnectionState.disconnected;
-          _lastStatusNote =
-              'Glasses disconnected. Check they are on and nearby.';
+          _lastStatusNote = 'Glasses disconnected.';
           notifyListeners();
         } else {
           _applyDevice(d);
         }
       }, onError: (_) {});
+
+      // 2. Now that a real device is active, check camera permission.
+      try {
+        var permission = await MetaWearablesDat.checkPermissionStatus(
+          Permission.camera,
+        );
+        if (!permission.isGranted) {
+          permission = await MetaWearablesDat.requestPermission(
+            Permission.camera,
+          );
+        }
+        if (!permission.isGranted) {
+          _lastStatusNote =
+              'Camera access needed for step photos. Grant access in Meta AI.';
+          notifyListeners();
+        }
+      } catch (_) {
+        // Non-blocking: permission will be asked when taking a photo if needed.
+      }
+
       return true;
     } on TimeoutException {
       return _fail(
@@ -258,6 +269,13 @@ class MetaWearablesDatGlassesService extends GlassesService {
         RegistrationErrorCase.configurationInvalid =>
           'This build is not set up for Meta glasses. See mobile/README.md.',
         _ => 'Meta AI could not connect: ${e.message}',
+      });
+    } on PermissionError catch (e) {
+      return _fail(switch (e.reason) {
+        PermissionErrorCase.noDevice ||
+        PermissionErrorCase.noDeviceWithConnection =>
+          'Your glasses are turned off or disconnected. Power them on and connect in the Meta AI app.',
+        _ => 'Glasses permission error: ${e.message}',
       });
     } on DatError catch (e) {
       return _fail('Glasses error: ${e.message}');
@@ -281,10 +299,12 @@ class MetaWearablesDatGlassesService extends GlassesService {
     _batteryLevel = device.batteryLevel ?? _batteryLevel;
     _donState = device.donState;
     _hingeState = device.hingeState;
-    _connectionState = device.isConnected
+    final isConn =
+        device.isConnected || device.linkState != LinkState.disconnected;
+    _connectionState = isConn
         ? GlassesConnectionState.connectedHardware
         : GlassesConnectionState.connecting;
-    _lastStatusNote = device.isConnected
+    _lastStatusNote = isConn
         ? 'Connected to $_deviceName'
         : 'Waiting for $_deviceName to connect…';
     notifyListeners();

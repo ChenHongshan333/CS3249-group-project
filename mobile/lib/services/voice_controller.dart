@@ -58,6 +58,15 @@ class VoiceController extends ChangeNotifier {
     caseSensitive: false,
   );
 
+  /// Silence duration while in standby waiting for "Hey Cooky" (450 ms).
+  /// Shorter than active command listening so the wake phrase is recognized
+  /// ~400 ms faster without an awkward pause.
+  static const int kWakeWordSilenceMs = 450;
+
+  /// Silence duration while actively listening to questions or commands (850 ms),
+  /// giving the user time to pause mid-sentence while cooking.
+  static const int kActiveListeningSilenceMs = 850;
+
   /// Tests pass their own [speech], [tts], [whisperTranscriber], or
   /// [audioRoute]; the app uses the default plugins.
   VoiceController({
@@ -75,9 +84,19 @@ class VoiceController extends ChangeNotifier {
   final WhisperTranscriber _whisper;
   final AudioRoute _audioRoute;
 
-  /// Uses `whisper_kit` (`WhisperModel.tiny`) with native 16 kHz PCM VAD when
-  /// available, falling back to `SpeechToText` while the model is downloading
-  /// or in test environments.
+  String? _ttsVoiceName;
+  String? _ttsVoiceLocale;
+  double _ttsPitch = 1.0;
+  double _ttsSpeechRate = 0.48;
+
+  String? get ttsVoiceName => _ttsVoiceName;
+  String? get ttsVoiceLocale => _ttsVoiceLocale;
+  double get ttsPitch => _ttsPitch;
+  double get ttsSpeechRate => _ttsSpeechRate;
+
+  /// Uses `whisper_kit` (`WhisperTranscriber`, defaulting to `base.en`) with
+  /// native 16 kHz PCM VAD when available, falling back to `SpeechToText` while
+  /// the model is downloading or in test environments.
   bool useWhisper = true;
 
   /// True while the native 16 kHz VAD engine is actively recording for Whisper.
@@ -121,11 +140,6 @@ class VoiceController extends ChangeNotifier {
   bool _expectingSpeech = false;
   bool _askedAgain = false;
 
-  /// Saying "hold on" (or "wait", "stop"…) while CookTogether speaks cuts
-  /// it off, like a mic tap. Off by default for strict turn-taking so
-  /// speech recognition never interrupts Bluetooth TTS playback.
-  bool interruptByVoice = false;
-
   /// Requires the "Hey Cooky" wake word in hands-free mode before speech is
   /// transcribed and sent. Tapping the mic or answering a direct question
   /// wakes listening immediately without the wake word.
@@ -139,22 +153,6 @@ class VoiceController extends ChangeNotifier {
   /// True while stopping a previous TTS utterance before starting a new one,
   /// so the asynchronous iOS cancel callback doesn't end the new speech.
   bool _ignoringTtsCancel = false;
-
-  /// True while listening for "hold on" during speech. That listen only
-  /// reacts to short stop phrases, never to what CookTogether is saying.
-  bool _interruptListening = false;
-  String _speakingText = '';
-  DateTime? _interruptListenStart;
-
-  /// What CookTogether was saying when "hold on" cut it off, so "we can
-  /// continue" can say it again.
-  String? _heldReply;
-  String _speakingReply = '';
-
-  static final _stopPhrase = RegExp(
-    r"^(?:hold on|hang on|wait|stop|pause|one (?:moment|sec(?:ond)?)|"
-    r"quiet|be quiet|shush|stop (?:talking|speaking))\b",
-  );
 
   /// Android often reports both an error and "done" for one listen; only
   /// the first counts, so one failed listen isn't counted twice.
@@ -208,7 +206,7 @@ class VoiceController extends ChangeNotifier {
   bool get speechAvailable => _speechAvailable;
   String? get statusHint => _statusHint;
 
-  /// Downloads the lightweight Whisper model (`ggml-tiny.bin`) on app startup
+  /// Downloads the Whisper model (`ggml-base.en.bin`) on app startup
   /// if it is not already stored on disk.
   void prepareWhisperOnAppStartup() {
     if (useWhisper) {
@@ -216,7 +214,93 @@ class VoiceController extends ChangeNotifier {
     }
   }
 
-  /// Preloads `ggml-tiny.bin` into native RAM so it is ready before the first
+  /// Applies user-selected voice preferences to the TTS engine.
+  Future<void> configureVoice({
+    String? voiceName,
+    String? voiceLocale,
+    double? pitch,
+    double? rate,
+  }) async {
+    _ttsVoiceName = voiceName;
+    _ttsVoiceLocale = voiceLocale;
+    if (pitch != null) _ttsPitch = pitch;
+    if (rate != null) _ttsSpeechRate = rate;
+
+    try {
+      if (_ttsVoiceLocale != null && _ttsVoiceLocale!.isNotEmpty) {
+        await _tts.setLanguage(_ttsVoiceLocale!);
+      } else {
+        await _tts.setLanguage('en-US');
+      }
+      await _tts.setSpeechRate(_ttsSpeechRate);
+      await _tts.setPitch(_ttsPitch);
+      if (_ttsVoiceName != null && _ttsVoiceName!.isNotEmpty) {
+        await _tts.setVoice({
+          'name': _ttsVoiceName!,
+          'locale': _ttsVoiceLocale ?? 'en-US',
+        });
+      }
+    } catch (_) {
+      // Ignore in test or unsupported environments.
+    }
+  }
+
+  /// Returns the list of available TTS voices from the platform, filtered to
+  /// English voices by default.
+  Future<List<Map<String, String>>> getAvailableVoices({
+    String languagePrefix = 'en',
+  }) async {
+    try {
+      final dynamic raw = await _tts.getVoices;
+      if (raw is! List) return [];
+      final result = <Map<String, String>>[];
+      final seen = <String>{};
+      for (final item in raw) {
+        if (item is Map) {
+          final name = item['name']?.toString() ?? '';
+          final locale = item['locale']?.toString() ?? '';
+          if (name.isNotEmpty &&
+              locale.toLowerCase().startsWith(languagePrefix.toLowerCase())) {
+            if (!seen.add(name)) continue;
+            result.add({'name': name, 'locale': locale});
+          }
+        }
+      }
+      result.sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
+      return result;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Speaks a short test sample using the provided voice settings.
+  Future<void> previewVoice({
+    required String voiceName,
+    String voiceLocale = 'en-US',
+    double pitch = 1.0,
+    double rate = 0.48,
+    String sampleText = "Hi, I'm Cooky. Let's make something delicious!",
+  }) async {
+    try {
+      _ignoringTtsCancel = true;
+      try {
+        await _tts.stop();
+      } finally {
+        _ignoringTtsCancel = false;
+      }
+      if (voiceLocale.isNotEmpty) {
+        await _tts.setLanguage(voiceLocale);
+      }
+      await _tts.setSpeechRate(rate);
+      await _tts.setPitch(pitch);
+      if (voiceName.isNotEmpty) {
+        await _tts.setVoice({'name': voiceName, 'locale': voiceLocale});
+      }
+      await _tts.speak(sampleText);
+    } catch (_) {}
+  }
+
+  /// Preloads `ggml-base.en.bin` into native RAM so it is ready before the first
   /// utterance is transcribed.
   void preloadWhisperModel() {
     if (useWhisper) {
@@ -275,8 +359,19 @@ class VoiceController extends ChangeNotifier {
     }
 
     try {
-      await _tts.setLanguage('en-US');
-      await _tts.setSpeechRate(0.48);
+      if (_ttsVoiceLocale != null && _ttsVoiceLocale!.isNotEmpty) {
+        await _tts.setLanguage(_ttsVoiceLocale!);
+      } else {
+        await _tts.setLanguage('en-US');
+      }
+      await _tts.setSpeechRate(_ttsSpeechRate);
+      await _tts.setPitch(_ttsPitch);
+      if (_ttsVoiceName != null && _ttsVoiceName!.isNotEmpty) {
+        await _tts.setVoice({
+          'name': _ttsVoiceName!,
+          'locale': _ttsVoiceLocale ?? 'en-US',
+        });
+      }
       _tts.setCompletionHandler(_onTtsFinished);
       _tts.setCancelHandler(() {
         if (_ignoringTtsCancel) return;
@@ -333,7 +428,7 @@ class VoiceController extends ChangeNotifier {
           // React once per listen cycle: 'done' or 'doneNoResult', never also
           // on 'notListening', which scheduled duplicate restarts.
           if (status == 'done' || status == 'doneNoResult') {
-            _interruptListening ? _onInterruptListenEnded() : _onListenEnded();
+            _onListenEnded();
           }
         },
         // Android reports "no match" or "speech timeout" whenever the user
@@ -341,7 +436,7 @@ class VoiceController extends ChangeNotifier {
         // listening for good; _onListenEnded decides whether to restart.
         onError: (_) {
           if (!_isSessionActive) return;
-          _interruptListening ? _onInterruptListenEnded() : _onListenEnded();
+          _onListenEnded();
         },
         // Otherwise the plugin starts Bluetooth voice recognition on every
         // listen, which puts the glasses in call mode by itself (#40).
@@ -475,7 +570,7 @@ class VoiceController extends ChangeNotifier {
         !_autoRestartPaused &&
         _listeningMode == VoiceListeningMode.handsFree &&
         _activityState == VoiceActivityState.idle) {
-      _scheduleListeningRestart(delayMs: 650);
+      _scheduleListeningRestart(delayMs: 100);
     }
   }
 
@@ -488,6 +583,11 @@ class VoiceController extends ChangeNotifier {
         _expectingSpeech = false;
         if (_activityState == VoiceActivityState.listening) {
           _statusHint = _withMicName('Say "Hey Cooky" or tap the mic');
+        }
+        if (_vadListening) {
+          unawaited(_audioRoute.startVadListening(
+            silenceDurationMs: kWakeWordSilenceMs,
+          ));
         }
         notifyListeners();
       }
@@ -525,7 +625,7 @@ class VoiceController extends ChangeNotifier {
   }
 
   void _onTtsFinished() {
-    // The countdown owns the microphone until the photo can be taken.
+    // Photo preparation owns the microphone until the photo can be taken.
     if (_preparingPhoto) return;
     _ttsSafetyTimer?.cancel();
     _ttsSafetyTimer = null;
@@ -533,11 +633,6 @@ class VoiceController extends ChangeNotifier {
     if (_activityState == VoiceActivityState.speaking) {
       _activityState = VoiceActivityState.idle;
       notifyListeners();
-    }
-    if (_interruptListening) {
-      // The usual listen can only start once this one has stopped.
-      _stopInterruptListen().whenComplete(_afterSpeech);
-      return;
     }
     _afterSpeech();
   }
@@ -551,19 +646,21 @@ class VoiceController extends ChangeNotifier {
     if (_listeningMode == VoiceListeningMode.handsFree &&
         !_isPaused &&
         !_autoRestartPaused) {
-      _scheduleListeningRestart(delayMs: 650);
+      _scheduleListeningRestart(delayMs: 60);
     }
   }
 
   /// Listens once for the answer to a question CookTogether just asked,
   /// without needing a tap, even in tap-to-speak mode or after errors
   /// paused automatic restarts.
+  void listenForAnswer() => _listenForAnswer();
+
   void _listenForAnswer() {
     _awaitingAnswer = false;
     _autoRestartPaused = false;
     _fastFailures = 0;
     _restartListenTimer?.cancel();
-    _restartListenTimer = Timer(const Duration(milliseconds: 100), () {
+    _restartListenTimer = Timer(const Duration(milliseconds: 30), () {
       if (_isSessionActive &&
           !_isPaused &&
           _activityState == VoiceActivityState.idle) {
@@ -609,7 +706,6 @@ class VoiceController extends ChangeNotifier {
     _audioMuted = !_audioMuted;
     if (_audioMuted) {
       _photoPreparationId++;
-      await _stopInterruptListen();
       _ttsSafetyTimer?.cancel();
       try {
         await _tts.stop();
@@ -630,7 +726,6 @@ class VoiceController extends ChangeNotifier {
     if (paused) {
       _photoPreparationId++;
       _clearSentence();
-      await _stopInterruptListen();
     }
     _isPaused = paused;
     _restartListenTimer?.cancel();
@@ -656,7 +751,6 @@ class VoiceController extends ChangeNotifier {
     if (_preparingPhoto) return MicTapResult.stopped;
     if (_isPaused) return MicTapResult.stopped;
     if (_activityState == VoiceActivityState.speaking) {
-      await _stopInterruptListen();
       await _stopSpeaking();
     }
     if (_activityState == VoiceActivityState.listening &&
@@ -670,7 +764,12 @@ class VoiceController extends ChangeNotifier {
           _expectingSpeech = true;
           _statusHint = _withMicName('Listening… speak now');
           _scheduleAwakeTimeout();
-          if (_vadListening) _scheduleExpectingSpeechTimeout();
+          if (_vadListening) {
+            _scheduleExpectingSpeechTimeout();
+            unawaited(_audioRoute.startVadListening(
+              silenceDurationMs: kActiveListeningSilenceMs,
+            ));
+          }
           notifyListeners();
         } else if (_vadListening) {
           await _flushVadAndSendIfAny();
@@ -733,87 +832,6 @@ class VoiceController extends ChangeNotifier {
     }
   }
 
-  /// Listens during speech for "hold on". What the phone hears of its own
-  /// voice is ignored: only a short stop phrase that CookTogether isn't
-  /// saying counts.
-  Future<void> _startInterruptListen() async {
-    if (_interruptListening ||
-        _isPaused ||
-        _activityState != VoiceActivityState.speaking ||
-        !await _ensureSpeechInitialized() ||
-        _speech.isListening ||
-        _activityState != VoiceActivityState.speaking) {
-      return;
-    }
-    _interruptListening = true;
-    _interruptListenStart = DateTime.now();
-    try {
-      await _speech.listen(
-        onResult: _onInterruptResult,
-        listenOptions: SpeechListenOptions(
-          listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 5),
-          listenMode: ListenMode.confirmation,
-          cancelOnError: false,
-        ),
-      );
-    } catch (_) {
-      _interruptListening = false;
-    }
-  }
-
-  void _onInterruptResult(SpeechRecognitionResult result) {
-    if (!_interruptListening) return;
-    final words = result.recognizedWords.toLowerCase().trim();
-    final phrase = _stopPhrase.firstMatch(words)?[0];
-    if (phrase == null ||
-        words.split(RegExp(r'\s+')).length > 4 ||
-        _speakingText.contains(phrase)) {
-      return;
-    }
-    _interruptBySpeech();
-  }
-
-  /// "Hold on": stop talking and listen, as a mic tap does. The user may
-  /// just want a moment, so silence after it doesn't ask again.
-  Future<void> _interruptBySpeech() async {
-    _heldReply = _speakingReply;
-    await _stopInterruptListen();
-    await _stopSpeaking();
-    _autoRestartPaused = false;
-    _fastFailures = 0;
-    await _startListeningLoop(forceSingleTurn: true, expectSpeech: false);
-  }
-
-  /// The reply "hold on" cut off, if any; reading it forgets it.
-  String? takeHeldReply() {
-    final reply = _heldReply;
-    _heldReply = null;
-    return reply;
-  }
-
-  /// The listen for "hold on" ended on its own; listen again while
-  /// CookTogether is still speaking, unless it ended at once.
-  void _onInterruptListenEnded() {
-    _interruptListening = false;
-    final startedAt = _interruptListenStart;
-    final lasted = startedAt == null
-        ? Duration.zero
-        : DateTime.now().difference(startedAt);
-    if (_activityState == VoiceActivityState.speaking &&
-        lasted >= const Duration(seconds: 1)) {
-      _startInterruptListen();
-    }
-  }
-
-  Future<void> _stopInterruptListen() async {
-    if (!_interruptListening) return;
-    _interruptListening = false;
-    try {
-      await _speech.stop();
-    } catch (_) {}
-  }
-
   Future<void> _stopSpeaking() async {
     _ttsSafetyTimer?.cancel();
     _ttsSafetyTimer = null;
@@ -858,7 +876,19 @@ class VoiceController extends ChangeNotifier {
           await _reopenGlassesMic();
           if (!_isSessionActive || _isPaused) return;
         }
-        final vadStarted = _vadListening || await _audioRoute.startVadListening();
+        _isAwake =
+            !requireWakeWord ||
+            _listeningMode != VoiceListeningMode.handsFree ||
+            keepAwake;
+        final silenceMs = (_listeningMode == VoiceListeningMode.handsFree &&
+                requireWakeWord &&
+                !_isAwake &&
+                _sentence.isEmpty)
+            ? kWakeWordSilenceMs
+            : kActiveListeningSilenceMs;
+        final vadStarted = await _audioRoute.startVadListening(
+          silenceDurationMs: silenceMs,
+        );
         if (vadStarted && _isSessionActive && !_isPaused) {
           _vadListening = true;
           _speechAvailable = true;
@@ -991,6 +1021,11 @@ class VoiceController extends ChangeNotifier {
         if (!_isAwake) {
           _isAwake = true;
           _statusHint = _withMicName('Listening… speak now');
+          if (_vadListening) {
+            unawaited(_audioRoute.startVadListening(
+              silenceDurationMs: kActiveListeningSilenceMs,
+            ));
+          }
         }
         commandWords = rawWords.substring(match.end).trim();
       } else if (!_isAwake) {
@@ -1031,6 +1066,11 @@ class VoiceController extends ChangeNotifier {
         if (!_isAwake) {
           _isAwake = true;
           _statusHint = _withMicName('Listening… speak now');
+          if (_vadListening) {
+            unawaited(_audioRoute.startVadListening(
+              silenceDurationMs: kActiveListeningSilenceMs,
+            ));
+          }
         }
         commandWords = rawWords.substring(match.end).trim();
       } else if (!_isAwake) {
@@ -1093,7 +1133,6 @@ class VoiceController extends ChangeNotifier {
     _clearSentence();
     _turnDelivered = true;
     try {
-      await _stopInterruptListen();
       await stopListening();
       setActivityState(
         VoiceActivityState.capturingVision,
@@ -1135,14 +1174,18 @@ class VoiceController extends ChangeNotifier {
     if (!_audioMuted) await _audioRoute.playShutter();
   }
 
-  Future<void> speak(String text, {required bool voiceGuidanceEnabled}) async {
+  Future<void> speak(
+    String text, {
+    required bool voiceGuidanceEnabled,
+    bool? isQuestion,
+  }) async {
     if (_preparingPhoto) _photoPreparationId++;
     _restartListenTimer?.cancel();
     _ttsSafetyTimer?.cancel();
     _awakeTimeoutTimer?.cancel();
     _awakeTimeoutTimer = null;
     _isAwake = false;
-    _awaitingAnswer = text.contains('?');
+    _awaitingAnswer = isQuestion ?? text.contains('?');
 
     if (!_isSessionActive || _audioMuted || !voiceGuidanceEnabled) {
       if (_awaitingAnswer && !_isPaused) {
@@ -1183,9 +1226,6 @@ class VoiceController extends ChangeNotifier {
         Duration(milliseconds: timeoutMs),
         _onTtsFinished,
       );
-      _speakingReply = text;
-      _speakingText = text.toLowerCase();
-      if (interruptByVoice) await _startInterruptListen();
     } catch (_) {
       _onTtsFinished();
     }
@@ -1193,11 +1233,9 @@ class VoiceController extends ChangeNotifier {
 
   Future<void> shutdownSession() async {
     _photoPreparationId++;
-    _interruptListening = false;
     _vadListening = false;
     _bluetoothMic = null;
     _keepGlassesMic = false;
-    _heldReply = null;
     _audioRoute.clear();
     _clearSentence();
     _isSessionActive = false;
