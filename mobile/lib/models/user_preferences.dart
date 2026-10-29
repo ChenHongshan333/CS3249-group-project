@@ -30,6 +30,18 @@ class UserPreferences {
   /// and tests work without a camera. Empty means off.
   final String forcedCheckResult;
 
+  /// Selected TTS voice name, or empty string for the default system voice.
+  final String ttsVoiceName;
+
+  /// Selected TTS voice locale (default 'en-US').
+  final String ttsVoiceLocale;
+
+  /// Pitch multiplier for spoken assistant voice (default 1.0).
+  final double ttsPitch;
+
+  /// Speech rate multiplier for spoken assistant voice (default 0.48).
+  final double ttsRate;
+
   const UserPreferences({
     this.level = 'I know a few basics',
     this.diet = 'No restrictions',
@@ -41,6 +53,10 @@ class UserPreferences {
     this.simulatedGlassesPhotos = false,
     this.phoneMicOnly = false,
     this.forcedCheckResult = '',
+    this.ttsVoiceName = '',
+    this.ttsVoiceLocale = 'en-US',
+    this.ttsPitch = 1.0,
+    this.ttsRate = 0.48,
   });
 
   UserPreferences copyWith({
@@ -54,6 +70,10 @@ class UserPreferences {
     bool? simulatedGlassesPhotos,
     bool? phoneMicOnly,
     String? forcedCheckResult,
+    String? ttsVoiceName,
+    String? ttsVoiceLocale,
+    double? ttsPitch,
+    double? ttsRate,
   }) {
     return UserPreferences(
       level: level ?? this.level,
@@ -67,6 +87,10 @@ class UserPreferences {
           simulatedGlassesPhotos ?? this.simulatedGlassesPhotos,
       phoneMicOnly: phoneMicOnly ?? this.phoneMicOnly,
       forcedCheckResult: forcedCheckResult ?? this.forcedCheckResult,
+      ttsVoiceName: ttsVoiceName ?? this.ttsVoiceName,
+      ttsVoiceLocale: ttsVoiceLocale ?? this.ttsVoiceLocale,
+      ttsPitch: ttsPitch ?? this.ttsPitch,
+      ttsRate: ttsRate ?? this.ttsRate,
     );
   }
 
@@ -81,6 +105,10 @@ class UserPreferences {
     'simulatedGlassesPhotos': simulatedGlassesPhotos,
     'phoneMicOnly': phoneMicOnly,
     'forcedCheckResult': forcedCheckResult,
+    'ttsVoiceName': ttsVoiceName,
+    'ttsVoiceLocale': ttsVoiceLocale,
+    'ttsPitch': ttsPitch,
+    'ttsRate': ttsRate,
   };
 
   factory UserPreferences.fromJson(Map<String, dynamic> json) {
@@ -95,6 +123,10 @@ class UserPreferences {
       simulatedGlassesPhotos: json['simulatedGlassesPhotos'] as bool? ?? false,
       phoneMicOnly: json['phoneMicOnly'] as bool? ?? false,
       forcedCheckResult: json['forcedCheckResult'] as String? ?? '',
+      ttsVoiceName: json['ttsVoiceName'] as String? ?? '',
+      ttsVoiceLocale: json['ttsVoiceLocale'] as String? ?? 'en-US',
+      ttsPitch: (json['ttsPitch'] as num?)?.toDouble() ?? 1.0,
+      ttsRate: (json['ttsRate'] as num?)?.toDouble() ?? 0.48,
     );
   }
 

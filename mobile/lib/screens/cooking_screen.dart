@@ -360,6 +360,12 @@ class _CookingScreenState extends State<CookingScreen>
   Future<void> _initializeVoiceAndAnnounce(String openingText) async {
     widget.voiceController.useGlassesMic =
         kGlassesMicEnabled && !widget.preferences.phoneMicOnly;
+    await widget.voiceController.configureVoice(
+      voiceName: widget.preferences.ttsVoiceName,
+      voiceLocale: widget.preferences.ttsVoiceLocale,
+      pitch: widget.preferences.ttsPitch,
+      rate: widget.preferences.ttsRate,
+    );
     await widget.voiceController.initialize(
       initialMode: widget.initialListeningMode,
       initialMuted: !widget.preferences.voiceGuidance,

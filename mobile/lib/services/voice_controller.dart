@@ -84,6 +84,16 @@ class VoiceController extends ChangeNotifier {
   final WhisperTranscriber _whisper;
   final AudioRoute _audioRoute;
 
+  String? _ttsVoiceName;
+  String? _ttsVoiceLocale;
+  double _ttsPitch = 1.0;
+  double _ttsSpeechRate = 0.48;
+
+  String? get ttsVoiceName => _ttsVoiceName;
+  String? get ttsVoiceLocale => _ttsVoiceLocale;
+  double get ttsPitch => _ttsPitch;
+  double get ttsSpeechRate => _ttsSpeechRate;
+
   /// Uses `whisper_kit` (`WhisperTranscriber`, defaulting to `base.en`) with
   /// native 16 kHz PCM VAD when available, falling back to `SpeechToText` while
   /// the model is downloading or in test environments.
@@ -225,6 +235,92 @@ class VoiceController extends ChangeNotifier {
     }
   }
 
+  /// Applies user-selected voice preferences to the TTS engine.
+  Future<void> configureVoice({
+    String? voiceName,
+    String? voiceLocale,
+    double? pitch,
+    double? rate,
+  }) async {
+    _ttsVoiceName = voiceName;
+    _ttsVoiceLocale = voiceLocale;
+    if (pitch != null) _ttsPitch = pitch;
+    if (rate != null) _ttsSpeechRate = rate;
+
+    try {
+      if (_ttsVoiceLocale != null && _ttsVoiceLocale!.isNotEmpty) {
+        await _tts.setLanguage(_ttsVoiceLocale!);
+      } else {
+        await _tts.setLanguage('en-US');
+      }
+      await _tts.setSpeechRate(_ttsSpeechRate);
+      await _tts.setPitch(_ttsPitch);
+      if (_ttsVoiceName != null && _ttsVoiceName!.isNotEmpty) {
+        await _tts.setVoice({
+          'name': _ttsVoiceName!,
+          'locale': _ttsVoiceLocale ?? 'en-US',
+        });
+      }
+    } catch (_) {
+      // Ignore in test or unsupported environments.
+    }
+  }
+
+  /// Returns the list of available TTS voices from the platform, filtered to
+  /// English voices by default.
+  Future<List<Map<String, String>>> getAvailableVoices({
+    String languagePrefix = 'en',
+  }) async {
+    try {
+      final dynamic raw = await _tts.getVoices;
+      if (raw is! List) return [];
+      final result = <Map<String, String>>[];
+      final seen = <String>{};
+      for (final item in raw) {
+        if (item is Map) {
+          final name = item['name']?.toString() ?? '';
+          final locale = item['locale']?.toString() ?? '';
+          if (name.isNotEmpty &&
+              locale.toLowerCase().startsWith(languagePrefix.toLowerCase())) {
+            if (!seen.add(name)) continue;
+            result.add({'name': name, 'locale': locale});
+          }
+        }
+      }
+      result.sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
+      return result;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Speaks a short test sample using the provided voice settings.
+  Future<void> previewVoice({
+    required String voiceName,
+    String voiceLocale = 'en-US',
+    double pitch = 1.0,
+    double rate = 0.48,
+    String sampleText = "Hi, I'm Cooky. Let's make something delicious!",
+  }) async {
+    try {
+      _ignoringTtsCancel = true;
+      try {
+        await _tts.stop();
+      } finally {
+        _ignoringTtsCancel = false;
+      }
+      if (voiceLocale.isNotEmpty) {
+        await _tts.setLanguage(voiceLocale);
+      }
+      await _tts.setSpeechRate(rate);
+      await _tts.setPitch(pitch);
+      if (voiceName.isNotEmpty) {
+        await _tts.setVoice({'name': voiceName, 'locale': voiceLocale});
+      }
+      await _tts.speak(sampleText);
+    } catch (_) {}
+  }
+
   /// Preloads `ggml-base.en.bin` into native RAM so it is ready before the first
   /// utterance is transcribed.
   void preloadWhisperModel() {
@@ -284,8 +380,19 @@ class VoiceController extends ChangeNotifier {
     }
 
     try {
-      await _tts.setLanguage('en-US');
-      await _tts.setSpeechRate(0.48);
+      if (_ttsVoiceLocale != null && _ttsVoiceLocale!.isNotEmpty) {
+        await _tts.setLanguage(_ttsVoiceLocale!);
+      } else {
+        await _tts.setLanguage('en-US');
+      }
+      await _tts.setSpeechRate(_ttsSpeechRate);
+      await _tts.setPitch(_ttsPitch);
+      if (_ttsVoiceName != null && _ttsVoiceName!.isNotEmpty) {
+        await _tts.setVoice({
+          'name': _ttsVoiceName!,
+          'locale': _ttsVoiceLocale ?? 'en-US',
+        });
+      }
       _tts.setCompletionHandler(_onTtsFinished);
       _tts.setCancelHandler(() {
         if (_ignoringTtsCancel) return;

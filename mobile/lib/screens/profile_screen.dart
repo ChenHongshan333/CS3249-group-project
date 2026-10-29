@@ -4,7 +4,8 @@ import 'package:meta_wearables_dat_flutter/meta_wearables_dat_flutter.dart';
 import '../glasses/glasses_service.dart';
 import '../models/conversation.dart';
 import '../models/user_preferences.dart';
-import '../services/voice_controller.dart' show kGlassesMicEnabled;
+import '../services/voice_controller.dart'
+    show VoiceController, kGlassesMicEnabled;
 import '../theme/app_theme.dart';
 import '../theme/widgets.dart';
 
@@ -16,6 +17,7 @@ class ProfileScreen extends StatefulWidget {
   final ValueChanged<UserPreferences> onSavePreferences;
   final VoidCallback onOpenHistory;
   final VoidCallback onBack;
+  final VoiceController? voiceController;
 
   /// For the simulated glasses controls in the Developer section. They
   /// act at once, without Save.
@@ -29,6 +31,7 @@ class ProfileScreen extends StatefulWidget {
     required this.onSavePreferences,
     required this.onOpenHistory,
     required this.onBack,
+    this.voiceController,
     this.glassesService,
     this.onShowToast,
   });
@@ -52,6 +55,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   late UserPreferences _draft;
   late final TextEditingController _serverUrlController;
+  List<Map<String, String>> _availableVoices = [];
+  bool _loadingVoices = false;
 
   @override
   void initState() {
@@ -59,6 +64,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _draft = widget.preferences;
     _serverUrlController = TextEditingController(
       text: widget.preferences.serverBaseUrl,
+    );
+    _loadVoices();
+  }
+
+  Future<void> _loadVoices() async {
+    final vc = widget.voiceController;
+    if (vc == null) return;
+    setState(() => _loadingVoices = true);
+    final voices = await vc.getAvailableVoices();
+    if (mounted) {
+      setState(() {
+        _availableVoices = voices;
+        _loadingVoices = false;
+      });
+    }
+  }
+
+  String _formatVoiceName(String rawName, String locale) {
+    if (rawName.isEmpty) return 'Default system voice';
+    var name = rawName;
+    if (name.contains('.')) {
+      name = name.split('.').last;
+    }
+    if (name.contains('-x-')) {
+      final parts = name
+          .split('-x-')
+          .last
+          .replaceAll('-local', '')
+          .replaceAll('_', ' ');
+      return 'Voice ($parts)';
+    }
+    return '$name ($locale)';
+  }
+
+  String _rateLabel(double rate) {
+    if (rate < 0.42) return 'Slower';
+    if (rate > 0.54) return 'Faster';
+    return 'Normal';
+  }
+
+  String _pitchLabel(double pitch) {
+    if (pitch < 0.85) return 'Lower';
+    if (pitch > 1.15) return 'Higher';
+    return 'Normal';
+  }
+
+  void _testVoice() {
+    widget.voiceController?.previewVoice(
+      voiceName: _draft.ttsVoiceName,
+      voiceLocale: _draft.ttsVoiceLocale,
+      pitch: _draft.ttsPitch,
+      rate: _draft.ttsRate,
     );
   }
 
@@ -202,6 +259,151 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onChanged: (v) =>
                     setState(() => _draft = _draft.copyWith(voiceGuidance: v)),
               ),
+              if (_draft.voiceGuidance) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 12),
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: CookTogetherTheme.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: CookTogetherTheme.line),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'Assistant voice',
+                              style: textTheme.titleSmall,
+                            ),
+                            const Spacer(),
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                visualDensity: VisualDensity.compact,
+                                foregroundColor: CookTogetherTheme.success,
+                              ),
+                              icon:
+                                  const Icon(Icons.volume_up_rounded, size: 18),
+                              label: const Text('Test voice'),
+                              onPressed: _testVoice,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if (_loadingVoices)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                                SizedBox(width: 8),
+                                Text('Loading device voices…'),
+                              ],
+                            ),
+                          )
+                        else
+                          DropdownButtonFormField<String>(
+                            value: _availableVoices.any(
+                                    (v) => v['name'] == _draft.ttsVoiceName)
+                                ? _draft.ttsVoiceName
+                                : '',
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                            ),
+                            items: [
+                              const DropdownMenuItem<String>(
+                                value: '',
+                                child: Text('Default system voice'),
+                              ),
+                              for (final v in _availableVoices)
+                                DropdownMenuItem<String>(
+                                  value: v['name'],
+                                  child: Text(
+                                    _formatVoiceName(
+                                      v['name'] ?? '',
+                                      v['locale'] ?? '',
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                            ],
+                            onChanged: (val) {
+                              if (val == null) return;
+                              final match = _availableVoices.firstWhere(
+                                (v) => v['name'] == val,
+                                orElse: () => const {'locale': 'en-US'},
+                              );
+                              setState(() {
+                                _draft = _draft.copyWith(
+                                  ttsVoiceName: val,
+                                  ttsVoiceLocale: match['locale'] ?? 'en-US',
+                                );
+                              });
+                            },
+                          ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Text('Speaking speed', style: textTheme.bodySmall),
+                            const Spacer(),
+                            Text(
+                              _rateLabel(_draft.ttsRate),
+                              style: textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Slider(
+                          value: _draft.ttsRate,
+                          min: 0.35,
+                          max: 0.65,
+                          divisions: 6,
+                          activeColor: CookTogetherTheme.success,
+                          onChanged: (v) => setState(
+                            () => _draft = _draft.copyWith(ttsRate: v),
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            Text('Pitch', style: textTheme.bodySmall),
+                            const Spacer(),
+                            Text(
+                              _pitchLabel(_draft.ttsPitch),
+                              style: textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Slider(
+                          value: _draft.ttsPitch,
+                          min: 0.7,
+                          max: 1.3,
+                          divisions: 6,
+                          activeColor: CookTogetherTheme.success,
+                          onChanged: (v) => setState(
+                            () => _draft = _draft.copyWith(ttsPitch: v),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               _SwitchRow(
                 title: 'Hands-free listening',
                 value: _draft.handsFreeListening,
