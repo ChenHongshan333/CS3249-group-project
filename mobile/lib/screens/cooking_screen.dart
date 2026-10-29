@@ -837,7 +837,7 @@ class _CookingScreenState extends State<CookingScreen>
     _appendUserMessage(text);
     _textController.clear();
 
-    final intent = VoiceIntentParser.parse(
+    final intent = await VoiceIntentParser.parseAsync(
       text,
       defaultStepTimerSeconds: _step.suggestedTimerSeconds,
       defaultStepTimerLabel: _step.suggestedTimerLabel ?? _step.title,

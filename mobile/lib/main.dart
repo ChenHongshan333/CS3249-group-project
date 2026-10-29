@@ -19,6 +19,7 @@ import 'screens/profile_screen.dart';
 import 'screens/recipes_screen.dart';
 import 'services/assistant_service.dart';
 import 'services/cue_sounds.dart';
+import 'services/tflite_intent_classifier.dart';
 import 'services/voice_controller.dart';
 import 'theme/app_theme.dart';
 import 'theme/widgets.dart';
@@ -123,6 +124,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
     // otherwise the Mock Device Kit.
     _glassesService.start();
     _voiceController.prepareWhisperOnAppStartup();
+    unawaited(TfliteIntentClassifier.instance.initialize());
     _loadPersistedState();
   }
 
