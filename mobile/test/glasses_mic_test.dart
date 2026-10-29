@@ -25,8 +25,7 @@ void main() {
     tester,
   ) async {
     channels.headset = 'Ray-Ban Meta';
-    final voice = VoiceController(speech: SpeechToText.withMethodChannel())
-      ..interruptByVoice = false;
+    final voice = VoiceController(speech: SpeechToText.withMethodChannel());
     await voice.initialize(initialMode: VoiceListeningMode.tapToSpeak);
     expect(voice.bluetoothMic, 'Ray-Ban Meta');
     expect(micRequests(), 1);
@@ -45,8 +44,7 @@ void main() {
     tester,
   ) async {
     channels.headset = 'Ray-Ban Meta';
-    final voice = VoiceController(speech: SpeechToText.withMethodChannel())
-      ..interruptByVoice = false;
+    final voice = VoiceController(speech: SpeechToText.withMethodChannel());
     await voice.initialize(initialMode: VoiceListeningMode.tapToSpeak);
 
     channels.headset = null;
@@ -62,8 +60,7 @@ void main() {
   });
 
   testWidgets('without a headset it asks only once', (tester) async {
-    final voice = VoiceController(speech: SpeechToText.withMethodChannel())
-      ..interruptByVoice = false;
+    final voice = VoiceController(speech: SpeechToText.withMethodChannel());
     await voice.initialize(initialMode: VoiceListeningMode.tapToSpeak);
     await voice.speak('Step 1: Rinse the greens.', voiceGuidanceEnabled: true);
     await channels.ttsDone();
@@ -77,7 +74,6 @@ void main() {
   testWidgets('phone mic only never asks for the glasses mic', (tester) async {
     channels.headset = 'Ray-Ban Meta';
     final voice = VoiceController(speech: SpeechToText.withMethodChannel())
-      ..interruptByVoice = false
       ..useGlassesMic = false;
     await voice.initialize(initialMode: VoiceListeningMode.tapToSpeak);
     await voice.tapMic();

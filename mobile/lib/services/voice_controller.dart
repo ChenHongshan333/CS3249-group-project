@@ -140,11 +140,6 @@ class VoiceController extends ChangeNotifier {
   bool _expectingSpeech = false;
   bool _askedAgain = false;
 
-  /// Saying "hold on" (or "wait", "stop"…) while CookTogether speaks cuts
-  /// it off, like a mic tap. Off by default for strict turn-taking so
-  /// speech recognition never interrupts Bluetooth TTS playback.
-  bool interruptByVoice = false;
-
   /// Requires the "Hey Cooky" wake word in hands-free mode before speech is
   /// transcribed and sent. Tapping the mic or answering a direct question
   /// wakes listening immediately without the wake word.
@@ -158,22 +153,6 @@ class VoiceController extends ChangeNotifier {
   /// True while stopping a previous TTS utterance before starting a new one,
   /// so the asynchronous iOS cancel callback doesn't end the new speech.
   bool _ignoringTtsCancel = false;
-
-  /// True while listening for "hold on" during speech. That listen only
-  /// reacts to short stop phrases, never to what CookTogether is saying.
-  bool _interruptListening = false;
-  String _speakingText = '';
-  DateTime? _interruptListenStart;
-
-  /// What CookTogether was saying when "hold on" cut it off, so "we can
-  /// continue" can say it again.
-  String? _heldReply;
-  String _speakingReply = '';
-
-  static final _stopPhrase = RegExp(
-    r"^(?:hold on|hang on|wait|stop|pause|one (?:moment|sec(?:ond)?)|"
-    r"quiet|be quiet|shush|stop (?:talking|speaking))\b",
-  );
 
   /// Android often reports both an error and "done" for one listen; only
   /// the first counts, so one failed listen isn't counted twice.
@@ -449,7 +428,7 @@ class VoiceController extends ChangeNotifier {
           // React once per listen cycle: 'done' or 'doneNoResult', never also
           // on 'notListening', which scheduled duplicate restarts.
           if (status == 'done' || status == 'doneNoResult') {
-            _interruptListening ? _onInterruptListenEnded() : _onListenEnded();
+            _onListenEnded();
           }
         },
         // Android reports "no match" or "speech timeout" whenever the user
@@ -457,7 +436,7 @@ class VoiceController extends ChangeNotifier {
         // listening for good; _onListenEnded decides whether to restart.
         onError: (_) {
           if (!_isSessionActive) return;
-          _interruptListening ? _onInterruptListenEnded() : _onListenEnded();
+          _onListenEnded();
         },
         // Otherwise the plugin starts Bluetooth voice recognition on every
         // listen, which puts the glasses in call mode by itself (#40).
@@ -646,7 +625,7 @@ class VoiceController extends ChangeNotifier {
   }
 
   void _onTtsFinished() {
-    // The countdown owns the microphone until the photo can be taken.
+    // Photo preparation owns the microphone until the photo can be taken.
     if (_preparingPhoto) return;
     _ttsSafetyTimer?.cancel();
     _ttsSafetyTimer = null;
@@ -654,11 +633,6 @@ class VoiceController extends ChangeNotifier {
     if (_activityState == VoiceActivityState.speaking) {
       _activityState = VoiceActivityState.idle;
       notifyListeners();
-    }
-    if (_interruptListening) {
-      // The usual listen can only start once this one has stopped.
-      _stopInterruptListen().whenComplete(_afterSpeech);
-      return;
     }
     _afterSpeech();
   }
@@ -732,7 +706,6 @@ class VoiceController extends ChangeNotifier {
     _audioMuted = !_audioMuted;
     if (_audioMuted) {
       _photoPreparationId++;
-      await _stopInterruptListen();
       _ttsSafetyTimer?.cancel();
       try {
         await _tts.stop();
@@ -753,7 +726,6 @@ class VoiceController extends ChangeNotifier {
     if (paused) {
       _photoPreparationId++;
       _clearSentence();
-      await _stopInterruptListen();
     }
     _isPaused = paused;
     _restartListenTimer?.cancel();
@@ -779,7 +751,6 @@ class VoiceController extends ChangeNotifier {
     if (_preparingPhoto) return MicTapResult.stopped;
     if (_isPaused) return MicTapResult.stopped;
     if (_activityState == VoiceActivityState.speaking) {
-      await _stopInterruptListen();
       await _stopSpeaking();
     }
     if (_activityState == VoiceActivityState.listening &&
@@ -859,87 +830,6 @@ class VoiceController extends ChangeNotifier {
     } else if (_isSessionActive && !_isPaused) {
       await _startListeningLoop(forceSingleTurn: true);
     }
-  }
-
-  /// Listens during speech for "hold on". What the phone hears of its own
-  /// voice is ignored: only a short stop phrase that CookTogether isn't
-  /// saying counts.
-  Future<void> _startInterruptListen() async {
-    if (_interruptListening ||
-        _isPaused ||
-        _activityState != VoiceActivityState.speaking ||
-        !await _ensureSpeechInitialized() ||
-        _speech.isListening ||
-        _activityState != VoiceActivityState.speaking) {
-      return;
-    }
-    _interruptListening = true;
-    _interruptListenStart = DateTime.now();
-    try {
-      await _speech.listen(
-        onResult: _onInterruptResult,
-        listenOptions: SpeechListenOptions(
-          listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 5),
-          listenMode: ListenMode.confirmation,
-          cancelOnError: false,
-        ),
-      );
-    } catch (_) {
-      _interruptListening = false;
-    }
-  }
-
-  void _onInterruptResult(SpeechRecognitionResult result) {
-    if (!_interruptListening) return;
-    final words = result.recognizedWords.toLowerCase().trim();
-    final phrase = _stopPhrase.firstMatch(words)?[0];
-    if (phrase == null ||
-        words.split(RegExp(r'\s+')).length > 4 ||
-        _speakingText.contains(phrase)) {
-      return;
-    }
-    _interruptBySpeech();
-  }
-
-  /// "Hold on": stop talking and listen, as a mic tap does. The user may
-  /// just want a moment, so silence after it doesn't ask again.
-  Future<void> _interruptBySpeech() async {
-    _heldReply = _speakingReply;
-    await _stopInterruptListen();
-    await _stopSpeaking();
-    _autoRestartPaused = false;
-    _fastFailures = 0;
-    await _startListeningLoop(forceSingleTurn: true, expectSpeech: false);
-  }
-
-  /// The reply "hold on" cut off, if any; reading it forgets it.
-  String? takeHeldReply() {
-    final reply = _heldReply;
-    _heldReply = null;
-    return reply;
-  }
-
-  /// The listen for "hold on" ended on its own; listen again while
-  /// CookTogether is still speaking, unless it ended at once.
-  void _onInterruptListenEnded() {
-    _interruptListening = false;
-    final startedAt = _interruptListenStart;
-    final lasted = startedAt == null
-        ? Duration.zero
-        : DateTime.now().difference(startedAt);
-    if (_activityState == VoiceActivityState.speaking &&
-        lasted >= const Duration(seconds: 1)) {
-      _startInterruptListen();
-    }
-  }
-
-  Future<void> _stopInterruptListen() async {
-    if (!_interruptListening) return;
-    _interruptListening = false;
-    try {
-      await _speech.stop();
-    } catch (_) {}
   }
 
   Future<void> _stopSpeaking() async {
@@ -1243,7 +1133,6 @@ class VoiceController extends ChangeNotifier {
     _clearSentence();
     _turnDelivered = true;
     try {
-      await _stopInterruptListen();
       await stopListening();
       setActivityState(
         VoiceActivityState.capturingVision,
@@ -1337,9 +1226,6 @@ class VoiceController extends ChangeNotifier {
         Duration(milliseconds: timeoutMs),
         _onTtsFinished,
       );
-      _speakingReply = text;
-      _speakingText = text.toLowerCase();
-      if (interruptByVoice) await _startInterruptListen();
     } catch (_) {
       _onTtsFinished();
     }
@@ -1347,11 +1233,9 @@ class VoiceController extends ChangeNotifier {
 
   Future<void> shutdownSession() async {
     _photoPreparationId++;
-    _interruptListening = false;
     _vadListening = false;
     _bluetoothMic = null;
     _keepGlassesMic = false;
-    _heldReply = null;
     _audioRoute.clear();
     _clearSentence();
     _isSessionActive = false;

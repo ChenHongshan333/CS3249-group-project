@@ -38,7 +38,7 @@ void main() {
     await voice.shutdownSession();
   });
 
-  testWidgets('photo preparation waits for spoken countdown completion', (tester) async {
+  testWidgets('photo preparation waits for spoken prompt completion', (tester) async {
     final voice = VoiceController();
     await voice.initialize();
     final completedSpeech = Completer<int>();
@@ -72,7 +72,7 @@ void main() {
     await voice.shutdownSession();
   });
 
-  testWidgets('muted countdown waits three seconds and pause cancels it', (tester) async {
+  testWidgets('muted photo preparation waits three seconds and pause cancels it', (tester) async {
     final voice = VoiceController();
     await voice.initialize(initialMuted: true);
     bool? ready;

@@ -372,7 +372,6 @@ class _CookingScreenState extends State<CookingScreen>
       startListeningImmediately: false,
     );
     if (!mounted) return;
-    widget.voiceController.interruptByVoice = widget.preferences.voiceInterrupt;
     await widget.voiceController.speak(
       openingText,
       voiceGuidanceEnabled: widget.preferences.voiceGuidance,
@@ -397,11 +396,6 @@ class _CookingScreenState extends State<CookingScreen>
   @override
   void didUpdateWidget(CookingScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.preferences.voiceInterrupt !=
-        oldWidget.preferences.voiceInterrupt) {
-      widget.voiceController.interruptByVoice =
-          widget.preferences.voiceInterrupt;
-    }
     if (widget.isVisible && !oldWidget.isVisible && _pausedByLeaving) {
       _pausedByLeaving = false;
       // After this frame: resuming updates the app's toast too.
@@ -589,8 +583,6 @@ class _CookingScreenState extends State<CookingScreen>
     }
     _endOpening();
     _pendingOffer = null;
-    // A reply cut off on the old step is no longer worth repeating.
-    widget.voiceController.takeHeldReply();
     if (targetStep >= _recipe.steps.length) {
       _completeSession();
       return;
@@ -902,12 +894,8 @@ class _CookingScreenState extends State<CookingScreen>
         return;
 
       case VoiceIntentType.carryOn:
-        final held = widget.voiceController.takeHeldReply();
         if (_isPaused) {
           _togglePause(forcePause: false);
-        } else if (held != null) {
-          // Already in the chat; just say it again.
-          _speakOnly(held);
         } else {
           _nextOrFinish(fromVoice: true);
         }

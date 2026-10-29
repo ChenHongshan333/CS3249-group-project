@@ -61,8 +61,6 @@ void main() {
     nothingHeard = 0;
     stopped = 0;
     voice = VoiceController(speech: SpeechToText.withMethodChannel())
-      // Only the listens these tests are about; "hold on" has its own.
-      ..interruptByVoice = false
       ..onNothingHeard = (() => nothingHeard++)
       ..onListeningStopped = (() => stopped++);
     await voice.initialize(
@@ -239,7 +237,7 @@ void main() {
       speech: SpeechToText.withMethodChannel(),
       whisperTranscriber: whisper,
       audioRoute: fakeAudioRoute,
-    )..interruptByVoice = false;
+    );
 
     final sent = <String>[];
     voice.onFinalUtterance = sent.add;

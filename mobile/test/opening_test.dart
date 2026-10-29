@@ -80,7 +80,11 @@ class _LiveVoice extends VoiceController {
   }
 
   @override
-  Future<void> speak(String text, {required bool voiceGuidanceEnabled}) async {
+  Future<void> speak(
+    String text, {
+    required bool voiceGuidanceEnabled,
+    bool? isQuestion,
+  }) async {
     setActivityState(VoiceActivityState.idle);
   }
 }

@@ -6,15 +6,9 @@ const String kDefaultBackendUrl = 'https://cookalong-backend.onrender.com';
 
 /// User preferences persisted locally in SharedPreferences.
 class UserPreferences {
-  final String level;
-  final String diet;
   final bool voiceGuidance;
   final bool showCaptions;
   final bool handsFreeListening;
-
-  /// Saying "hold on" while CookTogether speaks cuts it off. Some phones
-  /// beep when listening starts, so it can be turned off.
-  final bool voiceInterrupt;
   final String serverBaseUrl;
 
   /// Developer only: take step photos from the Mock Device Kit instead of
@@ -43,12 +37,9 @@ class UserPreferences {
   final double ttsRate;
 
   const UserPreferences({
-    this.level = 'I know a few basics',
-    this.diet = 'No restrictions',
     this.voiceGuidance = true,
     this.showCaptions = true,
     this.handsFreeListening = true,
-    this.voiceInterrupt = false,
     this.serverBaseUrl = kDefaultBackendUrl,
     this.simulatedGlassesPhotos = false,
     this.phoneMicOnly = false,
@@ -60,12 +51,9 @@ class UserPreferences {
   });
 
   UserPreferences copyWith({
-    String? level,
-    String? diet,
     bool? voiceGuidance,
     bool? showCaptions,
     bool? handsFreeListening,
-    bool? voiceInterrupt,
     String? serverBaseUrl,
     bool? simulatedGlassesPhotos,
     bool? phoneMicOnly,
@@ -76,12 +64,9 @@ class UserPreferences {
     double? ttsRate,
   }) {
     return UserPreferences(
-      level: level ?? this.level,
-      diet: diet ?? this.diet,
       voiceGuidance: voiceGuidance ?? this.voiceGuidance,
       showCaptions: showCaptions ?? this.showCaptions,
       handsFreeListening: handsFreeListening ?? this.handsFreeListening,
-      voiceInterrupt: voiceInterrupt ?? this.voiceInterrupt,
       serverBaseUrl: serverBaseUrl ?? this.serverBaseUrl,
       simulatedGlassesPhotos:
           simulatedGlassesPhotos ?? this.simulatedGlassesPhotos,
@@ -95,12 +80,9 @@ class UserPreferences {
   }
 
   Map<String, dynamic> toJson() => {
-    'level': level,
-    'diet': diet,
     'voiceGuidance': voiceGuidance,
     'showCaptions': showCaptions,
     'handsFreeListening': handsFreeListening,
-    'voiceInterrupt': voiceInterrupt,
     'serverBaseUrl': serverBaseUrl,
     'simulatedGlassesPhotos': simulatedGlassesPhotos,
     'phoneMicOnly': phoneMicOnly,
@@ -113,12 +95,9 @@ class UserPreferences {
 
   factory UserPreferences.fromJson(Map<String, dynamic> json) {
     return UserPreferences(
-      level: json['level'] as String? ?? 'I know a few basics',
-      diet: json['diet'] as String? ?? 'No restrictions',
       voiceGuidance: json['voiceGuidance'] as bool? ?? true,
       showCaptions: json['showCaptions'] as bool? ?? true,
       handsFreeListening: json['handsFreeListening'] as bool? ?? true,
-      voiceInterrupt: json['voiceInterrupt'] as bool? ?? false,
       serverBaseUrl: json['serverBaseUrl'] as String? ?? kDefaultBackendUrl,
       simulatedGlassesPhotos: json['simulatedGlassesPhotos'] as bool? ?? false,
       phoneMicOnly: json['phoneMicOnly'] as bool? ?? false,

@@ -41,12 +41,6 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  // Stored values stay the same so saved preferences keep working.
-  static const _levels = {
-    'First time cooking': 'First time',
-    'I know a few basics': 'Know the basics',
-  };
-  static const _diets = ['No restrictions', 'Vegetarian', 'Halal', 'Other'];
   static const _glassesModels = {
     MockGlassesModel.rayBanMeta: 'Ray-Ban Meta',
     MockGlassesModel.oakleyMetaHSTN: 'Oakley Meta HSTN',
@@ -209,49 +203,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              const SectionTitle('Cooking experience'),
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<String>(
-                  showSelectedIcon: false,
-                  segments: [
-                    for (final MapEntry(key: value, value: label)
-                        in _levels.entries)
-                      ButtonSegment(value: value, label: Text(label)),
-                  ],
-                  selected: {_draft.level},
-                  onSelectionChanged: (s) =>
-                      setState(() => _draft = _draft.copyWith(level: s.first)),
-                ),
-              ),
-              const SizedBox(height: 32),
-              const SectionTitle('Diet'),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final diet in _diets)
-                    ChoiceChip(
-                      label: Text(diet),
-                      selected: _draft.diet == diet,
-                      showCheckmark: false,
-                      selectedColor: CookTogetherTheme.successSoft,
-                      labelStyle: textTheme.labelMedium?.copyWith(
-                        color: _draft.diet == diet
-                            ? CookTogetherTheme.success
-                            : CookTogetherTheme.ink,
-                      ),
-                      onSelected: (_) =>
-                          setState(() => _draft = _draft.copyWith(diet: diet)),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Always check labels yourself for allergies.',
-                style: textTheme.bodySmall,
-              ),
-              const SizedBox(height: 32),
               const SectionTitle('While cooking'),
               _SwitchRow(
                 title: 'Read steps aloud',
@@ -312,7 +263,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           )
                         else
                           DropdownButtonFormField<String>(
-                            value: _availableVoices.any(
+                            initialValue: _availableVoices.any(
                                     (v) => v['name'] == _draft.ttsVoiceName)
                                 ? _draft.ttsVoiceName
                                 : '',
@@ -410,12 +361,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onChanged: (v) => setState(
                   () => _draft = _draft.copyWith(handsFreeListening: v),
                 ),
-              ),
-              _SwitchRow(
-                title: 'Say "hold on" to interrupt',
-                value: _draft.voiceInterrupt,
-                onChanged: (v) =>
-                    setState(() => _draft = _draft.copyWith(voiceInterrupt: v)),
               ),
               _SwitchRow(
                 title: 'Show the full conversation',

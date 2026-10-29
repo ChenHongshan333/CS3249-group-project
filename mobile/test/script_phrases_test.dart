@@ -1,15 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobile/main.dart';
-import 'package:mobile/models/conversation.dart';
-import 'package:mobile/models/user_preferences.dart';
-import 'package:mobile/services/assistant_service.dart';
-import 'package:mobile/services/voice_controller.dart';
 import 'package:mobile/services/voice_intent_parser.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:speech_to_text/speech_to_text.dart';
-
-import 'fake_voice_channels.dart';
 
 // #23: the conversation script's phrases work as commands, with no wake
 // phrase. Lines the AI should handle stay questions.
@@ -70,57 +60,5 @@ void main() {
         expect(VoiceIntentParser.isReadyToStart(line), isFalse);
       });
     }
-  });
-
-  group('"hold on", then "we can continue"', () {
-    final channels = FakeVoiceChannels();
-    setUp(channels.install);
-    tearDown(channels.uninstall);
-
-    testWidgets('says the cut-off line again and stays on the step', (
-      tester,
-    ) async {
-      SharedPreferences.setMockInitialValues({
-        'cooktogether.seen': true,
-        'cooktogether.stepHintSeen': true,
-        'cooktogether.preferences': const UserPreferences(
-          voiceInterrupt: true,
-        ).encode(),
-      });
-      tester.view.physicalSize = const Size(430, 932);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
-      final voice = VoiceController(speech: SpeechToText.withMethodChannel());
-      await tester.pumpWidget(
-        CookTogetherApp(
-          showInitialWelcome: false,
-          initialScreen: AppScreen.cook,
-          assistantService: const MockAssistantService(),
-          voiceController: voice,
-        ),
-      );
-      await tester.pump(const Duration(seconds: 1));
-      await channels.ttsDone();
-      await tester.tap(find.text('Start'));
-      await tester.pump(const Duration(seconds: 1));
-      final stepLine = channels.spoken.last;
-      expect(stepLine, contains('Step 1'));
-
-      await channels.speechStatus('listening');
-      await channels.heard('hold on');
-      await tester.pump();
-      expect(voice.activityState, VoiceActivityState.listening);
-
-      await channels.heard('All right, we can continue', isFinal: true);
-      await channels.speechStatus('done');
-      await tester.pump(const Duration(seconds: 2));
-
-      expect(channels.spoken.last, stepLine);
-      expect(find.text('Step 1 of 4'), findsOneWidget);
-
-      await voice.shutdownSession();
-      await tester.pumpWidget(const SizedBox());
-      await tester.pump(const Duration(seconds: 31));
-    });
   });
 }
