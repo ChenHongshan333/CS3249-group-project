@@ -58,6 +58,15 @@ class VoiceController extends ChangeNotifier {
     caseSensitive: false,
   );
 
+  /// Silence duration while in standby waiting for "Hey Cooky" (450 ms).
+  /// Shorter than active command listening so the wake phrase is recognized
+  /// ~400 ms faster without an awkward pause.
+  static const int kWakeWordSilenceMs = 450;
+
+  /// Silence duration while actively listening to questions or commands (850 ms),
+  /// giving the user time to pause mid-sentence while cooking.
+  static const int kActiveListeningSilenceMs = 850;
+
   /// Tests pass their own [speech], [tts], [whisperTranscriber], or
   /// [audioRoute]; the app uses the default plugins.
   VoiceController({
@@ -75,9 +84,9 @@ class VoiceController extends ChangeNotifier {
   final WhisperTranscriber _whisper;
   final AudioRoute _audioRoute;
 
-  /// Uses `whisper_kit` (`WhisperModel.tiny`) with native 16 kHz PCM VAD when
-  /// available, falling back to `SpeechToText` while the model is downloading
-  /// or in test environments.
+  /// Uses `whisper_kit` (`WhisperTranscriber`, defaulting to `base.en`) with
+  /// native 16 kHz PCM VAD when available, falling back to `SpeechToText` while
+  /// the model is downloading or in test environments.
   bool useWhisper = true;
 
   /// True while the native 16 kHz VAD engine is actively recording for Whisper.
@@ -208,7 +217,7 @@ class VoiceController extends ChangeNotifier {
   bool get speechAvailable => _speechAvailable;
   String? get statusHint => _statusHint;
 
-  /// Downloads the lightweight Whisper model (`ggml-tiny.bin`) on app startup
+  /// Downloads the Whisper model (`ggml-base.en.bin`) on app startup
   /// if it is not already stored on disk.
   void prepareWhisperOnAppStartup() {
     if (useWhisper) {
@@ -216,7 +225,7 @@ class VoiceController extends ChangeNotifier {
     }
   }
 
-  /// Preloads `ggml-tiny.bin` into native RAM so it is ready before the first
+  /// Preloads `ggml-base.en.bin` into native RAM so it is ready before the first
   /// utterance is transcribed.
   void preloadWhisperModel() {
     if (useWhisper) {
@@ -489,6 +498,11 @@ class VoiceController extends ChangeNotifier {
         if (_activityState == VoiceActivityState.listening) {
           _statusHint = _withMicName('Say "Hey Cooky" or tap the mic');
         }
+        if (_vadListening) {
+          unawaited(_audioRoute.startVadListening(
+            silenceDurationMs: kWakeWordSilenceMs,
+          ));
+        }
         notifyListeners();
       }
     });
@@ -558,6 +572,8 @@ class VoiceController extends ChangeNotifier {
   /// Listens once for the answer to a question CookTogether just asked,
   /// without needing a tap, even in tap-to-speak mode or after errors
   /// paused automatic restarts.
+  void listenForAnswer() => _listenForAnswer();
+
   void _listenForAnswer() {
     _awaitingAnswer = false;
     _autoRestartPaused = false;
@@ -670,7 +686,12 @@ class VoiceController extends ChangeNotifier {
           _expectingSpeech = true;
           _statusHint = _withMicName('Listening… speak now');
           _scheduleAwakeTimeout();
-          if (_vadListening) _scheduleExpectingSpeechTimeout();
+          if (_vadListening) {
+            _scheduleExpectingSpeechTimeout();
+            unawaited(_audioRoute.startVadListening(
+              silenceDurationMs: kActiveListeningSilenceMs,
+            ));
+          }
           notifyListeners();
         } else if (_vadListening) {
           await _flushVadAndSendIfAny();
@@ -858,7 +879,19 @@ class VoiceController extends ChangeNotifier {
           await _reopenGlassesMic();
           if (!_isSessionActive || _isPaused) return;
         }
-        final vadStarted = _vadListening || await _audioRoute.startVadListening();
+        _isAwake =
+            !requireWakeWord ||
+            _listeningMode != VoiceListeningMode.handsFree ||
+            keepAwake;
+        final silenceMs = (_listeningMode == VoiceListeningMode.handsFree &&
+                requireWakeWord &&
+                !_isAwake &&
+                _sentence.isEmpty)
+            ? kWakeWordSilenceMs
+            : kActiveListeningSilenceMs;
+        final vadStarted = await _audioRoute.startVadListening(
+          silenceDurationMs: silenceMs,
+        );
         if (vadStarted && _isSessionActive && !_isPaused) {
           _vadListening = true;
           _speechAvailable = true;
@@ -991,6 +1024,11 @@ class VoiceController extends ChangeNotifier {
         if (!_isAwake) {
           _isAwake = true;
           _statusHint = _withMicName('Listening… speak now');
+          if (_vadListening) {
+            unawaited(_audioRoute.startVadListening(
+              silenceDurationMs: kActiveListeningSilenceMs,
+            ));
+          }
         }
         commandWords = rawWords.substring(match.end).trim();
       } else if (!_isAwake) {
@@ -1031,6 +1069,11 @@ class VoiceController extends ChangeNotifier {
         if (!_isAwake) {
           _isAwake = true;
           _statusHint = _withMicName('Listening… speak now');
+          if (_vadListening) {
+            unawaited(_audioRoute.startVadListening(
+              silenceDurationMs: kActiveListeningSilenceMs,
+            ));
+          }
         }
         commandWords = rawWords.substring(match.end).trim();
       } else if (!_isAwake) {
@@ -1135,14 +1178,18 @@ class VoiceController extends ChangeNotifier {
     if (!_audioMuted) await _audioRoute.playShutter();
   }
 
-  Future<void> speak(String text, {required bool voiceGuidanceEnabled}) async {
+  Future<void> speak(
+    String text, {
+    required bool voiceGuidanceEnabled,
+    bool? isQuestion,
+  }) async {
     if (_preparingPhoto) _photoPreparationId++;
     _restartListenTimer?.cancel();
     _ttsSafetyTimer?.cancel();
     _awakeTimeoutTimer?.cancel();
     _awakeTimeoutTimer = null;
     _isAwake = false;
-    _awaitingAnswer = text.contains('?');
+    _awaitingAnswer = isQuestion ?? text.contains('?');
 
     if (!_isSessionActive || _audioMuted || !voiceGuidanceEnabled) {
       if (_awaitingAnswer && !_isPaused) {

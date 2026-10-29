@@ -239,7 +239,7 @@ class MetaWearablesDatGlassesService extends GlassesService {
         if (d == null) {
           _connectionState = GlassesConnectionState.disconnected;
           _lastStatusNote =
-              'Glasses disconnected. Check they are on and nearby.';
+              'Glasses disconnected.';
           notifyListeners();
         } else {
           _applyDevice(d);

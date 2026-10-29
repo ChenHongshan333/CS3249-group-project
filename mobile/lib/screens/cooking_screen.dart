@@ -473,6 +473,7 @@ class _CookingScreenState extends State<CookingScreen>
     VisionCapture? visionCapture,
     bool isStepAnnouncement = false,
     int? stepIndex,
+    bool? isQuestion,
   }) {
     setState(() {
       _messages.add(
@@ -497,6 +498,7 @@ class _CookingScreenState extends State<CookingScreen>
     widget.voiceController.speak(
       text,
       voiceGuidanceEnabled: widget.preferences.voiceGuidance,
+      isQuestion: isQuestion,
     );
   }
 
@@ -864,6 +866,17 @@ class _CookingScreenState extends State<CookingScreen>
         _moveOn(fromVoice: true);
         return;
       }
+      if (RegExp(
+        r"^(check|check first|check it|check this|take a look|inspect|look at this)\b",
+      ).hasMatch(text.toLowerCase())) {
+        _triggerVisualCheck(userQuestion: text);
+        return;
+      }
+      if (RegExp(
+        r"^(no|nope|don'?t|stay|cancel)\b",
+      ).hasMatch(text.toLowerCase())) {
+        return;
+      }
     }
 
     // "It's done" ends the step's timer quietly, so it doesn't announce
@@ -1218,12 +1231,10 @@ class _CookingScreenState extends State<CookingScreen>
   void _nextOrFinish({bool fromVoice = false}) {
     if (!_isPaused && !_checkedSteps.contains(_currentStep)) {
       setState(() => _confirmSkipOpen = true);
-      if (fromVoice) {
-        _appendAiMessage(
-          "You haven't checked this step yet. Say skip to move on, or check "
-          'and I will take a look.',
-        );
-      }
+      _appendAiMessage(
+        "You haven't checked this step yet. Would you like to skip, or check first?",
+        isQuestion: true,
+      );
       return;
     }
     _moveOn(fromVoice: fromVoice);

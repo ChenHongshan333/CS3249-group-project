@@ -11,6 +11,7 @@ class _FakeVadAudioRoute extends AudioRoute {
   void Function()? onSpeechStart;
   void Function(String wavPath)? onUtterance;
   bool vadActive = false;
+  int? lastSilenceDurationMs;
 
   @override
   void setVadCallbacks({
@@ -27,6 +28,7 @@ class _FakeVadAudioRoute extends AudioRoute {
     int maxUtteranceMs = 12000,
     int preRollMs = 600,
   }) async {
+    lastSilenceDurationMs = silenceDurationMs;
     vadActive = true;
     return true;
   }
@@ -248,6 +250,7 @@ void main() {
     );
     expect(voice.isUsingWhisper, isTrue);
     expect(voice.waitingForWakeWord, isTrue);
+    expect(fakeAudioRoute.lastSilenceDurationMs, VoiceController.kWakeWordSilenceMs);
     expect(voice.bluetoothMic, 'Ray-Ban Meta');
 
     // 1. Blank audio / background noise and non-wake-word chatter are ignored.
@@ -262,6 +265,7 @@ void main() {
     fakeAudioRoute.onUtterance?.call('/tmp/wake_only.wav');
     await tester.pump();
     expect(voice.waitingForWakeWord, isFalse);
+    expect(fakeAudioRoute.lastSilenceDurationMs, VoiceController.kActiveListeningSilenceMs);
     expect(sent, isEmpty);
 
     // 3. The follow-up utterance is transcribed by Whisper and sent immediately.
@@ -272,6 +276,7 @@ void main() {
     // Wait for hands-free listening to restart in wake-word standby.
     await tester.pump(const Duration(milliseconds: 700));
     expect(voice.waitingForWakeWord, isTrue);
+    expect(fakeAudioRoute.lastSilenceDurationMs, VoiceController.kWakeWordSilenceMs);
 
     // 4. Phonetic variant ("Hey Cody, next step please.") in a single breath works.
     fakeAudioRoute.onUtterance?.call('/tmp/combined.wav');

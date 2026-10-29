@@ -11,17 +11,30 @@ import 'package:whisper_kit/whisper_kit.dart';
 import 'audio_route.dart';
 
 /// On-device Speech-to-Text transcriber backed by `whisper_kit` (`whisper.cpp`)
-/// using the lightweight `WhisperModel.tiny` model.
+/// using the `base.en` model (`ggml-base.en.bin`).
 class WhisperTranscriber {
   WhisperTranscriber({
-    this.model = WhisperModel.tiny,
+    this.model = WhisperModel.none,
+    String? modelName,
     this.transcribeOverride,
     AudioRoute? audioRoute,
-  }) : _audioRoute = audioRoute ?? const AudioRoute();
+  })  : modelName = modelName ??
+            (model != WhisperModel.none
+                ? model.modelName
+                : kDefaultWhisperModel),
+        _audioRoute = audioRoute ?? const AudioRoute();
+
+  /// Default model is `base.en` (`ggml-base.en.bin`), offering higher
+  /// accuracy and fewer acoustic noise hallucinations than `tiny`.
+  static const String kDefaultWhisperModel = 'base.en';
 
   final WhisperModel model;
+  final String modelName;
   final Future<String?> Function(String wavPath)? transcribeOverride;
   final AudioRoute _audioRoute;
+
+  /// Returns the local path where this model's `.bin` weights are stored.
+  String getModelPath(String dir) => '$dir/ggml-$modelName.bin';
 
   String? _modelPath;
   bool _isDownloaded = false;
@@ -33,7 +46,8 @@ class WhisperTranscriber {
   /// True once the Whisper model is present on disk (or a test override is set).
   bool get isReady => transcribeOverride != null || _isDownloaded;
 
-  /// True once `ggml-tiny.bin` has been loaded into the native C++ context.
+  /// True once `ggml-base.en.bin` (or the configured model) has been loaded into
+  /// the native C++ context.
   bool get isLoadedInMemory =>
       transcribeOverride != null || _isLoadedInMemory;
 
@@ -71,7 +85,7 @@ class WhisperTranscriber {
     }
     final modelDir = await _audioRoute.getWhisperModelDir();
     if (modelDir != null && modelDir.isNotEmpty) {
-      final path = model.getPath(modelDir);
+      final path = getModelPath(modelDir);
       final file = File(path);
       if (file.existsSync() && file.lengthSync() > 1024 * 1024) {
         _modelPath = path;
@@ -86,7 +100,7 @@ class WhisperTranscriber {
     return _isDownloaded;
   }
 
-  /// Downloads `ggml-tiny.bin` on app startup if it is not already stored on
+  /// Downloads `ggml-base.en.bin` on app startup if it is not already stored on
   /// disk so it is ready before the user starts a recipe.
   Future<bool> ensureModelDownloaded() async {
     if (transcribeOverride != null) {
@@ -106,7 +120,7 @@ class WhisperTranscriber {
     }
   }
 
-  /// Loads `ggml-tiny.bin` into native RAM when a recipe starts so the model
+  /// Loads `ggml-base.en.bin` into native RAM when a recipe starts so the model
   /// is already initialized before the user speaks for the first time.
   Future<bool> preloadModel() async {
     if (transcribeOverride != null) {
@@ -145,7 +159,7 @@ class WhisperTranscriber {
     return completer.future;
   }
 
-  /// Ensures `ggml-tiny.bin` is both downloaded and loaded into memory.
+  /// Ensures `ggml-base.en.bin` is both downloaded and loaded into memory.
   Future<bool> ensureModelReady() => preloadModel();
 
   Future<bool> _downloadIfMissing() async {
@@ -154,7 +168,7 @@ class WhisperTranscriber {
       if (modelDir == null || modelDir.isEmpty) {
         return false;
       }
-      final targetPath = model.getPath(modelDir);
+      final targetPath = getModelPath(modelDir);
       final targetFile = File(targetPath);
       if (targetFile.existsSync() && targetFile.lengthSync() > 1024 * 1024) {
         _modelPath = targetPath;
@@ -164,7 +178,7 @@ class WhisperTranscriber {
 
       await Directory(modelDir).create(recursive: true);
       final uri = Uri.parse(
-        'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${model.modelName}.bin',
+        'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$modelName.bin',
       );
       final client = HttpClient();
       RandomAccessFile? raf;

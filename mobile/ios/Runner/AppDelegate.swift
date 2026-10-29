@@ -195,16 +195,21 @@ import UIKit
     maxUtteranceMs: Int,
     preRollMs: Int
   ) -> Bool {
+    if let existing = vadEngine, existing.isRunning {
+      vadQueue.sync {
+        self.vadSilenceDurationMs = max(400, silenceDurationMs)
+        self.vadMaxUtteranceSamples = max(16000 * 3, (maxUtteranceMs * 16))
+        self.vadPreRollMaxSamples = max(3200, (preRollMs * 16))
+      }
+      vadListening = true
+      return true
+    }
+
     vadQueue.sync {
       self.vadSilenceDurationMs = max(400, silenceDurationMs)
       self.vadMaxUtteranceSamples = max(16000 * 3, (maxUtteranceMs * 16))
       self.vadPreRollMaxSamples = max(3200, (preRollMs * 16))
       self.resetVadStateLocked(keepPreRoll: true)
-    }
-
-    if let existing = vadEngine, existing.isRunning {
-      vadListening = true
-      return true
     }
 
     stopVadEngineOnly()
