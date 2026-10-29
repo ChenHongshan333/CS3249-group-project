@@ -549,7 +549,10 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
-  void _startOrUpdateTimer({required int seconds, required String label}) {
+  Future<void> _startOrUpdateTimer({
+    required int seconds,
+    required String label,
+  }) async {
     setState(() {
       // One timer per step: a new one for this step replaces the old one,
       // whatever it's called (the button, voice and the AI name it
@@ -571,7 +574,9 @@ class _CookingScreenState extends State<CookingScreen>
         _timers.add(timer);
       }
     });
-    widget.cueSounds?.play(Cue.timerStart);
+    try {
+      await widget.cueSounds?.play(Cue.timerStart);
+    } catch (_) {}
     final mins = (seconds / 60).ceil();
     widget.onShowToast('$label started ($mins min)');
   }
@@ -932,7 +937,10 @@ class _CookingScreenState extends State<CookingScreen>
       case VoiceIntentType.startTimer:
         final seconds = intent.timerSeconds ?? 180;
         final label = intent.timerLabel ?? _step.title;
-        _startOrUpdateTimer(seconds: seconds, label: label);
+        await _startOrUpdateTimer(seconds: seconds, label: label);
+        // Beep chime plays before the assistant confirms aloud
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        if (!mounted) return;
         final mins = (seconds / 60).ceil();
         _appendAiMessage(
           'I set a $mins-minute timer for ${label.toLowerCase()}. Keep going—I will let you know when it finishes.',
@@ -1048,13 +1056,24 @@ class _CookingScreenState extends State<CookingScreen>
           'repeat_step',
           'start_cooking',
         }.contains(action.type);
-    if (!leadsIn) _appendAiMessage(response.reply, stepIndex: askedOnStep);
-    if (action != null) {
-      _runAction(
-        action,
-        lead: leadsIn ? response.reply : null,
-        reply: response.reply,
+    if (action != null && action.type == 'start_timer' && !_opening) {
+      await _startOrUpdateTimer(
+        seconds: action.seconds ?? _step.suggestedTimerSeconds ?? 180,
+        label: action.label ?? _step.suggestedTimerLabel ?? _step.title,
       );
+      // Give start chime time to play before the reply is spoken
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      if (!mounted) return;
+      _appendAiMessage(response.reply, stepIndex: askedOnStep);
+    } else {
+      if (!leadsIn) _appendAiMessage(response.reply, stepIndex: askedOnStep);
+      if (action != null) {
+        _runAction(
+          action,
+          lead: leadsIn ? response.reply : null,
+          reply: response.reply,
+        );
+      }
     }
 
     widget.assistantService.logEvent(

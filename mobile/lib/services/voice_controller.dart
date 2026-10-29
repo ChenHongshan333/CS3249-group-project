@@ -570,7 +570,7 @@ class VoiceController extends ChangeNotifier {
         !_autoRestartPaused &&
         _listeningMode == VoiceListeningMode.handsFree &&
         _activityState == VoiceActivityState.idle) {
-      _scheduleListeningRestart(delayMs: 650);
+      _scheduleListeningRestart(delayMs: 100);
     }
   }
 
@@ -646,7 +646,7 @@ class VoiceController extends ChangeNotifier {
     if (_listeningMode == VoiceListeningMode.handsFree &&
         !_isPaused &&
         !_autoRestartPaused) {
-      _scheduleListeningRestart(delayMs: 650);
+      _scheduleListeningRestart(delayMs: 60);
     }
   }
 
@@ -660,7 +660,7 @@ class VoiceController extends ChangeNotifier {
     _autoRestartPaused = false;
     _fastFailures = 0;
     _restartListenTimer?.cancel();
-    _restartListenTimer = Timer(const Duration(milliseconds: 100), () {
+    _restartListenTimer = Timer(const Duration(milliseconds: 30), () {
       if (_isSessionActive &&
           !_isPaused &&
           _activityState == VoiceActivityState.idle) {
