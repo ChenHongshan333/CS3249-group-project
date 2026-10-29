@@ -289,7 +289,8 @@ void main() {
 
     await _say(tester, 'Please.');
     expect(assistant.asked.last['pendingOffer'], timer.toJson());
-    expect(find.text('Toss'), findsOneWidget);
+    // The accepted timer is running (a chip shows only the time).
+    expect(find.byTooltip('Dismiss timer'), findsOneWidget);
 
     // The offer is sent only once.
     await _say(tester, 'Thanks.');

@@ -936,12 +936,12 @@ class _CookingScreenState extends State<CookingScreen>
         if (_timers.isEmpty) {
           _appendAiMessage('There is no active timer running right now.');
         } else {
-          setState(() {
-            for (int i = 0; i < _timers.length; i++) {
-              _timers[i] = _timers[i].copyWith(isRunning: false);
-            }
-          });
-          _appendAiMessage('I paused your timer.');
+          // Timers don't pause (#93): with no resume button, a paused one
+          // would be stuck. Letting it run is the way to wait longer.
+          _appendAiMessage(
+            'The timer keeps running. Say "stop the timer" if you '
+            "don't need it.",
+          );
         }
         return;
 
@@ -1564,14 +1564,17 @@ class _CookingScreenState extends State<CookingScreen>
           ),
           Row(
             children: [
-              Expanded(
+              Flexible(
                 child: Text(
                   'Step ${_currentStep + 1} of $totalSteps',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: textTheme.labelMedium?.copyWith(
                     color: CookTogetherTheme.inkMuted,
                   ),
                 ),
               ),
+              const Spacer(),
               if (_currentStep > 0)
                 IconButton(
                   tooltip: 'Previous step',
@@ -1587,7 +1590,30 @@ class _CookingScreenState extends State<CookingScreen>
           ),
           if (_isPaused) ...[_buildPausedBanner(), const SizedBox(height: 12)],
           if (!_stepHintSeen) _buildStepHint(),
-          Text(_step.title, style: textTheme.headlineSmall),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(_step.title, style: textTheme.headlineSmall),
+              ),
+              // A running timer is a small chip beside the title rather than
+              // a panel, so the chat keeps its room (#93).
+              for (final timer in _timers) ...[
+                const SizedBox(width: 8),
+                AnimatedOpacity(
+                  key: ValueKey(timer.id),
+                  opacity: _fadingTimerIds.contains(timer.id) ? 0 : 1,
+                  duration: const Duration(milliseconds: 600),
+                  onEnd: () {
+                    if (_fadingTimerIds.contains(timer.id)) {
+                      _removeTimer(timer.id);
+                    }
+                  },
+                  child: _buildTimerChip(timer),
+                ),
+              ],
+            ],
+          ),
           const SizedBox(height: 8),
           Text(
             _step.instruction,
@@ -1613,18 +1639,6 @@ class _CookingScreenState extends State<CookingScreen>
               Expanded(child: Text(_step.tip, style: textTheme.bodyMedium)),
             ],
           ),
-          for (final timer in _timers) ...[
-            const SizedBox(height: 12),
-            AnimatedOpacity(
-              key: ValueKey(timer.id),
-              opacity: _fadingTimerIds.contains(timer.id) ? 0 : 1,
-              duration: const Duration(milliseconds: 600),
-              onEnd: () {
-                if (_fadingTimerIds.contains(timer.id)) _removeTimer(timer.id);
-              },
-              child: _buildTimerRow(timer),
-            ),
-          ],
           if (showSuggestion) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -1649,60 +1663,49 @@ class _CookingScreenState extends State<CookingScreen>
     return '${(seconds / 60).ceil()} min';
   }
 
-  Widget _buildTimerRow(CookingTimer timer) {
+  /// The time left and a way to stop it. No pause: to wait longer, the
+  /// user lets it run or asks for more time.
+  Widget _buildTimerChip(CookingTimer timer) {
     final textTheme = Theme.of(context).textTheme;
     final finished = timer.isFinished;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 6, 4, 6),
-      decoration: BoxDecoration(
-        color: CookTogetherTheme.warningSoft,
-        borderRadius: BorderRadius.circular(CookTogetherTheme.radiusControl),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            finished
-                ? Icons.notifications_active_rounded
-                : Icons.timer_outlined,
-            color: CookTogetherTheme.warning,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              timer.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: textTheme.bodyLarge,
-            ),
-          ),
-          Text(
-            finished ? 'Done' : timer.formattedRemaining,
-            style: textTheme.headlineSmall?.copyWith(
+    return Semantics(
+      label: '${timer.label} timer',
+      child: Container(
+        padding: const EdgeInsets.only(left: 8),
+        decoration: BoxDecoration(
+          color: CookTogetherTheme.warningSoft,
+          borderRadius: BorderRadius.circular(CookTogetherTheme.radiusControl),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              finished
+                  ? Icons.notifications_active_rounded
+                  : Icons.timer_outlined,
+              size: 18,
               color: CookTogetherTheme.warning,
-              fontFeatures: const [FontFeature.tabularFigures()],
             ),
-          ),
-          if (!finished)
-            IconButton(
-              tooltip: timer.isRunning ? 'Pause timer' : 'Resume timer',
-              onPressed: () => setState(() {
-                final idx = _timers.indexWhere((t) => t.id == timer.id);
-                if (idx >= 0) {
-                  _timers[idx] = timer.copyWith(isRunning: !timer.isRunning);
-                }
-              }),
-              icon: Icon(
-                timer.isRunning
-                    ? Icons.pause_rounded
-                    : Icons.play_arrow_rounded,
+            const SizedBox(width: 4),
+            Text(
+              finished ? 'Done' : timer.formattedRemaining,
+              style: textTheme.labelLarge?.copyWith(
+                color: CookTogetherTheme.warning,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
-          IconButton(
-            tooltip: 'Dismiss timer',
-            onPressed: () => _removeTimer(timer.id),
-            icon: const Icon(Icons.close_rounded, size: 20),
-          ),
-        ],
+            IconButton(
+              tooltip: 'Dismiss timer',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _removeTimer(timer.id),
+              icon: const Icon(
+                Icons.close_rounded,
+                size: 16,
+                color: CookTogetherTheme.warning,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
