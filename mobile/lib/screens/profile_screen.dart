@@ -225,11 +225,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       children: [
                         Row(
                           children: [
-                            Text(
-                              'Assistant voice',
-                              style: textTheme.titleSmall,
+                            Expanded(
+                              child: Text(
+                                'Assistant voice',
+                                style: textTheme.titleSmall,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            const Spacer(),
                             TextButton.icon(
                               style: TextButton.styleFrom(
                                 padding:
