@@ -581,6 +581,18 @@ class _CookingScreenState extends State<CookingScreen>
     widget.onShowToast('$label started ($mins min)');
   }
 
+  /// Offers the step's timer for the moment it should start, such as
+  /// "Tell me when the eggs are in the pan, and I'll start a 2-minute timer."
+  String? _timerCue(RecipeStep step) {
+    final seconds = step.suggestedTimerSeconds;
+    final start = step.timerStart;
+    if (seconds == null || start == null) return null;
+    final length = seconds % 60 == 0
+        ? '${seconds ~/ 60}-minute'
+        : '$seconds-second';
+    return "Tell me when $start, and I'll start a $length timer.";
+  }
+
   void _goToStep(int targetStep, {bool fromVoice = false, String? lead}) {
     if (_isPaused) {
       widget.onShowToast('Resume the session first.');
@@ -602,8 +614,18 @@ class _CookingScreenState extends State<CookingScreen>
     });
     _highlightStep();
     final nextStepObj = _recipe.steps[clamped];
+    final cue = _timerCue(nextStepObj);
     final announcement =
-        'Step ${clamped + 1}: ${nextStepObj.title}. ${nextStepObj.instruction}';
+        'Step ${clamped + 1}: ${nextStepObj.title}. ${nextStepObj.instruction}'
+        '${cue == null ? '' : ' $cue'}';
+    // So "yes" or "they're in" starts the timer the cue offered.
+    if (cue != null) {
+      _pendingOffer = AssistantAction(
+        'start_timer',
+        seconds: nextStepObj.suggestedTimerSeconds,
+        label: nextStepObj.suggestedTimerLabel ?? nextStepObj.title,
+      );
+    }
     _appendAiMessage(
       lead == null ? announcement : '$lead $announcement',
       isStepAnnouncement: true,
