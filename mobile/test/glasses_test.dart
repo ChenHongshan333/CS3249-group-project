@@ -28,6 +28,29 @@ class _BrokenCameraGlasses extends MetaWearablesDatGlassesService {
   }
 }
 
+/// Real glasses that end every photo, as when their toolkit needs an update.
+class _OutdatedGlasses extends MetaWearablesDatGlassesService {
+  int updatesOpened = 0;
+
+  @override
+  bool get usingRealGlasses => true;
+
+  @override
+  Future<VisionCapture> captureFrame({
+    required Recipe recipe,
+    required int stepIndex,
+    String? userPrompt,
+  }) async {
+    throw const GlassesCaptureException(
+      'Your glasses stopped the photo.',
+      canUpdateGlasses: true,
+    );
+  }
+
+  @override
+  Future<void> openGlassesAppUpdate() async => updatesOpened++;
+}
+
 class _PhotoGlasses extends MetaWearablesDatGlassesService {
   int photos = 0;
 
@@ -161,6 +184,30 @@ void main() {
     );
     expect(camera.opened, 1);
     expect(find.text('Looks ready'), findsOneWidget);
+    // Folded glasses don't need an update.
+    expect(find.text('Update in Meta AI', skipOffstage: false), findsNothing);
+    await finish(tester);
+  });
+
+  // #86
+  testWidgets('a photo the glasses ended offers the update in Meta AI', (
+    tester,
+  ) async {
+    final glasses = _OutdatedGlasses();
+    final camera = FakePhoneCamera(photo: FakePhoneCamera.samplePhoto);
+    await openStepOne(tester, glasses: glasses, camera: camera);
+
+    await tapCheck(tester);
+    expect(camera.opened, 1);
+
+    final update = find.text('Update in Meta AI', skipOffstage: false);
+    expect(update, findsOneWidget);
+    // Let the chat finish scrolling to the newest message first.
+    await tester.pump(const Duration(seconds: 1));
+    await tester.ensureVisible(update);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(update);
+    expect(glasses.updatesOpened, 1);
     await finish(tester);
   });
 

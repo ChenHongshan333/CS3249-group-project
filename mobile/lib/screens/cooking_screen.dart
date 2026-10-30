@@ -479,6 +479,7 @@ class _CookingScreenState extends State<CookingScreen>
     bool isStepAnnouncement = false,
     int? stepIndex,
     bool? isQuestion,
+    bool offersGlassesUpdate = false,
   }) {
     setState(() {
       _messages.add(
@@ -493,6 +494,7 @@ class _CookingScreenState extends State<CookingScreen>
               stepIndex ??
               visionCapture?.stepIndex ??
               (_opening ? null : _currentStep),
+          offersGlassesUpdate: offersGlassesUpdate,
         ),
       );
     });
@@ -704,6 +706,7 @@ class _CookingScreenState extends State<CookingScreen>
         if (mounted) {
           _appendAiMessage(
             '${e.message} Let\'s use your phone camera instead.',
+            offersGlassesUpdate: e.canUpdateGlasses,
           );
         }
       }
@@ -1956,7 +1959,22 @@ class _CookingScreenState extends State<CookingScreen>
             bottomRight: Radius.circular(isUser ? 4 : 16),
           ),
         ),
-        child: Text(msg.text, style: style),
+        child: msg.offersGlassesUpdate
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(msg.text, style: style),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(48, 48),
+                    ),
+                    onPressed: widget.glassesService.openGlassesAppUpdate,
+                    child: const Text('Update in Meta AI'),
+                  ),
+                ],
+              )
+            : Text(msg.text, style: style),
       ),
     );
   }
