@@ -24,6 +24,10 @@ class UserPreferences {
   /// and tests work without a camera. Empty means off.
   final String forcedCheckResult;
 
+  /// User study only: recipes open as a plain step list on the phone, with
+  /// no voice, glasses or AI (condition B).
+  final bool phoneRecipeMode;
+
   /// Selected TTS voice name, or empty string for the default system voice.
   final String ttsVoiceName;
 
@@ -44,6 +48,7 @@ class UserPreferences {
     this.simulatedGlassesPhotos = false,
     this.phoneMicOnly = false,
     this.forcedCheckResult = '',
+    this.phoneRecipeMode = false,
     this.ttsVoiceName = '',
     this.ttsVoiceLocale = 'en-US',
     this.ttsPitch = 1.0,
@@ -58,6 +63,7 @@ class UserPreferences {
     bool? simulatedGlassesPhotos,
     bool? phoneMicOnly,
     String? forcedCheckResult,
+    bool? phoneRecipeMode,
     String? ttsVoiceName,
     String? ttsVoiceLocale,
     double? ttsPitch,
@@ -72,6 +78,7 @@ class UserPreferences {
           simulatedGlassesPhotos ?? this.simulatedGlassesPhotos,
       phoneMicOnly: phoneMicOnly ?? this.phoneMicOnly,
       forcedCheckResult: forcedCheckResult ?? this.forcedCheckResult,
+      phoneRecipeMode: phoneRecipeMode ?? this.phoneRecipeMode,
       ttsVoiceName: ttsVoiceName ?? this.ttsVoiceName,
       ttsVoiceLocale: ttsVoiceLocale ?? this.ttsVoiceLocale,
       ttsPitch: ttsPitch ?? this.ttsPitch,
@@ -87,6 +94,7 @@ class UserPreferences {
     'simulatedGlassesPhotos': simulatedGlassesPhotos,
     'phoneMicOnly': phoneMicOnly,
     'forcedCheckResult': forcedCheckResult,
+    'phoneRecipeMode': phoneRecipeMode,
     'ttsVoiceName': ttsVoiceName,
     'ttsVoiceLocale': ttsVoiceLocale,
     'ttsPitch': ttsPitch,
@@ -102,6 +110,7 @@ class UserPreferences {
       simulatedGlassesPhotos: json['simulatedGlassesPhotos'] as bool? ?? false,
       phoneMicOnly: json['phoneMicOnly'] as bool? ?? false,
       forcedCheckResult: json['forcedCheckResult'] as String? ?? '',
+      phoneRecipeMode: json['phoneRecipeMode'] as bool? ?? false,
       ttsVoiceName: json['ttsVoiceName'] as String? ?? '',
       ttsVoiceLocale: json['ttsVoiceLocale'] as String? ?? 'en-US',
       ttsPitch: (json['ttsPitch'] as num?)?.toDouble() ?? 1.0,
