@@ -110,6 +110,22 @@ def test_opening_uses_its_own_prompt_and_context(client, fake_llm):
     assert "Say 'let's start' when you're ready." in call["system"]
 
 
+# CookAlong can't see during /ask (#106)
+
+
+def test_ask_says_it_cannot_see_instead_of_guessing(client, fake_llm):
+    client.post("/ask", json={**ASK_BODY, "question": "Is this good?"})
+    system = fake_llm.calls[0]["system"]
+    assert "You can't see the cook or their food" in system
+    assert "don't praise it" in system
+    assert "Tap Check or say 'check'" in system
+
+
+def test_opening_has_no_photo_check_to_suggest(client, fake_llm):
+    client.post("/ask", json=OPENING_BODY)
+    assert "Tap Check" not in fake_llm.calls[0]["system"]
+
+
 # Choices made on Get ready (#98)
 
 
