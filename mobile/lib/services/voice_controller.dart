@@ -828,7 +828,10 @@ class VoiceController extends ChangeNotifier {
         if (_keepGlassesMic) {
           await _reopenGlassesMic();
           if (generation != _listeningGeneration ||
-              !_isSessionActive || _isPaused) return;
+              !_isSessionActive ||
+              _isPaused) {
+            return;
+          }
         }
         _isAwake =
             !requireWakeWord ||
@@ -892,7 +895,10 @@ class VoiceController extends ChangeNotifier {
       if (_keepGlassesMic) {
         await _reopenGlassesMic();
         if (generation != _listeningGeneration ||
-            !_isSessionActive || _isPaused) return;
+            !_isSessionActive ||
+            _isPaused) {
+          return;
+        }
       }
 
       // Show "listening" only once the recognizer is really starting.
@@ -973,7 +979,11 @@ class VoiceController extends ChangeNotifier {
     }
     final text = await _whisper.transcribeFile(wavPath);
     if (generation != _listeningGeneration ||
-        !_isSessionActive || _isPaused || !_vadListening) return;
+        !_isSessionActive ||
+        _isPaused ||
+        !_vadListening) {
+      return;
+    }
     if (text == null || text.trim().isEmpty) return;
     _onWhisperRecognizedWords(text.trim());
   }
