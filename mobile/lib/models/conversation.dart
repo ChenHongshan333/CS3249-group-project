@@ -104,6 +104,10 @@ class ChatMessage {
   /// The recipe step the message was said on; null before step 1.
   final int? stepIndex;
 
+  /// A glasses photo failed in a way an update may fix, so the message
+  /// offers to open the update in Meta AI (#86).
+  final bool offersGlassesUpdate;
+
   const ChatMessage({
     required this.id,
     required this.sender,
@@ -112,6 +116,7 @@ class ChatMessage {
     this.visionCapture,
     this.isStepAnnouncement = false,
     this.stepIndex,
+    this.offersGlassesUpdate = false,
   });
 }
 
