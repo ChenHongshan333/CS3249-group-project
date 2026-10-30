@@ -12,8 +12,10 @@ import 'models/recipe.dart';
 import 'models/user_preferences.dart';
 import 'screens/cooking_screen.dart';
 import 'screens/finish_screen.dart';
+import 'screens/guide_overlay.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/phone_recipe_screen.dart';
 import 'screens/prep_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/recipes_screen.dart';
@@ -22,14 +24,22 @@ import 'services/cue_sounds.dart';
 import 'services/tflite_intent_classifier.dart';
 import 'services/voice_controller.dart';
 import 'theme/app_theme.dart';
-import 'theme/widgets.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const CookTogetherApp());
 }
 
-enum AppScreen { home, recipes, prep, cook, finish, history, profile }
+enum AppScreen {
+  home,
+  recipes,
+  prep,
+  phoneRecipe,
+  cook,
+  finish,
+  history,
+  profile,
+}
 
 class CookTogetherApp extends StatefulWidget {
   final GlassesService? glassesService;
@@ -200,6 +210,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
   AppScreen? get _backTarget => switch (_screen) {
     AppScreen.home || AppScreen.cook => null,
     AppScreen.prep => _prepReturnScreen,
+    AppScreen.phoneRecipe => AppScreen.recipes,
     AppScreen.recipes ||
     AppScreen.finish ||
     AppScreen.history ||
@@ -338,7 +349,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
                               if (_showBottomNav) _buildBottomNav(),
                             ],
                           ),
-                          if (_welcomeOpen) _buildWelcomeModal(context),
+                          if (_welcomeOpen) GuideOverlay(onDone: _dismissWelcome),
                           if (_toastMessage.isNotEmpty)
                             _buildToastBanner(context),
                         ],
@@ -422,7 +433,11 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           recipes: kStarterRecipes,
           selectedRecipeId: _selectedRecipeId,
           onSelectRecipe: (id) => setState(() => _selectedRecipeId = id),
-          onContinueToPrep: _openPrep,
+          // In the user study's phone condition a recipe opens as a plain
+          // list instead of Get ready and cooking.
+          onContinueToPrep: _preferences.phoneRecipeMode
+              ? () => setState(() => _screen = AppScreen.phoneRecipe)
+              : _openPrep,
           onBack: () => setState(() => _screen = AppScreen.home),
           onShowToast: _showToast,
         );
@@ -460,6 +475,17 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           onShowToast: _showToast,
         );
 
+      case AppScreen.phoneRecipe:
+        return PhoneRecipeScreen(
+          recipe: _selectedRecipe,
+          assistantService: _assistantService,
+          onBack: () => setState(() => _screen = AppScreen.recipes),
+          onFinish: (seconds) {
+            setState(() => _screen = AppScreen.home);
+            _showToast('Finished in ${seconds ~/ 60} min ${seconds % 60} s');
+          },
+        );
+
       case AppScreen.cook:
         // Drawn by _buildScreens, so it survives leaving the screen.
         return const SizedBox.shrink();
@@ -492,6 +518,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           history: _history,
           onSavePreferences: _savePreferences,
           onOpenHistory: () => setState(() => _screen = AppScreen.history),
+          onOpenGuide: () => setState(() => _welcomeOpen = true),
           voiceController: _voiceController,
           glassesService: _glassesService,
           onShowToast: _showToast,
@@ -530,51 +557,6 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
           label: 'Profile',
         ),
       ],
-    );
-  }
-
-  Widget _buildWelcomeModal(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return Container(
-      color: const Color(0x8A263023),
-      alignment: Alignment.center,
-      padding: const EdgeInsets.all(24),
-      child: Material(
-        color: CookTogetherTheme.surface,
-        borderRadius: BorderRadius.circular(24),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '👋',
-                style: TextStyle(
-                  fontSize: 40,
-                  fontFamilyFallback: ['Noto Color Emoji'],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text('Meet CookTogether', style: textTheme.headlineSmall),
-              const SizedBox(height: 8),
-              Text(
-                'I\'ll talk you through a recipe, one step at a time. '
-                'Say "next step" or "check this" whenever you\'re ready.',
-                style: textTheme.bodyLarge,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'I\'m an AI guide. I can\'t tell you if food is safe to eat '
-                'or free of allergens.',
-                style: textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 24),
-              PrimaryButton(label: 'Let\'s cook', onPressed: _dismissWelcome),
-            ],
-          ),
-        ),
-      ),
     );
   }
 

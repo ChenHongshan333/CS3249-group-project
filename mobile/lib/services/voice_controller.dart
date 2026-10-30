@@ -246,12 +246,15 @@ class VoiceController extends ChangeNotifier {
   }
 
   /// Returns the list of available TTS voices from the platform, filtered to
-  /// English voices by default.
+  /// English voices by default. Gives up after a few seconds, so a platform
+  /// that never answers (or a test) doesn't leave Profile loading forever.
   Future<List<Map<String, String>>> getAvailableVoices({
     String languagePrefix = 'en',
   }) async {
     try {
-      final dynamic raw = await _tts.getVoices;
+      final dynamic raw = await _tts.getVoices.timeout(
+        const Duration(seconds: 3),
+      );
       if (raw is! List) return [];
       final result = <Map<String, String>>[];
       final seen = <String>{};

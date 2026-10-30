@@ -539,13 +539,14 @@ class _CookingScreenState extends State<CookingScreen>
     setState(() => _timers.removeWhere((t) => t.id == id));
   }
 
-  /// Says [text] without adding it to the chat: the timer row already
-  /// shows the time left.
-  void _speakOnly(String text) {
+  /// Says [text] without adding it to the chat, when the screen already
+  /// shows it (the timer row, the Skip/Check prompt).
+  void _speakOnly(String text, {bool? isQuestion}) {
     if (_isPaused) return;
     widget.voiceController.speak(
       text,
       voiceGuidanceEnabled: widget.preferences.voiceGuidance,
+      isQuestion: isQuestion,
     );
   }
 
@@ -1244,10 +1245,16 @@ class _CookingScreenState extends State<CookingScreen>
   void _nextOrFinish({bool fromVoice = false}) {
     if (!_isPaused && !_checkedSteps.contains(_currentStep)) {
       setState(() => _confirmSkipOpen = true);
-      _appendAiMessage(
-        "You haven't checked this step yet. Would you like to skip, or check first?",
-        isQuestion: true,
-      );
+      const ask =
+          "You haven't checked this step yet. Would you like to skip, or "
+          'check first?';
+      // A tap already shows Skip and Check on screen, so it's only said
+      // aloud: the chat stays for what was actually talked about.
+      if (fromVoice) {
+        _appendAiMessage(ask, isQuestion: true);
+      } else {
+        _speakOnly(ask, isQuestion: true);
+      }
       return;
     }
     _moveOn(fromVoice: fromVoice);

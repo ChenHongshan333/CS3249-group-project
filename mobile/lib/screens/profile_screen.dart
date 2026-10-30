@@ -16,6 +16,9 @@ class ProfileScreen extends StatefulWidget {
   final List<CookingHistoryItem> history;
   final ValueChanged<UserPreferences> onSavePreferences;
   final VoidCallback onOpenHistory;
+
+  /// Shows the first-use guide again.
+  final VoidCallback? onOpenGuide;
   final VoidCallback onBack;
   final VoiceController? voiceController;
 
@@ -30,6 +33,7 @@ class ProfileScreen extends StatefulWidget {
     required this.history,
     required this.onSavePreferences,
     required this.onOpenHistory,
+    this.onOpenGuide,
     required this.onBack,
     this.voiceController,
     this.glassesService,
@@ -202,6 +206,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ),
+              if (widget.onOpenGuide != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: widget.onOpenGuide,
+                    icon: const Icon(Icons.help_outline_rounded),
+                    label: const Text('How to use CookTogether'),
+                  ),
+                ),
               const SizedBox(height: 24),
               const SectionTitle('While cooking'),
               _SwitchRow(
@@ -225,11 +238,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       children: [
                         Row(
                           children: [
-                            Text(
-                              'Assistant voice',
-                              style: textTheme.titleSmall,
+                            Expanded(
+                              child: Text(
+                                'Assistant voice',
+                                style: textTheme.titleSmall,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            const Spacer(),
                             TextButton.icon(
                               style: TextButton.styleFrom(
                                 padding:
@@ -405,6 +420,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           () => _draft = _draft.copyWith(phoneMicOnly: v),
                         ),
                       ),
+                    _SwitchRow(
+                      title: 'User study: plain phone recipe',
+                      value: _draft.phoneRecipeMode,
+                      onChanged: (v) => setState(
+                        () => _draft = _draft.copyWith(phoneRecipeMode: v),
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: _draft.forcedCheckResult,
