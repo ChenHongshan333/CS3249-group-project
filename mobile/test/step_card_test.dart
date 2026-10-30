@@ -5,7 +5,7 @@ import 'package:mobile/services/assistant_service.dart';
 import 'package:mobile/theme/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const _hint = 'Your current step is always here.';
+const _hint = 'Your step stays here while the chat scrolls below.';
 
 void main() {
   Future<void> openCooking(WidgetTester tester, {bool hintSeen = false}) async {

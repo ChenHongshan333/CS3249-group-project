@@ -129,7 +129,8 @@ class _CookingScreenState extends State<CookingScreen>
   bool _stepHighlighted = false;
   Timer? _stepHighlightTimer;
 
-  /// A one-time hint on first use: "Your current step is always here".
+  /// A one-time hint on first use: "Your step stays here while the chat
+  /// scrolls below".
   static const _kStepHintSeenKey = 'cooktogether.stepHintSeen';
   bool _stepHintSeen = true;
   final List<ChatMessage> _messages = [];
@@ -1512,22 +1513,29 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
+  /// Page-coloured on the white panel, so first-time cooks notice it (#92).
   Widget _buildStepHint() {
     final textTheme = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+    return Container(
+      key: const ValueKey('step-hint'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: CookTogetherTheme.background,
+        borderRadius: BorderRadius.circular(CookTogetherTheme.radiusControl),
+      ),
       child: Row(
         children: [
           const Icon(
-            Icons.arrow_downward_rounded,
-            size: 18,
-            color: CookTogetherTheme.inkMuted,
+            Icons.push_pin_outlined,
+            size: 20,
+            color: CookTogetherTheme.ink,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Your current step is always here.',
-              style: textTheme.bodyMedium,
+              'Your step stays here while the chat scrolls below.',
+              style: textTheme.bodyLarge,
             ),
           ),
           TextButton(onPressed: _dismissStepHint, child: const Text('Got it')),
