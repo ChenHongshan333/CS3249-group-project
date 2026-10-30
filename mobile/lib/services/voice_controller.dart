@@ -161,6 +161,10 @@ class VoiceController extends ChangeNotifier {
   bool _isPaused = false;
   bool _audioMuted = false;
   bool _isAudioBusy = false;
+  /// Invalidates results still being transcribed when a recording is replaced.
+  int _listeningGeneration = 0;
+  bool _micTapInProgress = false;
+  Completer<void>? _listeningStartDone;
   bool _preparingPhoto = false;
   int _photoPreparationId = 0;
   DateTime? _lastListenStartTime;
@@ -317,6 +321,9 @@ class VoiceController extends ChangeNotifier {
     bool startListeningImmediately = false,
   }) async {
     _cancelTimers();
+    _listeningGeneration++;
+    _clearSentence();
+    _partialTranscript = '';
     _listeningMode = initialMode;
     _audioMuted = initialMuted;
     _isSessionActive = true;
@@ -653,13 +660,15 @@ class VoiceController extends ChangeNotifier {
     }
   }
 
-  /// Listens once for the answer to a question CookTogether just asked,
-  /// without needing a tap, even in tap-to-speak mode or after errors
-  /// paused automatic restarts.
+  /// Listens automatically for an answer only in hands-free mode.
   void listenForAnswer() => _listenForAnswer();
 
   void _listenForAnswer() {
     _awaitingAnswer = false;
+    if (_listeningMode == VoiceListeningMode.tapToSpeak) {
+      setActivityState(VoiceActivityState.idle, hint: 'Tap the mic to talk');
+      return;
+    }
     _autoRestartPaused = false;
     _fastFailures = 0;
     _restartListenTimer?.cancel();
@@ -698,9 +707,9 @@ class VoiceController extends ChangeNotifier {
     _restartListenTimer?.cancel();
     if (mode == VoiceListeningMode.handsFree && !_isPaused) {
       await _startListeningLoop();
-    } else if (mode == VoiceListeningMode.tapToSpeak &&
-        _activityState == VoiceActivityState.listening) {
-      await stopListening();
+    } else if (mode == VoiceListeningMode.tapToSpeak) {
+      _clearSentence();
+      await stopListening(discard: true);
     }
     notifyListeners();
   }
@@ -745,93 +754,30 @@ class VoiceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Handles a tap on the microphone: starts listening, or in tap-to-speak
-  /// mode stops it and sends what was heard. A tap while CookTogether is
-  /// speaking cuts it off and listens; the words stay on screen. A tap
-  /// always retries, even after errors stopped the automatic restarts. It
-  /// never makes up an utterance.
+  /// A tap starts a fresh turn, discarding any audio or words from before
+  /// it. Completed utterances are sent automatically after speech ends.
   Future<MicTapResult> tapMic() async {
     if (_preparingPhoto) return MicTapResult.stopped;
     if (_isPaused) return MicTapResult.stopped;
-    if (_activityState == VoiceActivityState.speaking) {
-      await _stopSpeaking();
-    }
-    if (_activityState == VoiceActivityState.listening &&
-        _speechAvailable &&
-        (_speech.isListening || _vadListening)) {
-      // Hands-free is already listening: a tap wakes it up immediately without
-      // needing "Hey Cooky", or sends what was already said.
-      if (_listeningMode == VoiceListeningMode.handsFree) {
-        if (!_isAwake) {
-          _isAwake = true;
-          _expectingSpeech = true;
-          _statusHint = _withMicName('Listening… speak now');
-          _scheduleAwakeTimeout();
-          if (_vadListening) {
-            _scheduleExpectingSpeechTimeout();
-            unawaited(_audioRoute.startVadListening(
-              silenceDurationMs: kActiveListeningSilenceMs,
-            ));
-          }
-          notifyListeners();
-        } else if (_vadListening) {
-          await _flushVadAndSendIfAny();
-          if (_activityState != VoiceActivityState.listening) {
-            return MicTapResult.stopped;
-          }
-        } else if (partialTranscript.isNotEmpty) {
-          _keepHeardWords();
-          await stopListening();
-          _sendSentence();
-          return MicTapResult.stopped;
-        }
-        return MicTapResult.listening;
+    if (_micTapInProgress) return MicTapResult.stopped;
+    _micTapInProgress = true;
+    try {
+      _awaitingAnswer = false;
+      _clearSentence();
+      await stopListening(discard: true);
+      // Let any previous asynchronous recorder startup finish before retrying.
+      await _listeningStartDone?.future;
+      if (_activityState == VoiceActivityState.speaking) {
+        await _stopSpeaking();
       }
-      if (_vadListening) {
-        await _flushVadAndSendIfAny(stopRegardless: true);
-        return MicTapResult.stopped;
-      }
-      _keepHeardWords();
-      await stopListening();
-      _sendSentence();
-      return MicTapResult.stopped;
-    }
-    _autoRestartPaused = false;
-    _fastFailures = 0;
-    final whisperReady = useWhisper && await _whisper.checkLocalModelReady();
-    if (!whisperReady && !await _ensureSpeechInitialized()) {
-      return MicTapResult.unavailable;
-    }
-    await _startListeningLoop(forceSingleTurn: true);
-    return _activityState == VoiceActivityState.listening
-        ? MicTapResult.listening
-        : MicTapResult.unavailable;
-  }
-
-  Future<void> _flushVadAndSendIfAny({bool stopRegardless = false}) async {
-    _expectingSpeechTimer?.cancel();
-    _expectingSpeechTimer = null;
-    _vadListening = false;
-    final flushedPath = await _audioRoute.stopVadListening(flush: true);
-    if (flushedPath != null && flushedPath.isNotEmpty) {
-      final text = await _whisper.transcribeFile(flushedPath);
-      if (text != null && text.trim().isNotEmpty) {
-        var words = text.trim();
-        final match = wakeWordPattern.firstMatch(words);
-        if (match != null) {
-          words = words.substring(match.end).trim();
-        }
-        if (words.isNotEmpty) {
-          _sentence = _sentence.isEmpty ? words : '$_sentence $words';
-        }
-      }
-    }
-    if (partialTranscript.isNotEmpty || stopRegardless) {
-      _keepHeardWords();
-      await stopListening();
-      _sendSentence();
-    } else if (_isSessionActive && !_isPaused) {
+      _autoRestartPaused = false;
+      _fastFailures = 0;
       await _startListeningLoop(forceSingleTurn: true);
+      return _activityState == VoiceActivityState.listening
+          ? MicTapResult.listening
+          : MicTapResult.unavailable;
+    } finally {
+      _micTapInProgress = false;
     }
   }
 
@@ -868,6 +814,9 @@ class VoiceController extends ChangeNotifier {
     if (_autoRestartPaused && !forceSingleTurn) return;
 
     _isAudioBusy = true;
+    final generation = ++_listeningGeneration;
+    final startDone = Completer<void>();
+    _listeningStartDone = startDone;
     try {
       final keepAwake =
           forceSingleTurn ||
@@ -875,9 +824,14 @@ class VoiceController extends ChangeNotifier {
           (_isAwake && (_awakeTimeoutTimer?.isActive ?? false));
 
       if (useWhisper && await _whisper.checkLocalModelReady()) {
+        if (generation != _listeningGeneration) return;
         if (_keepGlassesMic) {
           await _reopenGlassesMic();
-          if (!_isSessionActive || _isPaused) return;
+          if (generation != _listeningGeneration ||
+              !_isSessionActive ||
+              _isPaused) {
+            return;
+          }
         }
         _isAwake =
             !requireWakeWord ||
@@ -892,6 +846,11 @@ class VoiceController extends ChangeNotifier {
         final vadStarted = await _audioRoute.startVadListening(
           silenceDurationMs: silenceMs,
         );
+        if (generation != _listeningGeneration ||
+            !_isSessionActive || _isPaused) {
+          if (vadStarted) await _audioRoute.stopVadListening(flush: false);
+          return;
+        }
         if (vadStarted && _isSessionActive && !_isPaused) {
           _vadListening = true;
           _speechAvailable = true;
@@ -925,6 +884,7 @@ class VoiceController extends ChangeNotifier {
       }
 
       final ready = await _ensureSpeechInitialized();
+      if (generation != _listeningGeneration) return;
       if (!ready || !_isSessionActive || _isPaused) {
         _activityState = VoiceActivityState.idle;
         notifyListeners();
@@ -934,7 +894,11 @@ class VoiceController extends ChangeNotifier {
       // The recognizer keeps the mic it starts with.
       if (_keepGlassesMic) {
         await _reopenGlassesMic();
-        if (!_isSessionActive || _isPaused) return;
+        if (generation != _listeningGeneration ||
+            !_isSessionActive ||
+            _isPaused) {
+          return;
+        }
       }
 
       // Show "listening" only once the recognizer is really starting.
@@ -959,7 +923,9 @@ class VoiceController extends ChangeNotifier {
 
       _lastListenStartTime = DateTime.now();
       await _speech.listen(
-        onResult: _onSpeechResult,
+        onResult: (result) {
+          if (generation == _listeningGeneration) _onSpeechResult(result);
+        },
         listenOptions: SpeechListenOptions(
           listenFor: const Duration(seconds: 30),
           pauseFor: const Duration(seconds: 5),
@@ -975,6 +941,8 @@ class VoiceController extends ChangeNotifier {
       notifyListeners();
     } finally {
       _isAudioBusy = false;
+      startDone.complete();
+      _listeningStartDone = null;
     }
   }
 
@@ -1004,12 +972,18 @@ class VoiceController extends ChangeNotifier {
   }
 
   Future<void> _onVadUtterance(String wavPath) async {
+    final generation = _listeningGeneration;
     if (!_isSessionActive || _isPaused || !_vadListening) {
       unawaited(_whisper.transcribeFile(wavPath));
       return;
     }
     final text = await _whisper.transcribeFile(wavPath);
-    if (!_isSessionActive || _isPaused || !_vadListening) return;
+    if (generation != _listeningGeneration ||
+        !_isSessionActive ||
+        _isPaused ||
+        !_vadListening) {
+      return;
+    }
     if (text == null || text.trim().isEmpty) return;
     _onWhisperRecognizedWords(text.trim());
   }
@@ -1101,7 +1075,9 @@ class VoiceController extends ChangeNotifier {
     if (result.finalResult) _keepHeardWords();
   }
 
-  Future<void> stopListening() async {
+  Future<void> stopListening({bool discard = false}) async {
+    _listeningGeneration++;
+    _turnDelivered = true;
     _restartListenTimer?.cancel();
     _expectingSpeechTimer?.cancel();
     _expectingSpeechTimer = null;
@@ -1119,8 +1095,12 @@ class VoiceController extends ChangeNotifier {
       } catch (_) {}
     }
     try {
-      if (_speechAvailable && _speech.isListening) {
-        await _speech.stop();
+      if (_speechAvailable && (_speech.isListening || discard)) {
+        if (discard) {
+          await _speech.cancel();
+        } else {
+          await _speech.stop();
+        }
       }
     } catch (_) {}
   }
@@ -1235,6 +1215,7 @@ class VoiceController extends ChangeNotifier {
   }
 
   Future<void> shutdownSession() async {
+    _listeningGeneration++;
     _photoPreparationId++;
     _vadListening = false;
     _bluetoothMic = null;
