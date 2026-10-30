@@ -29,8 +29,11 @@ void main() {
     // Every step is on one page, with no Get ready checklist.
     expect(find.text('1. Get everything ready'), findsOneWidget);
     expect(find.text('Amounts are on your ingredient card.'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('4. Assemble & serve'), 200);
-    expect(find.text('4. Assemble & serve'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('4. Warm, fill & fold'),
+      200,
+    );
+    expect(find.text('4. Warm, fill & fold'), findsOneWidget);
 
     await tester.tap(find.text('Start cooking'));
     await tester.pump();
