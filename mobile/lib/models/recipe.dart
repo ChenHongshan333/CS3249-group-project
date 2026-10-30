@@ -6,6 +6,10 @@ class RecipeStep {
   final String check;
   final int? suggestedTimerSeconds;
   final String? suggestedTimerLabel;
+
+  /// When the timer should start, said as "Tell me when the eggs are in the
+  /// pan, and I'll start a 2-minute timer." Null for steps without a timer.
+  final String? timerStart;
   final String visionSceneDescription;
 
   const RecipeStep({
@@ -15,6 +19,7 @@ class RecipeStep {
     required this.check,
     this.suggestedTimerSeconds,
     this.suggestedTimerLabel,
+    this.timerStart,
     required this.visionSceneDescription,
   });
 
@@ -25,6 +30,7 @@ class RecipeStep {
     check: check,
     suggestedTimerSeconds: suggestedTimerSeconds,
     suggestedTimerLabel: suggestedTimerLabel,
+    timerStart: timerStart,
     visionSceneDescription: visionSceneDescription,
   );
 }
@@ -38,6 +44,7 @@ class StepEdit {
   final String? tip;
   final String? check;
   final String? timerLabel;
+  final String? timerStart;
 
   /// The new suggested timer; 0 takes the timer away.
   final int? timerSeconds;
@@ -51,6 +58,7 @@ class StepEdit {
     this.tip,
     this.check,
     this.timerLabel,
+    this.timerStart,
     this.timerSeconds,
   }) : remove = false;
 
@@ -60,6 +68,7 @@ class StepEdit {
       tip = null,
       check = null,
       timerLabel = null,
+      timerStart = null,
       timerSeconds = null,
       remove = true;
 
@@ -75,6 +84,7 @@ class StepEdit {
       suggestedTimerLabel: hasTimer
           ? timerLabel ?? step.suggestedTimerLabel
           : null,
+      timerStart: hasTimer ? timerStart ?? step.timerStart : null,
       visionSceneDescription: step.visionSceneDescription,
     );
   }
@@ -257,13 +267,7 @@ const List<Recipe> kStarterRecipes = [
     tone: 'orange',
     icon: '🍜',
     level: 'Beginner',
-    ingredients: [
-      'noodles',
-      'carrot',
-      'bell pepper',
-      'garlic',
-      'soy sauce',
-    ],
+    ingredients: ['noodles', 'carrot', 'bell pepper', 'garlic', 'soy sauce', 'cooking oil'],
     swaps: [
       HealthySwap(
         id: 'noodles-less-soy',
@@ -284,42 +288,47 @@ const List<Recipe> kStarterRecipes = [
       RecipeStep(
         title: 'Prepare the vegetables',
         instruction:
-            'Wash and slice the carrot and bell pepper into thin strips. Mince one clove of garlic.',
-        tip: 'Cut slowly into uniform thin strips so they soften at the same pace.',
-        check: 'The carrot and pepper are thinly sliced and garlic is finely minced.',
+            'Wash the carrot and pepper. Peel the carrot, then slice it and half the pepper into thin strips. Peel and finely chop 1 garlic clove.',
+        tip: 'Cut slowly into strips about the same size so they cook evenly.',
+        check:
+            'The carrot and pepper are in thin strips and the garlic is finely chopped.',
         visionSceneDescription:
             'Prep board with julienned carrot strips, sliced red bell pepper, and minced garlic',
       ),
       RecipeStep(
         title: 'Cook the noodles',
         instruction:
-            'Bring water to a boil and cook the noodles for about 3 minutes according to the packet. Drain carefully.',
-        tip: 'Steam and boiling water can burn. Pour away from yourself when draining.',
-        check: 'The noodles are tender, loosened, and drained in a colander.',
+            "Fill a pot halfway with water and bring it to a boil. Add the noodles and cook for about 3 minutes, stirring once so they don't stick. Lift them into a bowl with tongs.",
+        tip:
+            'Steam and boiling water can burn. Keep your face back from the pot.',
+        check: 'The noodles are soft and out of the water.',
         suggestedTimerSeconds: 180,
         suggestedTimerLabel: 'Boil noodles',
+        timerStart: 'the noodles are in the water',
         visionSceneDescription:
-            'Steaming cooked noodles drained in a colander over the sink',
+            'Steaming cooked noodles lifted into a bowl next to the pot',
       ),
       RecipeStep(
-        title: 'Sauté the vegetables',
+        title: 'Cook the vegetables',
         instruction:
-            'On medium heat, add a little oil, then cook the carrot, pepper and garlic for 2 minutes until softened.',
+            'Put a pan on medium heat with a little oil and wait about a minute for it to warm up. Add the carrot, pepper and garlic and stir for about 2 minutes until they soften.',
         tip: 'Lower the heat if the garlic browns too quickly.',
-        check: 'The vegetables look bright and tender, not burnt.',
+        check: 'The vegetables look bright and soft, not burnt.',
         suggestedTimerSeconds: 120,
-        suggestedTimerLabel: 'Sauté vegetables',
+        suggestedTimerLabel: 'Cook vegetables',
+        timerStart: 'the vegetables are in the pan',
         visionSceneDescription:
             'Skillet with glossy sautéed carrot and bell pepper strips over medium heat',
       ),
       RecipeStep(
         title: 'Toss together',
         instruction:
-            'Add the noodles and a splash of soy sauce. Toss for a minute, turn off the heat and serve.',
+            'Add the noodles and 1 tablespoon of soy sauce to the pan. Toss with tongs for about a minute until everything is coated, then turn off the heat and serve.',
         tip: 'Taste a strand before adding more soy sauce.',
         check: 'The noodles and vegetables are evenly coated and mixed.',
         suggestedTimerSeconds: 60,
         suggestedTimerLabel: 'Toss noodles & sauce',
+        timerStart: 'the noodles are in the pan',
         visionSceneDescription:
             'Pan of golden soy-glazed noodles tossed with colorful vegetable strips',
       ),
@@ -332,13 +341,7 @@ const List<Recipe> kStarterRecipes = [
     tone: 'red',
     icon: '🍅',
     level: 'Beginner',
-    ingredients: [
-      'cooked rice',
-      'chickpeas',
-      'tomatoes',
-      'onion',
-      'paprika',
-    ],
+    ingredients: ['cooked rice', 'chickpeas', 'tomatoes', 'onion', 'paprika'],
     swaps: [
       HealthySwap(
         id: 'rice-less-oil',
@@ -405,64 +408,58 @@ const List<Recipe> kStarterRecipes = [
     tone: 'yellow',
     icon: '🌯',
     level: 'Beginner',
-    ingredients: [
-      'eggs',
-      'spinach',
-      'tortillas',
-      'tomatoes',
-      'yogurt',
-    ],
+    ingredients: ['eggs', 'spinach', 'tortillas', 'tomatoes', 'yogurt', 'cooking oil'],
     swaps: [
       HealthySwap(
         id: 'wrap-wholemeal',
         title: 'Wholemeal tortillas',
-        detail:
-            'Use wholemeal tortillas instead of white ones for more fibre.',
+        detail: 'Use wholemeal tortillas instead of white ones for more fibre.',
       ),
       HealthySwap(
         id: 'wrap-more-spinach',
         title: 'Extra spinach, fewer eggs',
         needs: ['spinach'],
         detail:
-            'Use two eggs per two wraps instead of three, and add an extra handful of spinach.',
+            'Use one egg instead of two, and add an extra handful of spinach.',
       ),
     ],
     steps: [
       RecipeStep(
         title: 'Get everything ready',
         instruction:
-            'Wash the spinach and dice the tomatoes. Beat the eggs in a bowl with a fork until smooth.',
+            'Wash the spinach and shake off the water. Dice the tomato. Crack 2 eggs into a bowl and beat them with a fork until smooth.',
         tip: 'Wash your hands after handling raw eggs.',
-        check: 'The spinach is clean, tomatoes are diced, and eggs are beaten.',
+        check: 'The tomato is diced and the eggs are beaten smooth.',
         visionSceneDescription:
             'Bowl of beaten yellow eggs next to washed spinach leaves and diced tomatoes',
       ),
       RecipeStep(
         title: 'Cook the eggs',
         instruction:
-            'Warm a pan on medium-low heat and cook the eggs for 2 minutes, stirring gently until fully set.',
-        tip: 'Keep cooking gently if any egg still looks liquid or runny.',
-        check: 'The scrambled eggs are soft, curded, and fully set with no runny spots.',
+            "Put the pan on medium-low heat with a little oil and wait about a minute for it to warm up. Pour in the eggs and stir gently for about 2 minutes, until there's no runny egg left. Move the eggs onto a plate.",
+        tip: 'Keep cooking gently if any egg still looks wet or runny.',
+        check: 'The eggs are set, with no wet or runny egg left.',
         suggestedTimerSeconds: 120,
         suggestedTimerLabel: 'Scramble eggs',
+        timerStart: 'the eggs are in the pan',
         visionSceneDescription:
             'Non-stick pan with fluffy, fully set scrambled egg curds',
       ),
       RecipeStep(
-        title: 'Add the greens',
+        title: 'Wilt the spinach',
         instruction:
-            'Add spinach to the pan for a minute, just until it wilts. Turn off the heat.',
-        tip: 'Spinach wilts quickly from the residual warmth of the pan.',
-        check: 'The spinach leaves have wilted into the warm eggs.',
+            "Put the spinach in the same pan, still on the heat. Stir for about a minute until it's soft and dark green, then add it to the plate with the eggs.",
+        tip: 'Spinach shrinks a lot, so a big handful is fine.',
+        check: 'The spinach is soft and dark green.',
         suggestedTimerSeconds: 60,
         suggestedTimerLabel: 'Wilt spinach',
-        visionSceneDescription:
-            'Scrambled eggs folded with bright wilted spinach leaves in the pan',
+        timerStart: 'the spinach is in the pan',
+        visionSceneDescription: 'Pan with bright wilted spinach leaves',
       ),
       RecipeStep(
-        title: 'Assemble & serve',
+        title: 'Warm, fill & fold',
         instruction:
-            'Spoon eggs and spinach onto a tortilla. Add tomatoes and yogurt, then fold into a wrap.',
+            'Warm the tortilla in the pan for about 15 seconds on each side, then turn off the heat. Lay it flat, spread 1 tablespoon of yogurt down the middle, and add the eggs, spinach and tomato on top. Fold the bottom up, fold in both sides, and roll it closed.',
         tip: 'Leave a little room near the edge so the tortilla folds neatly.',
         check: 'The wrap is folded snugly and ready to eat.',
         visionSceneDescription:

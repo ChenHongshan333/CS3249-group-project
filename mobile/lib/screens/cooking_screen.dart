@@ -112,6 +112,11 @@ class _CookingScreenState extends State<CookingScreen>
   // sent back once with the next question so "please" can accept it.
   AssistantAction? _pendingOffer;
 
+  // The current step's timer, offered when the step was read out. It stays
+  // on offer through other questions until the timer starts or the step
+  // changes.
+  AssistantAction? _stepTimerOffer;
+
   late Set<String> _checkedIngredients;
 
   /// This session's recipe. The opening can adapt its steps to a missing
@@ -554,6 +559,8 @@ class _CookingScreenState extends State<CookingScreen>
     required int seconds,
     required String label,
   }) async {
+    if (identical(_pendingOffer, _stepTimerOffer)) _pendingOffer = null;
+    _stepTimerOffer = null;
     setState(() {
       // One timer per step: a new one for this step replaces the old one,
       // whatever it's called (the button, voice and the AI name it
@@ -582,6 +589,18 @@ class _CookingScreenState extends State<CookingScreen>
     widget.onShowToast('$label started ($mins min)');
   }
 
+  /// Offers the step's timer for the moment it should start, such as
+  /// "Tell me when the eggs are in the pan, and I'll start a 2-minute timer."
+  String? _timerCue(RecipeStep step) {
+    final seconds = step.suggestedTimerSeconds;
+    final start = step.timerStart;
+    if (seconds == null || start == null) return null;
+    final length = seconds % 60 == 0
+        ? '${seconds ~/ 60}-minute'
+        : '$seconds-second';
+    return "Tell me when $start, and I'll start a $length timer.";
+  }
+
   void _goToStep(int targetStep, {bool fromVoice = false, String? lead}) {
     if (_isPaused) {
       widget.onShowToast('Resume the session first.');
@@ -603,8 +622,19 @@ class _CookingScreenState extends State<CookingScreen>
     });
     _highlightStep();
     final nextStepObj = _recipe.steps[clamped];
+    final cue = _timerCue(nextStepObj);
     final announcement =
-        'Step ${clamped + 1}: ${nextStepObj.title}. ${nextStepObj.instruction}';
+        'Step ${clamped + 1}: ${nextStepObj.title}. ${nextStepObj.instruction}'
+        '${cue == null ? '' : ' $cue'}';
+    // So "yes" or "they're in" starts the timer the cue offered.
+    _stepTimerOffer = cue == null
+        ? null
+        : AssistantAction(
+            'start_timer',
+            seconds: nextStepObj.suggestedTimerSeconds,
+            label: nextStepObj.suggestedTimerLabel ?? nextStepObj.title,
+          );
+    _pendingOffer = _stepTimerOffer;
     _appendAiMessage(
       lead == null ? announcement : '$lead $announcement',
       isStepAnnouncement: true,
@@ -761,8 +791,8 @@ class _CookingScreenState extends State<CookingScreen>
       return;
     }
     // A photo check changes the subject; a later "sure" isn't an answer
-    // to an offer made before it.
-    _pendingOffer = null;
+    // to an offer made before it, except the step's own timer offer.
+    _pendingOffer = _stepTimerOffer;
     if (_isPaused) {
       widget.onShowToast('Resume the session first.');
       return;
@@ -892,7 +922,10 @@ class _CookingScreenState extends State<CookingScreen>
     }
 
     // A command the app handles itself replaces any open offer.
-    if (intent.type != VoiceIntentType.generalQuestion) _pendingOffer = null;
+    // A command answers any offer, except the step's own timer offer.
+    if (intent.type != VoiceIntentType.generalQuestion) {
+      _pendingOffer = _stepTimerOffer;
+    }
 
     switch (intent.type) {
       case VoiceIntentType.nextStep:
@@ -1045,7 +1078,9 @@ class _CookingScreenState extends State<CookingScreen>
     if (!mounted) return;
     if (_opening) _openingTurns++;
     // After an error the question was never answered, so the offer stands.
-    _pendingOffer = response.isError ? offer : response.offer;
+    _pendingOffer = response.isError
+        ? offer
+        : response.offer ?? _stepTimerOffer;
 
     final action = response.action;
     // These read a step aloud, so the reply leads into that announcement

@@ -152,10 +152,11 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
           3: StepEdit(
             title: 'Season & serve',
             text:
-                'Add a splash of soy sauce to the vegetables. Toss for a minute, turn off the heat and serve.',
+                'Add 1 tablespoon of soy sauce to the vegetables. Toss for about a minute until they\'re coated, then turn off the heat and serve.',
             tip: 'Taste before adding more soy sauce.',
             check: 'The vegetables are evenly coated in sauce.',
             timerLabel: 'Toss with sauce',
+            timerStart: 'the soy sauce is in',
           ),
         },
       ),
@@ -165,16 +166,18 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
           1: StepEdit(
             title: 'Cook the spaghetti',
             text:
-                'Bring water to a boil and cook the spaghetti for about 9 minutes, or as the packet says. Drain carefully.',
-            check: 'The spaghetti is tender and drained in a colander.',
+                'Fill a pot halfway with water and bring it to a boil. Add the spaghetti and cook for about 9 minutes, or as the packet says, stirring now and then. Lift it into a bowl with tongs.',
+            check: 'The spaghetti is soft and out of the water.',
             timerSeconds: 540,
             timerLabel: 'Boil spaghetti',
+            timerStart: 'the spaghetti is in the water',
           ),
           3: StepEdit(
             text:
-                'Add the spaghetti and a splash of soy sauce. Toss for a minute, turn off the heat and serve.',
+                'Add the spaghetti and 1 tablespoon of soy sauce to the pan. Toss with tongs for about a minute until everything is coated, then turn off the heat and serve.',
             check: 'The spaghetti and vegetables are evenly coated and mixed.',
             timerLabel: 'Toss spaghetti & sauce',
+            timerStart: 'the spaghetti is in the pan',
           ),
         },
       ),
@@ -184,12 +187,13 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           0: StepEdit(
             text:
-                'Wash and slice the bell pepper into thin strips. Mince one clove of garlic.',
-            check: 'The pepper is thinly sliced and garlic is finely minced.',
+                'Wash the pepper and slice half of it into thin strips. Peel and finely chop 1 garlic clove.',
+            check:
+                'The pepper is in thin strips and the garlic is finely chopped.',
           ),
           2: StepEdit(
             text:
-                'On medium heat, add a little oil, then cook the pepper and garlic for 2 minutes until softened.',
+                'Put a pan on medium heat with a little oil and wait about a minute for it to warm up. Add the pepper and garlic and stir for about 2 minutes until they soften.',
           ),
         },
       ),
@@ -198,13 +202,13 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           0: StepEdit(
             text:
-                'Wash and slice the courgette and bell pepper into thin strips. Mince one clove of garlic.',
+                'Wash the courgette and pepper. Slice the courgette and half the pepper into thin strips. Peel and finely chop 1 garlic clove.',
             check:
-                'The courgette and pepper are thinly sliced and garlic is finely minced.',
+                'The courgette and pepper are in thin strips and the garlic is finely chopped.',
           ),
           2: StepEdit(
             text:
-                'On medium heat, add a little oil, then cook the courgette, pepper and garlic for 2 minutes until softened.',
+                'Put a pan on medium heat with a little oil and wait about a minute for it to warm up. Add the courgette, pepper and garlic and stir for about 2 minutes until they soften.',
           ),
         },
       ),
@@ -214,12 +218,13 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           0: StepEdit(
             text:
-                'Wash and slice the carrot into thin strips. Mince one clove of garlic.',
-            check: 'The carrot is thinly sliced and garlic is finely minced.',
+                'Wash and peel the carrot, then slice it into thin strips. Peel and finely chop 1 garlic clove.',
+            check:
+                'The carrot is in thin strips and the garlic is finely chopped.',
           ),
           2: StepEdit(
             text:
-                'On medium heat, add a little oil, then cook the carrot and garlic for 2 minutes until softened.',
+                'Put a pan on medium heat with a little oil and wait about a minute for it to warm up. Add the carrot and garlic and stir for about 2 minutes until they soften.',
           ),
         },
       ),
@@ -228,13 +233,13 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           0: StepEdit(
             text:
-                'Wash and slice the carrot and courgette into thin strips. Mince one clove of garlic.',
+                'Wash the carrot and courgette. Peel the carrot, then slice it and the courgette into thin strips. Peel and finely chop 1 garlic clove.',
             check:
-                'The carrot and courgette are thinly sliced and garlic is finely minced.',
+                'The carrot and courgette are in thin strips and the garlic is finely chopped.',
           ),
           2: StepEdit(
             text:
-                'On medium heat, add a little oil, then cook the carrot, courgette and garlic for 2 minutes until softened.',
+                'Put a pan on medium heat with a little oil and wait about a minute for it to warm up. Add the carrot, courgette and garlic and stir for about 2 minutes until they soften.',
           ),
         },
       ),
@@ -243,12 +248,13 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
       MissingOption(
         steps: {
           0: StepEdit(
-            text: 'Wash and slice the carrot and bell pepper into thin strips.',
-            check: 'The carrot and pepper are thinly sliced.',
+            text:
+                'Wash the carrot and pepper. Peel the carrot, then slice it and half the pepper into thin strips.',
+            check: 'The carrot and pepper are in thin strips.',
           ),
           2: StepEdit(
             text:
-                'On medium heat, add a little oil, then cook the carrot and pepper for 2 minutes until softened.',
+                'Put a pan on medium heat with a little oil and wait about a minute for it to warm up. Add the carrot and pepper and stir for about 2 minutes until they soften.',
             tip: 'Lower the heat if the vegetables brown too quickly.',
           ),
         },
@@ -258,13 +264,13 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           0: StepEdit(
             text:
-                'Wash and slice the carrot and bell pepper into thin strips. Finely chop one small shallot.',
+                'Wash the carrot and pepper. Peel the carrot, then slice it and half the pepper into thin strips. Peel and finely chop 1 small shallot.',
             check:
-                'The carrot and pepper are thinly sliced and the shallot is finely chopped.',
+                'The carrot and pepper are in thin strips and the shallot is finely chopped.',
           ),
           2: StepEdit(
             text:
-                'On medium heat, add a little oil, then cook the carrot, pepper and shallot for 2 minutes until softened.',
+                'Put a pan on medium heat with a little oil and wait about a minute for it to warm up. Add the carrot, pepper and shallot and stir for about 2 minutes until they soften.',
             tip: 'Lower the heat if the shallot browns too quickly.',
           ),
         },
@@ -275,7 +281,7 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           3: StepEdit(
             text:
-                'Add the noodles and a pinch of salt. Toss for a minute, turn off the heat and serve.',
+                'Add the noodles and a pinch of salt to the pan. Toss with tongs for about a minute until everything is coated, then turn off the heat and serve.',
             tip: 'Taste a strand before adding more salt.',
             check: 'The noodles and vegetables are evenly mixed.',
             timerLabel: 'Toss noodles',
@@ -287,9 +293,30 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           3: StepEdit(
             text:
-                'Add the noodles and a spoonful of oyster sauce. Toss for a minute, turn off the heat and serve.',
+                'Add the noodles and 1 tablespoon of oyster sauce to the pan. Toss with tongs for about a minute until everything is coated, then turn off the heat and serve.',
             tip: 'Taste a strand before adding more oyster sauce.',
             timerLabel: 'Toss noodles',
+          ),
+        },
+      ),
+    ],
+    'cooking oil': [
+      MissingOption(
+        steps: {
+          2: StepEdit(
+            text:
+                'Put a non-stick pan on medium heat with 2 tablespoons of water. Add the carrot, pepper and garlic and stir for about 2 minutes until they soften.',
+            tip: 'Add another splash of water if the pan dries out.',
+          ),
+        },
+      ),
+      MissingOption(
+        use: 'butter',
+        steps: {
+          2: StepEdit(
+            text:
+                'Put a pan on medium heat with a small knob of butter and let it melt. Add the carrot, pepper and garlic and stir for about 2 minutes until they soften.',
+            tip: 'Lower the heat if the butter or garlic browns too quickly.',
           ),
         },
       ),
@@ -475,20 +502,19 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
       MissingOption(
         steps: {
           0: StepEdit(
-            text: 'Wash the spinach and dice the tomatoes.',
-            tip: "Pat the spinach dry so the wraps don't go soggy.",
-            check: 'The spinach is clean and the tomatoes are diced.',
+            text: 'Wash the spinach and shake off the water. Dice the tomato.',
+            tip: 'Pat the spinach dry so the wraps don\'t go soggy.',
+            check: 'The tomato is diced.',
           ),
           1: StepEdit.remove(),
           2: StepEdit(
             text:
-                'Warm a pan on medium heat, add the spinach and a pinch of salt, and stir for a minute until it wilts. Turn off the heat.',
+                'Put the pan on medium heat with a little oil. Add the spinach and a pinch of salt and stir for about a minute until it\'s soft and dark green, then move it to a plate.',
             tip: 'Spinach wilts quickly, so keep it moving.',
-            check: 'The spinach leaves have wilted.',
           ),
           3: StepEdit(
             text:
-                'Spoon the spinach onto a tortilla. Add tomatoes and yogurt, then fold into a wrap.',
+                'Warm the tortilla in the pan for about 15 seconds on each side, then turn off the heat. Lay it flat, spread 1 tablespoon of yogurt down the middle, and add the spinach and tomato on top. Fold the bottom up, fold in both sides, and roll it closed.',
           ),
         },
       ),
@@ -497,24 +523,27 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           0: StepEdit(
             text:
-                'Wash the spinach and dice the tomatoes. Drain the tofu and crumble it into a bowl with a fork.',
+                'Wash the spinach and shake off the water. Dice the tomato. Drain the tofu and crumble it into a bowl with a fork.',
             tip: 'Pat the tofu dry with a paper towel so it browns in the pan.',
-            check:
-                'The spinach is clean, the tomatoes are diced, and the tofu is crumbled.',
+            check: 'The tomato is diced and the tofu is crumbled.',
           ),
           1: StepEdit(
             title: 'Cook the tofu',
             text:
-                'Warm a little oil in a pan on medium heat and cook the crumbled tofu for 3 minutes, stirring now and then, until hot and lightly golden.',
+                'Put the pan on medium heat with a little oil and wait about a minute for it to warm up. Add the tofu and cook for about 3 minutes, stirring now and then, until hot and lightly golden. Move it onto a plate.',
             tip: 'Add a pinch of salt, since tofu needs seasoning.',
             check: 'The tofu is hot and lightly golden.',
             timerSeconds: 180,
             timerLabel: 'Cook tofu',
+            timerStart: 'the tofu is in the pan',
           ),
-          2: StepEdit(check: 'The spinach leaves have wilted into the tofu.'),
+          2: StepEdit(
+            text:
+                'Put the spinach in the same pan, still on the heat. Stir for about a minute until it\'s soft and dark green, then add it to the plate with the tofu.',
+          ),
           3: StepEdit(
             text:
-                'Spoon the tofu and spinach onto a tortilla. Add tomatoes and yogurt, then fold into a wrap.',
+                'Warm the tortilla in the pan for about 15 seconds on each side, then turn off the heat. Lay it flat, spread 1 tablespoon of yogurt down the middle, and add the tofu, spinach and tomato on top. Fold the bottom up, fold in both sides, and roll it closed.',
           ),
         },
       ),
@@ -524,18 +553,12 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           0: StepEdit(
             text:
-                'Dice the tomatoes. Beat the eggs in a bowl with a fork until smooth.',
-            check: 'The tomatoes are diced and the eggs are beaten.',
-          ),
-          // Turning off the heat moves here from the step that goes.
-          1: StepEdit(
-            text:
-                'Warm a pan on medium-low heat and cook the eggs for 2 minutes, stirring gently until fully set. Turn off the heat.',
+                'Dice the tomato. Crack 2 eggs into a bowl and beat them with a fork until smooth.',
           ),
           2: StepEdit.remove(),
           3: StepEdit(
             text:
-                'Spoon the eggs onto a tortilla. Add tomatoes and yogurt, then fold into a wrap.',
+                'Warm the tortilla in the pan for about 15 seconds on each side, then turn off the heat. Lay it flat, spread 1 tablespoon of yogurt down the middle, and add the eggs and tomato on top. Fold the bottom up, fold in both sides, and roll it closed.',
           ),
         },
       ),
@@ -544,21 +567,21 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           0: StepEdit(
             text:
-                'Wash the kale, pull off the tough stems and chop it small. Dice the tomatoes, then beat the eggs in a bowl with a fork until smooth.',
-            check:
-                'The kale is clean and chopped, the tomatoes are diced, and the eggs are beaten.',
+                'Wash the kale, pull off the tough stems and chop it small. Dice the tomato. Crack 2 eggs into a bowl and beat them with a fork until smooth.',
           ),
           2: StepEdit(
+            title: 'Soften the kale',
             text:
-                'Add the kale to the pan for two minutes, stirring, until it softens. Turn off the heat.',
+                'Put the kale in the same pan, still on the heat. Stir for about 2 minutes until it\'s soft, then add it to the plate with the eggs.',
             tip: 'Keep stirring so the kale softens evenly.',
-            check: 'The kale has softened into the warm eggs.',
+            check: 'The kale is soft and dark green.',
             timerSeconds: 120,
             timerLabel: 'Soften kale',
+            timerStart: 'the kale is in the pan',
           ),
           3: StepEdit(
             text:
-                'Spoon eggs and kale onto a tortilla. Add tomatoes and yogurt, then fold into a wrap.',
+                'Warm the tortilla in the pan for about 15 seconds on each side, then turn off the heat. Lay it flat, spread 1 tablespoon of yogurt down the middle, and add the eggs, kale and tomato on top. Fold the bottom up, fold in both sides, and roll it closed.',
           ),
         },
       ),
@@ -569,10 +592,10 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
           3: StepEdit(
             title: 'Serve',
             text:
-                'Spoon the eggs and spinach into a bowl. Top with tomatoes and yogurt, and serve.',
+                'Turn off the heat. Spoon the eggs and spinach into a bowl, top with the tomato and 1 tablespoon of yogurt, and serve.',
             tip: 'Toast on the side works well, if you have bread.',
             check:
-                'The eggs and spinach are in a bowl, topped with tomatoes and yogurt.',
+                'The eggs and spinach are in a bowl, topped with tomato and yogurt.',
           ),
         },
       ),
@@ -580,10 +603,10 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         use: 'pitta bread',
         steps: {
           3: StepEdit(
-            title: 'Fill & serve',
+            title: 'Warm & fill',
             text:
-                'Warm a pitta bread and open it into a pocket. Spoon in the eggs and spinach, then add tomatoes and yogurt.',
-            tip: "Open the pitta gently along one edge so it doesn't tear.",
+                'Warm the pitta bread in the pan for about 30 seconds on each side, then turn off the heat. Open it gently along one edge into a pocket. Spoon in the eggs and spinach, then add the tomato and 1 tablespoon of yogurt.',
+            tip: 'Open the pitta gently so it doesn\'t tear.',
             check: 'The pitta is filled and ready to eat.',
           ),
         },
@@ -594,12 +617,12 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           0: StepEdit(
             text:
-                'Wash the spinach. Beat the eggs in a bowl with a fork until smooth.',
-            check: 'The spinach is clean and the eggs are beaten.',
+                'Wash the spinach and shake off the water. Crack 2 eggs into a bowl and beat them with a fork until smooth.',
+            check: 'The eggs are beaten smooth.',
           ),
           3: StepEdit(
             text:
-                'Spoon eggs and spinach onto a tortilla. Add yogurt, then fold into a wrap.',
+                'Warm the tortilla in the pan for about 15 seconds on each side, then turn off the heat. Lay it flat, spread 1 tablespoon of yogurt down the middle, and add the eggs and spinach on top. Fold the bottom up, fold in both sides, and roll it closed.',
           ),
         },
       ),
@@ -608,13 +631,12 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           0: StepEdit(
             text:
-                'Wash the spinach and dice a little cucumber. Beat the eggs in a bowl with a fork until smooth.',
-            check:
-                'The spinach is clean, the cucumber is diced, and the eggs are beaten.',
+                'Wash the spinach and shake off the water. Dice a little cucumber. Crack 2 eggs into a bowl and beat them with a fork until smooth.',
+            check: 'The cucumber is diced and the eggs are beaten smooth.',
           ),
           3: StepEdit(
             text:
-                'Spoon eggs and spinach onto a tortilla. Add cucumber and yogurt, then fold into a wrap.',
+                'Warm the tortilla in the pan for about 15 seconds on each side, then turn off the heat. Lay it flat, spread 1 tablespoon of yogurt down the middle, and add the eggs, spinach and cucumber on top. Fold the bottom up, fold in both sides, and roll it closed.',
           ),
         },
       ),
@@ -624,7 +646,7 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           3: StepEdit(
             text:
-                'Spoon eggs and spinach onto a tortilla. Add tomatoes, then fold into a wrap.',
+                'Warm the tortilla in the pan for about 15 seconds on each side, then turn off the heat. Lay it flat, add the eggs, spinach and tomato on top. Fold the bottom up, fold in both sides, and roll it closed.',
           ),
         },
       ),
@@ -633,7 +655,28 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         steps: {
           3: StepEdit(
             text:
-                'Spoon eggs and spinach onto a tortilla. Add tomatoes and a spoonful of sour cream, then fold into a wrap.',
+                'Warm the tortilla in the pan for about 15 seconds on each side, then turn off the heat. Lay it flat, spread 1 tablespoon of sour cream down the middle, and add the eggs, spinach and tomato on top. Fold the bottom up, fold in both sides, and roll it closed.',
+          ),
+        },
+      ),
+    ],
+    'cooking oil': [
+      MissingOption(
+        steps: {
+          1: StepEdit(
+            text:
+                "Put a non-stick pan on medium-low heat and wait about a minute for it to warm up. Pour in the eggs and stir gently for about 2 minutes, until there's no runny egg left. Move the eggs onto a plate.",
+            tip:
+                "Keep the heat low and keep stirring so the eggs don't stick.",
+          ),
+        },
+      ),
+      MissingOption(
+        use: 'butter',
+        steps: {
+          1: StepEdit(
+            text:
+                "Put the pan on medium-low heat with a small knob of butter and let it melt. Pour in the eggs and stir gently for about 2 minutes, until there's no runny egg left. Move the eggs onto a plate.",
           ),
         },
       ),
