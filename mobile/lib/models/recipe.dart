@@ -267,7 +267,7 @@ const List<Recipe> kStarterRecipes = [
     tone: 'orange',
     icon: '🍜',
     level: 'Beginner',
-    ingredients: ['noodles', 'carrot', 'bell pepper', 'garlic', 'soy sauce'],
+    ingredients: ['noodles', 'carrot', 'bell pepper', 'garlic', 'soy sauce', 'cooking oil'],
     swaps: [
       HealthySwap(
         id: 'noodles-less-soy',
@@ -408,7 +408,7 @@ const List<Recipe> kStarterRecipes = [
     tone: 'yellow',
     icon: '🌯',
     level: 'Beginner',
-    ingredients: ['eggs', 'spinach', 'tortillas', 'tomatoes', 'yogurt'],
+    ingredients: ['eggs', 'spinach', 'tortillas', 'tomatoes', 'yogurt', 'cooking oil'],
     swaps: [
       HealthySwap(
         id: 'wrap-wholemeal',

@@ -300,6 +300,27 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
         },
       ),
     ],
+    'cooking oil': [
+      MissingOption(
+        steps: {
+          2: StepEdit(
+            text:
+                'Put a non-stick pan on medium heat with 2 tablespoons of water. Add the carrot, pepper and garlic and stir for about 2 minutes until they soften.',
+            tip: 'Add another splash of water if the pan dries out.',
+          ),
+        },
+      ),
+      MissingOption(
+        use: 'butter',
+        steps: {
+          2: StepEdit(
+            text:
+                'Put a pan on medium heat with a small knob of butter and let it melt. Add the carrot, pepper and garlic and stir for about 2 minutes until they soften.',
+            tip: 'Lower the heat if the butter or garlic browns too quickly.',
+          ),
+        },
+      ),
+    ],
   },
   'rice': {
     'cooked rice': [
@@ -635,6 +656,27 @@ const Map<String, Map<String, List<MissingOption>>> _options = {
           3: StepEdit(
             text:
                 'Warm the tortilla in the pan for about 15 seconds on each side, then turn off the heat. Lay it flat, spread 1 tablespoon of sour cream down the middle, and add the eggs, spinach and tomato on top. Fold the bottom up, fold in both sides, and roll it closed.',
+          ),
+        },
+      ),
+    ],
+    'cooking oil': [
+      MissingOption(
+        steps: {
+          1: StepEdit(
+            text:
+                "Put a non-stick pan on medium-low heat and wait about a minute for it to warm up. Pour in the eggs and stir gently for about 2 minutes, until there's no runny egg left. Move the eggs onto a plate.",
+            tip:
+                "Keep the heat low and keep stirring so the eggs don't stick.",
+          ),
+        },
+      ),
+      MissingOption(
+        use: 'butter',
+        steps: {
+          1: StepEdit(
+            text:
+                "Put the pan on medium-low heat with a small knob of butter and let it melt. Pour in the eggs and stir gently for about 2 minutes, until there's no runny egg left. Move the eggs onto a plate.",
           ),
         },
       ),
