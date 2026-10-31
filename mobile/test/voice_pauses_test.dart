@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/models/conversation.dart';
 import 'package:mobile/services/audio_route.dart';
@@ -12,6 +14,8 @@ class _FakeVadAudioRoute extends AudioRoute {
   void Function(String wavPath)? onUtterance;
   bool vadActive = false;
   int? lastSilenceDurationMs;
+  int starts = 0;
+  final List<bool> stops = [];
 
   @override
   void setVadCallbacks({
@@ -29,12 +33,14 @@ class _FakeVadAudioRoute extends AudioRoute {
     int preRollMs = 600,
   }) async {
     lastSilenceDurationMs = silenceDurationMs;
+    starts++;
     vadActive = true;
     return true;
   }
 
   @override
   Future<String?> stopVadListening({bool flush = false}) async {
+    stops.add(flush);
     vadActive = false;
     return null;
   }
@@ -86,6 +92,53 @@ void main() {
     await tester.pump(const Duration(seconds: 31));
   }
 
+  testWidgets('a mic tap discards buffered words instead of submitting them', (tester) async {
+    await start(VoiceListeningMode.tapToSpeak);
+    final sent = <String>[];
+    voice.onFinalUtterance = sent.add;
+    await voice.tapMic();
+    await channels.speechStatus('listening');
+    await channels.heard('omg', isFinal: true);
+
+    await voice.tapMic();
+    expect(sent, isEmpty);
+    expect(voice.partialTranscript, isEmpty);
+    await channels.speechStatus('listening');
+    await channels.heard('how many eggs do I need', isFinal: true);
+    await channels.speechStatus('done');
+    await tester.pump(const Duration(seconds: 2));
+    expect(sent, ['how many eggs do I need']);
+    await finish(tester);
+  });
+
+  testWidgets('a mic tap restarts VAD and rejects transcription from before the tap', (tester) async {
+    final audio = _FakeVadAudioRoute();
+    final oldTranscript = Completer<String?>();
+    voice = VoiceController(
+      audioRoute: audio,
+      whisperTranscriber: WhisperTranscriber(
+        transcribeOverride: (path) => path == 'old.wav'
+            ? oldTranscript.future
+            : Future.value('how many eggs do I need'),
+      ),
+    );
+    final sent = <String>[];
+    voice.onFinalUtterance = sent.add;
+    await voice.initialize(startListeningImmediately: true);
+    audio.onUtterance?.call('old.wav');
+    await tester.pump();
+    await voice.tapMic();
+    expect(audio.starts, 2);
+    expect(audio.stops, [false]);
+    oldTranscript.complete('omg');
+    await tester.pump();
+    expect(sent, isEmpty);
+    audio.onUtterance?.call('new.wav');
+    await tester.pump();
+    expect(sent, ['how many eggs do I need']);
+    await finish(tester);
+  });
+
   // #14
   testWidgets('after a mic tap that hears nothing, it asks again once', (
     tester,
@@ -96,13 +149,15 @@ void main() {
     expect(nothingHeard, 1);
     expect(stopped, 0);
 
-    // The app asks "…Could you say it again?" and listens when it's done.
+    // A follow-up question still waits for a tap in tap-to-speak mode.
     await voice.speak(
       "Sorry, I didn't catch that. Could you say it again?",
       voiceGuidanceEnabled: true,
     );
     await channels.ttsDone();
     await tester.pump(const Duration(milliseconds: 200));
+    expect(listens(), 1);
+    await voice.tapMic();
     expect(listens(), 2);
 
     // Nothing again: listening stops, with a hint instead of a second ask.
