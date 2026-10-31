@@ -18,6 +18,7 @@ import '../services/voice_intent_parser.dart';
 import '../theme/app_theme.dart';
 import '../theme/widgets.dart';
 import 'step_ingredient_sheet.dart';
+import 'vad_tuning_sheet.dart';
 
 /// Voice-first cooking workspace, built to be read at arm's length.
 ///
@@ -29,6 +30,7 @@ import 'step_ingredient_sheet.dart';
 class CookingScreen extends StatefulWidget {
   final Recipe recipe;
   final UserPreferences preferences;
+  final ValueChanged<UserPreferences>? onSavePreferences;
   final GlassesService glassesService;
   final AssistantService assistantService;
   final VoiceController voiceController;
@@ -62,6 +64,7 @@ class CookingScreen extends StatefulWidget {
     super.key,
     required this.recipe,
     required this.preferences,
+    this.onSavePreferences,
     required this.glassesService,
     required this.assistantService,
     required this.voiceController,
@@ -366,6 +369,10 @@ class _CookingScreenState extends State<CookingScreen>
   Future<void> _initializeVoiceAndAnnounce(String openingText) async {
     widget.voiceController.useGlassesMic =
         kGlassesMicEnabled && !widget.preferences.phoneMicOnly;
+    widget.voiceController.setVadTuning(
+      fixedFloor: widget.preferences.vadFixedFloor,
+      noiseMultiplier: widget.preferences.vadNoiseMultiplier,
+    );
     await widget.voiceController.configureVoice(
       voiceName: widget.preferences.ttsVoiceName,
       voiceLocale: widget.preferences.ttsVoiceLocale,
@@ -1260,6 +1267,19 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
+  void _openVadTuningSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => VadTuningSheet(
+        voiceController: widget.voiceController,
+        preferences: widget.preferences,
+        onSavePreferences: widget.onSavePreferences,
+      ),
+    );
+  }
+
   String _formatElapsed(int seconds) {
     final mins = seconds ~/ 60;
     final secs = seconds % 60;
@@ -1460,6 +1480,8 @@ class _CookingScreenState extends State<CookingScreen>
                   _toggleListeningMode();
                 case 'steps':
                   _openStepAndIngredientSheet();
+                case 'vad_tuning':
+                  _openVadTuningSheet();
               }
             },
             itemBuilder: (context) => [
@@ -1479,6 +1501,10 @@ class _CookingScreenState extends State<CookingScreen>
               const PopupMenuItem(
                 value: 'steps',
                 child: Text('Steps & ingredients'),
+              ),
+              const PopupMenuItem(
+                value: 'vad_tuning',
+                child: Text('Tune voice detection'),
               ),
             ],
           ),
@@ -2227,6 +2253,7 @@ class _CookingScreenState extends State<CookingScreen>
       button: true,
       label: _isPaused ? 'Resume session' : 'Talk to CookTogether',
       child: GestureDetector(
+        onLongPress: () => _openVadTuningSheet(),
         onTap: () async {
           if (_isPaused) {
             _togglePause(forcePause: false);

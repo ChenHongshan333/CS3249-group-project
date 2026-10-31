@@ -462,6 +462,68 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Voice Activity Detection (VAD)',
+                      style: textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Fixed Energy Floor',
+                          style: textTheme.bodyMedium,
+                        ),
+                        Text(
+                          _draft.vadFixedFloor.toStringAsFixed(3),
+                          style: textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: _draft.vadFixedFloor.clamp(0.003, 0.030),
+                      min: 0.003,
+                      max: 0.030,
+                      divisions: 27,
+                      label: _draft.vadFixedFloor.toStringAsFixed(3),
+                      onChanged: (v) => setState(
+                        () => _draft = _draft.copyWith(
+                          vadFixedFloor: double.parse(v.toStringAsFixed(3)),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Adaptive Multiplier',
+                          style: textTheme.bodyMedium,
+                        ),
+                        Text(
+                          '${_draft.vadNoiseMultiplier.toStringAsFixed(1)}x',
+                          style: textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: _draft.vadNoiseMultiplier.clamp(1.0, 3.5),
+                      min: 1.0,
+                      max: 3.5,
+                      divisions: 25,
+                      label: '${_draft.vadNoiseMultiplier.toStringAsFixed(1)}x',
+                      onChanged: (v) => setState(
+                        () => _draft = _draft.copyWith(
+                          vadNoiseMultiplier: double.parse(v.toStringAsFixed(1)),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
