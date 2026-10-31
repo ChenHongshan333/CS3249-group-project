@@ -99,6 +99,14 @@ class VoiceController extends ChangeNotifier {
   /// the model is downloading or in test environments.
   bool useWhisper = true;
 
+  /// Voice Activity Detection (VAD) fixed RMS energy floor (default 0.012).
+  double _vadFixedFloor = 0.012;
+  double get vadFixedFloor => _vadFixedFloor;
+
+  /// Voice Activity Detection (VAD) adaptive noise floor multiplier (default 2.2).
+  double _vadNoiseMultiplier = 2.2;
+  double get vadNoiseMultiplier => _vadNoiseMultiplier;
+
   /// True while the native 16 kHz VAD engine is actively recording for Whisper.
   bool _vadListening = false;
   bool get isUsingWhisper => _vadListening;
@@ -409,6 +417,37 @@ class VoiceController extends ChangeNotifier {
     }
   }
 
+  /// Updates the native VAD fixed floor and adaptive noise multiplier
+  /// thresholds immediately, notifying listeners and syncing with the native
+  /// recording engine.
+  void setVadTuning({double? fixedFloor, double? noiseMultiplier}) {
+    var changed = false;
+    if (fixedFloor != null && fixedFloor > 0 && fixedFloor != _vadFixedFloor) {
+      _vadFixedFloor = fixedFloor;
+      changed = true;
+    }
+    if (noiseMultiplier != null &&
+        noiseMultiplier > 0 &&
+        noiseMultiplier != _vadNoiseMultiplier) {
+      _vadNoiseMultiplier = noiseMultiplier;
+      changed = true;
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(
+        _audioRoute.setVadThresholds(
+          fixedFloor: _vadFixedFloor,
+          noiseMultiplier: _vadNoiseMultiplier,
+        ),
+      );
+    }
+  }
+
+  /// Resets VAD thresholds to defaults (0.012 fixed floor, 2.2x multiplier).
+  void resetVadTuning() {
+    setVadTuning(fixedFloor: 0.012, noiseMultiplier: 2.2);
+  }
+
   /// Records through the glasses' Bluetooth mic when they are connected, so
   /// the user doesn't have to talk to the phone. The link must be up before
   /// listening starts: the recognizer keeps the mic it started with.
@@ -597,6 +636,8 @@ class VoiceController extends ChangeNotifier {
         if (_vadListening) {
           unawaited(_audioRoute.startVadListening(
             silenceDurationMs: kWakeWordSilenceMs,
+            fixedFloor: _vadFixedFloor,
+            noiseMultiplier: _vadNoiseMultiplier,
           ));
         }
         notifyListeners();
@@ -845,6 +886,8 @@ class VoiceController extends ChangeNotifier {
             : kActiveListeningSilenceMs;
         final vadStarted = await _audioRoute.startVadListening(
           silenceDurationMs: silenceMs,
+          fixedFloor: _vadFixedFloor,
+          noiseMultiplier: _vadNoiseMultiplier,
         );
         if (generation != _listeningGeneration ||
             !_isSessionActive || _isPaused) {
@@ -1001,6 +1044,8 @@ class VoiceController extends ChangeNotifier {
           if (_vadListening) {
             unawaited(_audioRoute.startVadListening(
               silenceDurationMs: kActiveListeningSilenceMs,
+              fixedFloor: _vadFixedFloor,
+              noiseMultiplier: _vadNoiseMultiplier,
             ));
           }
         }
@@ -1046,6 +1091,8 @@ class VoiceController extends ChangeNotifier {
           if (_vadListening) {
             unawaited(_audioRoute.startVadListening(
               silenceDurationMs: kActiveListeningSilenceMs,
+              fixedFloor: _vadFixedFloor,
+              noiseMultiplier: _vadNoiseMultiplier,
             ));
           }
         }

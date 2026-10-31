@@ -31,6 +31,8 @@ class _FakeVadAudioRoute extends AudioRoute {
     int silenceDurationMs = 1000,
     int maxUtteranceMs = 12000,
     int preRollMs = 600,
+    double? fixedFloor,
+    double? noiseMultiplier,
   }) async {
     lastSilenceDurationMs = silenceDurationMs;
     starts++;
