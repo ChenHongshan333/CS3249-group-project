@@ -161,6 +161,10 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
         _history = savedHistory;
         _dishPhotos = savedPhotos;
       });
+      _voiceController.setVadTuning(
+        fixedFloor: savedPrefs.vadFixedFloor,
+        noiseMultiplier: savedPrefs.vadNoiseMultiplier,
+      );
     } catch (_) {}
     // Wake the backend now, so it's ready by the time the cook asks.
     _assistantService.warmUp();
@@ -187,6 +191,20 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
     ));
     _showToast('Preferences saved');
     _assistantService.warmUp();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kPrefsKey, updated.encode());
+    } catch (_) {}
+  }
+
+  /// Updates user preferences in state and storage without navigating away,
+  /// used for in-session tuning during cooking.
+  Future<void> _updatePreferences(UserPreferences updated) async {
+    setState(() => _preferences = updated);
+    _voiceController.setVadTuning(
+      fixedFloor: updated.vadFixedFloor,
+      noiseMultiplier: updated.vadNoiseMultiplier,
+    );
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kPrefsKey, updated.encode());
@@ -392,6 +410,7 @@ class _CookTogetherAppState extends State<CookTogetherApp> {
       isVisible: visible,
       recipe: recipe,
       preferences: _preferences,
+      onSavePreferences: _updatePreferences,
       glassesService: _glassesService,
       assistantService: _assistantService,
       voiceController: _voiceController,

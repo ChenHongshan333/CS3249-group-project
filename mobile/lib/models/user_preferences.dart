@@ -40,6 +40,12 @@ class UserPreferences {
   /// Speech rate multiplier for spoken assistant voice (default 0.48).
   final double ttsRate;
 
+  /// Voice Activity Detection (VAD) fixed RMS energy floor (default 0.012).
+  final double vadFixedFloor;
+
+  /// Voice Activity Detection (VAD) adaptive noise floor multiplier (default 2.2).
+  final double vadNoiseMultiplier;
+
   const UserPreferences({
     this.voiceGuidance = true,
     this.showCaptions = true,
@@ -53,6 +59,8 @@ class UserPreferences {
     this.ttsVoiceLocale = 'en-US',
     this.ttsPitch = 1.0,
     this.ttsRate = 0.48,
+    this.vadFixedFloor = 0.012,
+    this.vadNoiseMultiplier = 2.2,
   });
 
   UserPreferences copyWith({
@@ -68,6 +76,8 @@ class UserPreferences {
     String? ttsVoiceLocale,
     double? ttsPitch,
     double? ttsRate,
+    double? vadFixedFloor,
+    double? vadNoiseMultiplier,
   }) {
     return UserPreferences(
       voiceGuidance: voiceGuidance ?? this.voiceGuidance,
@@ -83,6 +93,8 @@ class UserPreferences {
       ttsVoiceLocale: ttsVoiceLocale ?? this.ttsVoiceLocale,
       ttsPitch: ttsPitch ?? this.ttsPitch,
       ttsRate: ttsRate ?? this.ttsRate,
+      vadFixedFloor: vadFixedFloor ?? this.vadFixedFloor,
+      vadNoiseMultiplier: vadNoiseMultiplier ?? this.vadNoiseMultiplier,
     );
   }
 
@@ -99,6 +111,8 @@ class UserPreferences {
     'ttsVoiceLocale': ttsVoiceLocale,
     'ttsPitch': ttsPitch,
     'ttsRate': ttsRate,
+    'vadFixedFloor': vadFixedFloor,
+    'vadNoiseMultiplier': vadNoiseMultiplier,
   };
 
   factory UserPreferences.fromJson(Map<String, dynamic> json) {
@@ -115,6 +129,9 @@ class UserPreferences {
       ttsVoiceLocale: json['ttsVoiceLocale'] as String? ?? 'en-US',
       ttsPitch: (json['ttsPitch'] as num?)?.toDouble() ?? 1.0,
       ttsRate: (json['ttsRate'] as num?)?.toDouble() ?? 0.48,
+      vadFixedFloor: (json['vadFixedFloor'] as num?)?.toDouble() ?? 0.012,
+      vadNoiseMultiplier:
+          (json['vadNoiseMultiplier'] as num?)?.toDouble() ?? 2.2,
     );
   }
 

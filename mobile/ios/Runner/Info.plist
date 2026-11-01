@@ -22,10 +22,53 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>cookalong</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>fb-viewapp</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>MWDAT</key>
+	<dict>
+		<key>Analytics</key>
+		<dict>
+			<key>OptOut</key>
+			<true/>
+		</dict>
+		<key>AppLinkURLScheme</key>
+		<string>cookalong://</string>
+		<key>ClientToken</key>
+		<string>developer-mode-placeholder</string>
+		<key>MetaAppID</key>
+		<string>0</string>
+		<key>TeamID</key>
+		<string>$(DEVELOPMENT_TEAM)</string>
+	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>CookTogether connects to your Meta glasses for hands-free vision and audio.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_bonjour._tcp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>CookTogether uses camera access to simulate Meta glasses vision or check cooking steps.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>CookTogether finds and connects to your Meta glasses over Wi-Fi to take step photos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>CookTogether uses the microphone for hands-free voice commands and cooking questions.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>CookTogether transcribes your voice commands while you cook.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -49,10 +92,20 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>external-accessory</string>
+		<string>bluetooth-peripheral</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<key>UISupportedExternalAccessoryProtocols</key>
+	<array>
+		<string>com.meta.ar.wearable</string>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -63,64 +116,6 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>CookTogether uses the microphone for hands-free voice commands and cooking questions.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>CookTogether transcribes your voice commands while you cook.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>CookTogether uses camera access to simulate Meta glasses vision or check cooking steps.</string>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>CookTogether connects to your Meta glasses for hands-free vision and audio.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>CookTogether finds and connects to your Meta glasses over Wi-Fi to take step photos.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_bonjour._tcp</string>
-	</array>
-	<!-- Meta Wearables Device Access Toolkit (meta_wearables_dat_flutter). -->
-	<key>MWDAT</key>
-	<dict>
-		<!-- Must end with "://". Meta AI opens it to finish registration. -->
-		<key>AppLinkURLScheme</key>
-		<string>cookalong://</string>
-		<!-- "0" and the placeholder token work in Developer Mode. -->
-		<key>MetaAppID</key>
-		<string>0</string>
-		<key>ClientToken</key>
-		<string>developer-mode-placeholder</string>
-		<key>TeamID</key>
-		<string>$(DEVELOPMENT_TEAM)</string>
-		<!-- Don't send Meta usage analytics from study sessions. -->
-		<key>Analytics</key>
-		<dict>
-			<key>OptOut</key>
-			<true/>
-		</dict>
-	</dict>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>cookalong</string>
-			</array>
-		</dict>
-	</array>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>fb-viewapp</string>
-	</array>
-	<key>UISupportedExternalAccessoryProtocols</key>
-	<array>
-		<string>com.meta.ar.wearable</string>
-	</array>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>bluetooth-central</string>
-		<string>external-accessory</string>
-		<string>bluetooth-peripheral</string>
-		<string>processing</string>
 	</array>
 </dict>
 </plist>

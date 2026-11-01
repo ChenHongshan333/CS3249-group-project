@@ -16,6 +16,8 @@ import UIKit
   private var vadSilenceDurationMs = 850
   private var vadMaxUtteranceSamples = 16000 * 12
   private var vadPreRollMaxSamples = 5600 // 350 ms at 16 kHz
+  private var vadFixedFloor: Float = 0.012
+  private var vadNoiseMultiplier: Float = 2.2
   private var vadPendingSamples: [Int16] = []
   private var vadPreRollSamples: [Int16] = []
   private var vadSpeechSamples: [Int16] = []
@@ -62,15 +64,32 @@ import UIKit
         self.stopVadListening(flush: false)
         self.clearAudioRoute()
         result(nil)
+      case "setVadThresholds":
+        let args = call.arguments as? [String: Any]
+        let floor = args?["fixedFloor"] as? Double
+        let mult = args?["noiseMultiplier"] as? Double
+        self.vadQueue.sync {
+          if let f = floor, f > 0.0 {
+            self.vadFixedFloor = Float(f)
+          }
+          if let m = mult, m > 0.0 {
+            self.vadNoiseMultiplier = Float(m)
+          }
+        }
+        result(nil)
       case "startVadListening":
         let args = call.arguments as? [String: Any]
         let silenceMs = args?["silenceDurationMs"] as? Int ?? 850
         let maxMs = args?["maxUtteranceMs"] as? Int ?? 12000
         let preRollMs = args?["preRollMs"] as? Int ?? 350
+        let floor = args?["fixedFloor"] as? Double
+        let mult = args?["noiseMultiplier"] as? Double
         self.startVadListening(
           silenceDurationMs: silenceMs,
           maxUtteranceMs: maxMs,
           preRollMs: preRollMs,
+          fixedFloor: floor.map { Float($0) },
+          noiseMultiplier: mult.map { Float($0) },
           result: result
         )
       case "stopVadListening":
@@ -157,6 +176,8 @@ import UIKit
     silenceDurationMs: Int,
     maxUtteranceMs: Int,
     preRollMs: Int,
+    fixedFloor: Float? = nil,
+    noiseMultiplier: Float? = nil,
     result: @escaping FlutterResult
   ) {
     let session = AVAudioSession.sharedInstance()
@@ -165,7 +186,9 @@ import UIKit
       let ok = startVadEngine(
         silenceDurationMs: silenceDurationMs,
         maxUtteranceMs: maxUtteranceMs,
-        preRollMs: preRollMs
+        preRollMs: preRollMs,
+        fixedFloor: fixedFloor,
+        noiseMultiplier: noiseMultiplier
       )
       result(ok)
     case .undetermined:
@@ -178,7 +201,9 @@ import UIKit
           let ok = self.startVadEngine(
             silenceDurationMs: silenceDurationMs,
             maxUtteranceMs: maxUtteranceMs,
-            preRollMs: preRollMs
+            preRollMs: preRollMs,
+            fixedFloor: fixedFloor,
+            noiseMultiplier: noiseMultiplier
           )
           result(ok)
         }
@@ -193,13 +218,17 @@ import UIKit
   private func startVadEngine(
     silenceDurationMs: Int,
     maxUtteranceMs: Int,
-    preRollMs: Int
+    preRollMs: Int,
+    fixedFloor: Float? = nil,
+    noiseMultiplier: Float? = nil
   ) -> Bool {
     if let existing = vadEngine, existing.isRunning {
       vadQueue.sync {
         self.vadSilenceDurationMs = max(400, silenceDurationMs)
         self.vadMaxUtteranceSamples = max(16000 * 3, (maxUtteranceMs * 16))
         self.vadPreRollMaxSamples = max(3200, (preRollMs * 16))
+        if let f = fixedFloor, f > 0.0 { self.vadFixedFloor = f }
+        if let m = noiseMultiplier, m > 0.0 { self.vadNoiseMultiplier = m }
       }
       vadListening = true
       return true
@@ -209,6 +238,8 @@ import UIKit
       self.vadSilenceDurationMs = max(400, silenceDurationMs)
       self.vadMaxUtteranceSamples = max(16000 * 3, (maxUtteranceMs * 16))
       self.vadPreRollMaxSamples = max(3200, (preRollMs * 16))
+      if let f = fixedFloor, f > 0.0 { self.vadFixedFloor = f }
+      if let m = noiseMultiplier, m > 0.0 { self.vadNoiseMultiplier = m }
       self.resetVadStateLocked(keepPreRoll: true)
     }
 
@@ -347,8 +378,10 @@ import UIKit
       }
       let rms = sqrt(sumSq / Float(frameSize))
 
-      let startThreshold = max(Float(0.012), vadNoiseFloor * 2.2)
-      let continueThreshold = max(Float(0.008), vadNoiseFloor * 1.5)
+      let startThreshold = max(vadFixedFloor, vadNoiseFloor * vadNoiseMultiplier)
+      let continueFloor = max(Float(0.003), vadFixedFloor * (0.008 / 0.012))
+      let continueMult = max(Float(1.1), vadNoiseMultiplier * (1.5 / 2.2))
+      let continueThreshold = max(continueFloor, vadNoiseFloor * continueMult)
 
       if !vadInSpeech {
         vadPreRollSamples.append(contentsOf: frame)
@@ -389,7 +422,8 @@ import UIKit
 
         let silenceMs = vadSilenceFrames * 20
         if silenceMs >= vadSilenceDurationMs || vadSpeechSamples.count >= vadMaxUtteranceSamples {
-          let isValidSpeech = vadActiveSpeechFrames >= 4 && vadPeakRms >= 0.013
+          let minPeak = max(Float(0.004), vadFixedFloor * (0.013 / 0.012))
+          let isValidSpeech = vadActiveSpeechFrames >= 4 && vadPeakRms >= minPeak
           let captured = vadSpeechSamples
           resetVadStateLocked(keepPreRoll: false)
           if isValidSpeech, let wavPath = writeWavFileLocked(samples: captured) {

@@ -42,6 +42,8 @@ class MainActivity : FlutterFragmentActivity() {
     private var vadSilenceDurationMs = 850
     private var vadMaxUtteranceSamples = 16000 * 12
     private var vadPreRollMaxSamples = 5600 // 350 ms at 16 kHz
+    private var vadFixedFloor = 0.012f
+    private var vadNoiseMultiplier = 2.2f
     private val vadPreRollSamples = ArrayList<Short>(12000)
     private val vadSpeechSamples = ArrayList<Short>(16000 * 12)
     private var vadInSpeech = false
@@ -70,12 +72,24 @@ class MainActivity : FlutterFragmentActivity() {
                     audio.clearCommunicationDevice()
                     result.success(null)
                 }
+                "setVadThresholds" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val floor = (args?.get("fixedFloor") as? Number)?.toFloat()
+                    val mult = (args?.get("noiseMultiplier") as? Number)?.toFloat()
+                    synchronized(vadLock) {
+                        if (floor != null && floor > 0f) vadFixedFloor = floor
+                        if (mult != null && mult > 0f) vadNoiseMultiplier = mult
+                    }
+                    result.success(null)
+                }
                 "startVadListening" -> {
                     val args = call.arguments as? Map<*, *>
                     val silenceMs = (args?.get("silenceDurationMs") as? Number)?.toInt() ?: 850
                     val maxMs = (args?.get("maxUtteranceMs") as? Number)?.toInt() ?: 12000
                     val preRollMs = (args?.get("preRollMs") as? Number)?.toInt() ?: 350
-                    result.success(startVadListening(silenceMs, maxMs, preRollMs))
+                    val floor = (args?.get("fixedFloor") as? Number)?.toFloat()
+                    val mult = (args?.get("noiseMultiplier") as? Number)?.toFloat()
+                    result.success(startVadListening(silenceMs, maxMs, preRollMs, floor, mult))
                 }
                 "stopVadListening" -> {
                     val args = call.arguments as? Map<*, *>
@@ -185,7 +199,9 @@ class MainActivity : FlutterFragmentActivity() {
     private fun startVadListening(
         silenceDurationMs: Int,
         maxUtteranceMs: Int,
-        preRollMs: Int
+        preRollMs: Int,
+        fixedFloor: Float? = null,
+        noiseMultiplier: Float? = null,
     ): Boolean {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
@@ -196,6 +212,8 @@ class MainActivity : FlutterFragmentActivity() {
             vadSilenceDurationMs = max(400, silenceDurationMs)
             vadMaxUtteranceSamples = max(16000 * 3, maxUtteranceMs * 16)
             vadPreRollMaxSamples = max(3200, preRollMs * 16)
+            if (fixedFloor != null && fixedFloor > 0f) vadFixedFloor = fixedFloor
+            if (noiseMultiplier != null && noiseMultiplier > 0f) vadNoiseMultiplier = noiseMultiplier
             if (vadListening && vadThread?.isAlive == true) {
                 return true
             }
@@ -300,8 +318,10 @@ class MainActivity : FlutterFragmentActivity() {
                 sumSq += norm * norm
             }
             val rms = sqrt(sumSq / frame.size.toFloat())
-            val startThreshold = max(0.012f, vadNoiseFloor * 2.2f)
-            val continueThreshold = max(0.008f, vadNoiseFloor * 1.5f)
+            val startThreshold = max(vadFixedFloor, vadNoiseFloor * vadNoiseMultiplier)
+            val continueFloor = max(0.003f, vadFixedFloor * (0.008f / 0.012f))
+            val continueMult = max(1.1f, vadNoiseMultiplier * (1.5f / 2.2f))
+            val continueThreshold = max(continueFloor, vadNoiseFloor * continueMult)
 
             if (!vadInSpeech) {
                 for (s in frame) vadPreRollSamples.add(s)
@@ -336,7 +356,8 @@ class MainActivity : FlutterFragmentActivity() {
                 }
                 val silenceMs = vadSilenceFrames * 20
                 if (silenceMs >= vadSilenceDurationMs || vadSpeechSamples.size >= vadMaxUtteranceSamples) {
-                    val isValid = vadActiveSpeechFrames >= 4 && vadPeakRms >= 0.013f
+                    val minPeak = max(0.004f, vadFixedFloor * (0.013f / 0.012f))
+                    val isValid = vadActiveSpeechFrames >= 4 && vadPeakRms >= minPeak
                     val captured = if (isValid) vadSpeechSamples.toShortArray() else null
                     resetVadStateLocked(keepPreRoll = false)
                     if (captured != null) {

@@ -54,6 +54,24 @@ class AudioRoute {
     }
   }
 
+  /// Dynamically updates the native energy-based VAD thresholds live during
+  /// an ongoing or idle recording session.
+  Future<void> setVadThresholds({
+    required double fixedFloor,
+    required double noiseMultiplier,
+  }) async {
+    try {
+      await _channel.invokeMethod<void>('setVadThresholds', <String, dynamic>{
+        'fixedFloor': fixedFloor,
+        'noiseMultiplier': noiseMultiplier,
+      });
+    } on PlatformException {
+      // Platform channels not ready or unimplemented on stub platforms.
+    } on MissingPluginException {
+      // Platform channels not supported in unit tests without mocks.
+    }
+  }
+
   /// Starts continuous 16 kHz mono PCM recording with a pre-roll ring buffer
   /// and energy-based Voice Activity Detection (VAD). Emits `onVadSpeechStart`
   /// when speech begins and `onVadUtterance` with a `.wav` file path after
@@ -62,14 +80,19 @@ class AudioRoute {
     int silenceDurationMs = 850,
     int maxUtteranceMs = 12000,
     int preRollMs = 350,
+    double? fixedFloor,
+    double? noiseMultiplier,
   }) async {
     try {
+      final args = <String, dynamic>{
+        'silenceDurationMs': silenceDurationMs,
+        'maxUtteranceMs': maxUtteranceMs,
+        'preRollMs': preRollMs,
+      };
+      if (fixedFloor != null) args['fixedFloor'] = fixedFloor;
+      if (noiseMultiplier != null) args['noiseMultiplier'] = noiseMultiplier;
       final started = await _channel
-          .invokeMethod<bool>('startVadListening', <String, dynamic>{
-            'silenceDurationMs': silenceDurationMs,
-            'maxUtteranceMs': maxUtteranceMs,
-            'preRollMs': preRollMs,
-          })
+          .invokeMethod<bool>('startVadListening', args)
           .timeout(const Duration(seconds: 4));
       return started ?? false;
     } on TimeoutException {
