@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:meta_wearables_dat_flutter/meta_wearables_dat_flutter.dart';
 
 import '../glasses/glasses_service.dart';
 import '../models/conversation.dart';
 import '../models/user_preferences.dart';
+import '../services/reply_time_store.dart';
 import '../services/voice_controller.dart'
     show VoiceController, kGlassesMicEnabled;
 import '../theme/app_theme.dart';
@@ -27,6 +31,9 @@ class ProfileScreen extends StatefulWidget {
   final GlassesService? glassesService;
   final ValueChanged<String>? onShowToast;
 
+  /// Optional reply-time store override for tests.
+  final ReplyTimeStore? replyTimeStore;
+
   const ProfileScreen({
     super.key,
     required this.preferences,
@@ -38,6 +45,7 @@ class ProfileScreen extends StatefulWidget {
     this.voiceController,
     this.glassesService,
     this.onShowToast,
+    this.replyTimeStore,
   });
 
   @override
@@ -55,6 +63,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late final TextEditingController _serverUrlController;
   List<Map<String, String>> _availableVoices = [];
   bool _loadingVoices = false;
+  ReplyTimeSummary _replyTimes = const ReplyTimeSummary();
+
+  ReplyTimeStore get _replyTimeStore =>
+      widget.replyTimeStore ?? ReplyTimeStore.instance;
 
   @override
   void initState() {
@@ -63,7 +75,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _serverUrlController = TextEditingController(
       text: widget.preferences.serverBaseUrl,
     );
+    _replyTimeStore.version.addListener(_refreshReplyTimes);
+    unawaited(_refreshReplyTimes());
     _loadVoices();
+  }
+
+  Future<void> _refreshReplyTimes() async {
+    final summary = await _replyTimeStore.loadSummary();
+    if (mounted) setState(() => _replyTimes = summary);
+  }
+
+  Future<void> _copyReplyTimes() async {
+    await Clipboard.setData(ClipboardData(text: _replyTimes.toExportJson()));
+    widget.onShowToast?.call('Reply times copied');
+  }
+
+  Future<void> _resetReplyTimes() async {
+    await _replyTimeStore.reset();
+    await _refreshReplyTimes();
+    widget.onShowToast?.call('Reply times reset');
   }
 
   Future<void> _loadVoices() async {
@@ -119,6 +149,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
+    _replyTimeStore.version.removeListener(_refreshReplyTimes);
     _serverUrlController.dispose();
     super.dispose();
   }
@@ -393,6 +424,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   childrenPadding: const EdgeInsets.only(bottom: 8),
                   title: Text('Developer', style: textTheme.titleMedium),
                   children: [
+                    _ReplyTimesSection(
+                      summary: _replyTimes,
+                      onCopyJson: _copyReplyTimes,
+                      onReset: _resetReplyTimes,
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
                       controller: _serverUrlController,
                       keyboardType: TextInputType.url,
@@ -556,6 +593,111 @@ class _SwitchRow extends StatelessWidget {
       title: Text(title, style: Theme.of(context).textTheme.bodyLarge),
       value: value,
       onChanged: onChanged,
+    );
+  }
+}
+
+class _ReplyTimesSection extends StatelessWidget {
+  final ReplyTimeSummary summary;
+  final VoidCallback onCopyJson;
+  final VoidCallback onReset;
+
+  const _ReplyTimesSection({
+    required this.summary,
+    required this.onCopyJson,
+    required this.onReset,
+  });
+
+  String _formatMetric(int? medianMs, int count) {
+    if (count == 0 || medianMs == null) return 'No samples yet';
+    final unit = count == 1 ? 'sample' : 'samples';
+    return '$medianMs ms · $count $unit';
+  }
+
+  String _formatCheckMetric() {
+    final count = summary.checkStepCount;
+    final llm = summary.checkStepLlmMedianMs;
+    final total = summary.checkStepTotalMedianMs;
+    if (count == 0 || llm == null || total == null) return 'No samples yet';
+    final unit = count == 1 ? 'sample' : 'samples';
+    return 'Vision LLM $llm ms · E2E $total ms · $count $unit';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final hasAny =
+        summary.llmAskCount > 0 ||
+        summary.localActionCount > 0 ||
+        summary.checkStepCount > 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Reply times (voice medians)',
+          style: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        _ReplyMetricRow(
+          label: 'LLM answers (/ask)',
+          value: _formatMetric(summary.llmAskMedianMs, summary.llmAskCount),
+        ),
+        const SizedBox(height: 4),
+        _ReplyMetricRow(
+          label: 'Acting on request (local)',
+          value: _formatMetric(
+            summary.localActionMedianMs,
+            summary.localActionCount,
+          ),
+        ),
+        const SizedBox(height: 4),
+        _ReplyMetricRow(
+          label: 'Visual checks (/check-step)',
+          value: _formatCheckMetric(),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton(
+              onPressed: hasAny ? onCopyJson : null,
+              child: const Text('Copy JSON'),
+            ),
+            OutlinedButton(
+              onPressed: hasAny ? onReset : null,
+              child: const Text('Reset reply times'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ReplyMetricRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ReplyMetricRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: Text(label, style: textTheme.bodyMedium)),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
     );
   }
 }

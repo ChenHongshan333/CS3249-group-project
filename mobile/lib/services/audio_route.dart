@@ -17,6 +17,7 @@ class AudioRoute {
 
   static void Function()? _onVadSpeechStart;
   static void Function(String wavPath)? _onVadUtterance;
+  static int? _lastVadSilenceMs;
   static bool _handlerRegistered = false;
 
   /// Registers callbacks invoked by the native 16 kHz VAD recorder when voice
@@ -33,6 +34,14 @@ class AudioRoute {
     }
   }
 
+  /// Returns and clears the trailing VAD silence duration (in milliseconds)
+  /// reported by the native engine for the most recent `onVadUtterance`.
+  int? consumeLastVadSilenceMs() {
+    final ms = _lastVadSilenceMs;
+    _lastVadSilenceMs = null;
+    return ms;
+  }
+
   static Future<dynamic> _handleNativeCall(MethodCall call) async {
     switch (call.method) {
       case 'onVadSpeechStart':
@@ -42,10 +51,12 @@ class AudioRoute {
         final args = call.arguments;
         if (args is Map) {
           final path = args['path'] as String?;
+          _lastVadSilenceMs = (args['silenceMs'] as num?)?.toInt();
           if (path != null && path.isNotEmpty) {
             _onVadUtterance?.call(path);
           }
         } else if (args is String && args.isNotEmpty) {
+          _lastVadSilenceMs = null;
           _onVadUtterance?.call(args);
         }
         return null;

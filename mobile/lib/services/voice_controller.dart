@@ -23,6 +23,27 @@ enum MicTapResult {
   unavailable,
 }
 
+/// Timing metadata captured for a finalized voice utterance.
+class VoiceUtteranceTiming {
+  final DateTime speechEndedAt;
+  final DateTime transcriptReadyAt;
+  final String source;
+  final int silenceWindowMs;
+
+  const VoiceUtteranceTiming({
+    required this.speechEndedAt,
+    required this.transcriptReadyAt,
+    required this.source,
+    required this.silenceWindowMs,
+  });
+
+  /// Milliseconds between end of user speech and transcript availability.
+  int get sttMs => transcriptReadyAt
+      .difference(speechEndedAt)
+      .inMilliseconds
+      .clamp(0, 600000);
+}
+
 /// Whether speech can be recorded through the glasses' mic.
 const bool kGlassesMicEnabled = true;
 
@@ -74,15 +95,18 @@ class VoiceController extends ChangeNotifier {
     FlutterTts? tts,
     WhisperTranscriber? whisperTranscriber,
     AudioRoute? audioRoute,
+    DateTime Function()? now,
   }) : _speech = speech ?? SpeechToText(),
        _tts = tts ?? FlutterTts(),
        _whisper = whisperTranscriber ?? WhisperTranscriber(),
-       _audioRoute = audioRoute ?? const AudioRoute();
+       _audioRoute = audioRoute ?? const AudioRoute(),
+       _now = now ?? DateTime.now;
 
   final SpeechToText _speech;
   final FlutterTts _tts;
   final WhisperTranscriber _whisper;
   final AudioRoute _audioRoute;
+  final DateTime Function() _now;
 
   String? _ttsVoiceName;
   String? _ttsVoiceLocale;
@@ -185,7 +209,19 @@ class VoiceController extends ChangeNotifier {
   String _partialTranscript = '';
   String? _statusHint;
 
+  int _activeVadSilenceMs = kActiveListeningSilenceMs;
+  DateTime? _lastSpeechResultAt;
+  VoiceUtteranceTiming? _pendingUtteranceTiming;
+
   void Function(String transcript)? onFinalUtterance;
+
+  /// Returns and clears timing metadata for the utterance just delivered to
+  /// [onFinalUtterance].
+  VoiceUtteranceTiming? consumeLastUtteranceTiming() {
+    final timing = _pendingUtteranceTiming;
+    _pendingUtteranceTiming = null;
+    return timing;
+  }
 
   /// A listen the user expected to be heard in heard nothing. Called once;
   /// the next time, listening stops instead.
@@ -596,7 +632,11 @@ class VoiceController extends ChangeNotifier {
     _sendSentence();
   }
 
-  void _sendSentence() {
+  void _sendSentence({
+    DateTime? speechEndedAt,
+    String source = 'speech_to_text',
+    int silenceWindowMs = 0,
+  }) {
     _sentenceGapTimer?.cancel();
     _sentenceGapTimer = null;
     _awakeTimeoutTimer?.cancel();
@@ -610,7 +650,17 @@ class VoiceController extends ChangeNotifier {
     _sentence = '';
     _partialTranscript = '';
     _isAwake = false;
+    final lastSpeechAt = _lastSpeechResultAt;
+    _lastSpeechResultAt = null;
     if (words.isEmpty) return;
+    final readyAt = _now();
+    final endedAt = speechEndedAt ?? lastSpeechAt ?? readyAt;
+    _pendingUtteranceTiming = VoiceUtteranceTiming(
+      speechEndedAt: endedAt.isAfter(readyAt) ? readyAt : endedAt,
+      transcriptReadyAt: readyAt,
+      source: source,
+      silenceWindowMs: silenceWindowMs,
+    );
     stopListening();
     notifyListeners();
     onFinalUtterance?.call(words);
@@ -634,6 +684,7 @@ class VoiceController extends ChangeNotifier {
           _statusHint = _withMicName('Say "Hey Cooky" or tap the mic');
         }
         if (_vadListening) {
+          _activeVadSilenceMs = kWakeWordSilenceMs;
           unawaited(_audioRoute.startVadListening(
             silenceDurationMs: kWakeWordSilenceMs,
             fixedFloor: _vadFixedFloor,
@@ -659,6 +710,8 @@ class VoiceController extends ChangeNotifier {
     _awakeTimeoutTimer?.cancel();
     _awakeTimeoutTimer = null;
     _sentence = '';
+    _lastSpeechResultAt = null;
+    _pendingUtteranceTiming = null;
     _isAwake = false;
   }
 
@@ -884,6 +937,7 @@ class VoiceController extends ChangeNotifier {
                 _sentence.isEmpty)
             ? kWakeWordSilenceMs
             : kActiveListeningSilenceMs;
+        _activeVadSilenceMs = silenceMs;
         final vadStarted = await _audioRoute.startVadListening(
           silenceDurationMs: silenceMs,
           fixedFloor: _vadFixedFloor,
@@ -1015,6 +1069,12 @@ class VoiceController extends ChangeNotifier {
   }
 
   Future<void> _onVadUtterance(String wavPath) async {
+    final vadFiredAt = _now();
+    final silenceMs = _audioRoute.consumeLastVadSilenceMs();
+    final effectiveSilenceMs = (silenceMs ?? _activeVadSilenceMs).clamp(0, 12000);
+    final speechEndedAt = vadFiredAt.subtract(
+      Duration(milliseconds: effectiveSilenceMs),
+    );
     final generation = _listeningGeneration;
     if (!_isSessionActive || _isPaused || !_vadListening) {
       unawaited(_whisper.transcribeFile(wavPath));
@@ -1028,10 +1088,18 @@ class VoiceController extends ChangeNotifier {
       return;
     }
     if (text == null || text.trim().isEmpty) return;
-    _onWhisperRecognizedWords(text.trim());
+    _onWhisperRecognizedWords(
+      text.trim(),
+      speechEndedAt: speechEndedAt,
+      silenceWindowMs: effectiveSilenceMs,
+    );
   }
 
-  void _onWhisperRecognizedWords(String rawWords) {
+  void _onWhisperRecognizedWords(
+    String rawWords, {
+    DateTime? speechEndedAt,
+    int? silenceWindowMs,
+  }) {
     if (rawWords.isEmpty) return;
 
     var commandWords = rawWords;
@@ -1042,6 +1110,7 @@ class VoiceController extends ChangeNotifier {
           _isAwake = true;
           _statusHint = _withMicName('Listening… speak now');
           if (_vadListening) {
+            _activeVadSilenceMs = kActiveListeningSilenceMs;
             unawaited(_audioRoute.startVadListening(
               silenceDurationMs: kActiveListeningSilenceMs,
               fixedFloor: _vadFixedFloor,
@@ -1072,7 +1141,11 @@ class VoiceController extends ChangeNotifier {
     _fastFailures = 0;
     _sentence = _sentence.isEmpty ? commandWords : '$_sentence $commandWords';
     _partialTranscript = '';
-    _sendSentence();
+    _sendSentence(
+      speechEndedAt: speechEndedAt,
+      source: 'vad_whisper',
+      silenceWindowMs: silenceWindowMs ?? _activeVadSilenceMs,
+    );
   }
 
   void _onSpeechResult(SpeechRecognitionResult result) {
@@ -1089,6 +1162,7 @@ class VoiceController extends ChangeNotifier {
           _isAwake = true;
           _statusHint = _withMicName('Listening… speak now');
           if (_vadListening) {
+            _activeVadSilenceMs = kActiveListeningSilenceMs;
             unawaited(_audioRoute.startVadListening(
               silenceDurationMs: kActiveListeningSilenceMs,
               fixedFloor: _vadFixedFloor,
@@ -1115,8 +1189,11 @@ class VoiceController extends ChangeNotifier {
     final changed = commandWords != _partialTranscript.trim();
     _partialTranscript = commandWords;
     if (changed) {
+      _lastSpeechResultAt = _now();
       _sentenceGapTimer?.cancel();
       _sentenceGapTimer = Timer(_sentenceGap, _finishSentence);
+    } else if (result.finalResult && _lastSpeechResultAt == null) {
+      _lastSpeechResultAt = _now();
     }
     notifyListeners();
     if (result.finalResult) _keepHeardWords();

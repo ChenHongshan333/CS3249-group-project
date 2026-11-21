@@ -188,6 +188,15 @@ abstract class AssistantService {
   Future<void> warmUp();
 }
 
+/// Identifies whether an [AssistantService] is running in local demo mode.
+extension AssistantServiceMode on AssistantService {
+  bool get isMockMode => switch (this) {
+    MockAssistantService() => true,
+    HttpAssistantService(:final isMockMode) => isMockMode,
+    _ => false,
+  };
+}
+
 /// Smart context-aware local implementation of [AssistantService] that
 /// processes step instructions, cooking tips, and Meta glasses POV snapshots.
 class MockAssistantService implements AssistantService {
@@ -461,6 +470,9 @@ class HttpAssistantService implements AssistantService {
   http.Client get _httpClient => _client ??= http.Client();
 
   String get _cleanBaseUrl => baseUrlProvider().trim().replaceAll(RegExp(r'/+$'), '');
+
+  /// True when no backend URL is configured and requests fall back to demo replies.
+  bool get isMockMode => _cleanBaseUrl.isEmpty;
 
   // The wording follows docs/api.md, "Errors".
   static const unreachableReply =

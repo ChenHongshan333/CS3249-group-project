@@ -309,6 +309,7 @@ class MainActivity : FlutterFragmentActivity() {
     private fun processVadFrame(frame: ShortArray) {
         var notifyStart = false
         var finishedWavPath: String? = null
+        var finishedSilenceMs = 0
 
         synchronized(vadLock) {
             if (!vadListening) return
@@ -362,6 +363,7 @@ class MainActivity : FlutterFragmentActivity() {
                     resetVadStateLocked(keepPreRoll = false)
                     if (captured != null) {
                         finishedWavPath = writeWavFileLocked(captured)
+                        finishedSilenceMs = silenceMs
                     }
                 }
             }
@@ -371,7 +373,12 @@ class MainActivity : FlutterFragmentActivity() {
             handler.post { audioRouteChannel?.invokeMethod("onVadSpeechStart", null) }
         }
         finishedWavPath?.let { path ->
-            handler.post { audioRouteChannel?.invokeMethod("onVadUtterance", mapOf("path" to path)) }
+            handler.post {
+                audioRouteChannel?.invokeMethod(
+                    "onVadUtterance",
+                    mapOf("path" to path, "silenceMs" to finishedSilenceMs)
+                )
+            }
         }
     }
 

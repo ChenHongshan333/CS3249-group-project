@@ -430,7 +430,7 @@ import UIKit
             DispatchQueue.main.async { [weak self] in
               self?.audioRouteChannel?.invokeMethod(
                 "onVadUtterance",
-                arguments: ["path": wavPath]
+                arguments: ["path": wavPath, "silenceMs": silenceMs]
               )
             }
           }

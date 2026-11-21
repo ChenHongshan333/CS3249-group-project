@@ -12,6 +12,7 @@ import '../models/recipe.dart';
 import '../models/user_preferences.dart';
 import '../services/assistant_service.dart';
 import '../services/cue_sounds.dart';
+import '../services/reply_time_store.dart';
 import '../services/step_adapter.dart';
 import '../services/voice_controller.dart';
 import '../services/voice_intent_parser.dart';
@@ -60,6 +61,9 @@ class CookingScreen extends StatefulWidget {
   /// False while the session is paused and left. Coming back resumes it.
   final bool isVisible;
 
+  /// Optional local reply-time store override for tests.
+  final ReplyTimeStore? replyTimeStore;
+
   const CookingScreen({
     super.key,
     required this.recipe,
@@ -79,6 +83,7 @@ class CookingScreen extends StatefulWidget {
     required this.onPauseAndLeave,
     required this.onShowToast,
     this.isVisible = true,
+    this.replyTimeStore,
   });
 
   @override
@@ -149,7 +154,32 @@ class _CookingScreenState extends State<CookingScreen>
   Timer? _clockTimer;
   late final AnimationController _orbPulseController;
 
+  final List<int> _sessionLlmAskMs = [];
+  final List<int> _sessionLocalActionMs = [];
+  final List<int> _sessionCheckLlmMs = [];
+  final List<int> _sessionCheckTotalMs = [];
+
   RecipeStep get _step => _recipe.steps[_currentStep];
+  ReplyTimeStore get _replyTimeStore =>
+      widget.replyTimeStore ?? ReplyTimeStore.instance;
+
+  void _trackLocalActionMs(int ms) {
+    _sessionLocalActionMs.add(ms);
+    unawaited(_replyTimeStore.recordLocalAction(ms));
+  }
+
+  void _trackLlmAskMs(int ms) {
+    _sessionLlmAskMs.add(ms);
+    unawaited(_replyTimeStore.recordLlmAsk(ms));
+  }
+
+  void _trackVisualCheckMs({required int llmMs, required int totalMs}) {
+    _sessionCheckLlmMs.add(llmMs);
+    _sessionCheckTotalMs.add(totalMs);
+    unawaited(
+      _replyTimeStore.recordVisualCheck(llmMs: llmMs, totalMs: totalMs),
+    );
+  }
 
   @override
   void initState() {
@@ -361,9 +391,14 @@ class _CookingScreenState extends State<CookingScreen>
     });
   }
 
-  void _startCooking({String? lead}) {
+  void _startCooking({String? lead, _TurnTiming? turnTiming}) {
     if (!_opening) return;
-    _goToStep(0, lead: lead);
+    _goToStep(
+      0,
+      fromVoice: turnTiming != null,
+      lead: lead,
+      turnTiming: turnTiming,
+    );
   }
 
   Future<void> _initializeVoiceAndAnnounce(String openingText) async {
@@ -611,14 +646,21 @@ class _CookingScreenState extends State<CookingScreen>
     return "Tell me when $start, and I'll start a $length timer.";
   }
 
-  void _goToStep(int targetStep, {bool fromVoice = false, String? lead}) {
+  void _goToStep(
+    int targetStep, {
+    bool fromVoice = false,
+    String? lead,
+    _TurnTiming? turnTiming,
+  }) {
     if (_isPaused) {
       widget.onShowToast('Resume the session first.');
+      if (turnTiming != null) _recordLocalAction(turnTiming);
       return;
     }
     _endOpening();
     _pendingOffer = null;
     if (targetStep >= _recipe.steps.length) {
+      if (turnTiming != null) _recordLocalAction(turnTiming);
       _completeSession();
       return;
     }
@@ -650,18 +692,37 @@ class _CookingScreenState extends State<CookingScreen>
       isStepAnnouncement: true,
       stepIndex: clamped,
     );
+    final totalMs = turnTiming?.elapsedMs();
+    if (turnTiming != null && turnTiming.fromVoice && totalMs != null) {
+      _trackLocalActionMs(totalMs);
+    }
     widget.assistantService.logEvent(
       sessionId: _sessionId,
       type: 'step_next',
-      data: {'step': clamped, 'fromVoice': fromVoice},
+      data: {
+        'step': clamped,
+        'fromVoice': fromVoice,
+        'ms': ?totalMs,
+        if (turnTiming != null) 'sttMs': turnTiming.sttMs,
+        if (turnTiming != null) 'input': turnTiming.inputMode,
+      },
     );
   }
 
   void _completeSession() {
+    final sessionReplyTimes = ReplyTimeSummary(
+      llmAskSamples: List<int>.from(_sessionLlmAskMs),
+      localActionSamples: List<int>.from(_sessionLocalActionMs),
+      checkStepLlmSamples: List<int>.from(_sessionCheckLlmMs),
+      checkStepTotalSamples: List<int>.from(_sessionCheckTotalMs),
+    );
     widget.assistantService.logEvent(
       sessionId: _sessionId,
       type: 'session_end',
-      data: {'completed': true},
+      data: {
+        'completed': true,
+        'replyTimes': sessionReplyTimes.toExportMap(),
+      },
     );
     widget.onFinishCooking(
       elapsedSeconds: _elapsedSeconds,
@@ -786,19 +847,29 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
-  Future<void> _triggerVisualCheck({String? userQuestion}) async {
+  Future<void> _triggerVisualCheck({
+    String? userQuestion,
+    _TurnTiming? turnTiming,
+  }) async {
     if (_visualCheckInProgress) return;
     _visualCheckInProgress = true;
     try {
-      await _performVisualCheck(userQuestion: userQuestion);
+      await _performVisualCheck(
+        userQuestion: userQuestion,
+        turnTiming: turnTiming,
+      );
     } finally {
       _visualCheckInProgress = false;
     }
   }
 
-  Future<void> _performVisualCheck({String? userQuestion}) async {
+  Future<void> _performVisualCheck({
+    String? userQuestion,
+    _TurnTiming? turnTiming,
+  }) async {
     if (_opening) {
       _appendAiMessage("Let's start the first step, then I can take a look.");
+      if (turnTiming != null) _recordLocalAction(turnTiming);
       return;
     }
     // A photo check changes the subject; a later "sure" isn't an answer
@@ -806,6 +877,7 @@ class _CookingScreenState extends State<CookingScreen>
     _pendingOffer = _stepTimerOffer;
     if (_isPaused) {
       widget.onShowToast('Resume the session first.');
+      if (turnTiming != null) _recordLocalAction(turnTiming);
       return;
     }
     final promptText = userQuestion ?? 'Check this step through my glasses';
@@ -826,12 +898,14 @@ class _CookingScreenState extends State<CookingScreen>
       widget.voiceController.setActivityState(VoiceActivityState.idle);
       return;
     }
+    final captureMs = DateTime.now().difference(startTime).inMilliseconds;
 
     widget.voiceController.setActivityState(
       VoiceActivityState.thinking,
       hint: 'Analyzing visual view with CookTogether AI…',
     );
 
+    final llmStartTime = DateTime.now();
     final response = forced != null
         ? AssistantResponse(
             reply:
@@ -847,10 +921,31 @@ class _CookingScreenState extends State<CookingScreen>
             visionCapture: capture,
             userQuestion: userQuestion,
           );
+    final llmMs = forced != null
+        ? 0
+        : DateTime.now().difference(llmStartTime).inMilliseconds;
 
     if (!mounted) return;
+    final isMock = widget.assistantService.isMockMode;
     if (response.isError) {
       _appendAiMessage(response.reply);
+      final totalMs =
+          turnTiming?.elapsedMs() ??
+          DateTime.now().difference(startTime).inMilliseconds;
+      widget.assistantService.logEvent(
+        sessionId: _sessionId,
+        type: 'check',
+        data: {
+          'step': _currentStep,
+          'ms': totalMs,
+          'llmMs': llmMs,
+          'captureMs': captureMs,
+          if (turnTiming != null) 'sttMs': turnTiming.sttMs,
+          'input': turnTiming?.inputMode ?? 'button',
+          'error': true,
+          if (isMock) 'mock': true,
+        },
+      );
       return;
     }
     setState(() {
@@ -863,23 +958,54 @@ class _CookingScreenState extends State<CookingScreen>
       visionCapture: response.visionCapture ?? capture,
     );
 
-    final elapsedMs = DateTime.now().difference(startTime).inMilliseconds;
+    final totalMs =
+        turnTiming?.elapsedMs() ??
+        DateTime.now().difference(startTime).inMilliseconds;
+    if (turnTiming != null &&
+        turnTiming.fromVoice &&
+        forced == null &&
+        !isMock) {
+      _trackVisualCheckMs(llmMs: llmMs, totalMs: totalMs);
+    }
     widget.assistantService.logEvent(
       sessionId: _sessionId,
       type: 'check',
       data: {
         'step': _currentStep,
         'status': (response.visualStatus ?? VisualCheckStatus.done).wireValue,
-        'ms': elapsedMs,
+        'ms': totalMs,
+        'llmMs': llmMs,
+        'captureMs': captureMs,
+        if (turnTiming != null) 'sttMs': turnTiming.sttMs,
+        'input': turnTiming?.inputMode ?? 'button',
         // So study data can leave out results nobody actually saw.
         if (forced != null) 'forced': true,
+        if (isMock) 'mock': true,
       },
     );
   }
 
-  Future<void> _handleUserUtterance(String rawText) async {
+  void _recordLocalAction(_TurnTiming turnTiming) {
+    if (turnTiming.fromVoice) {
+      _trackLocalActionMs(turnTiming.elapsedMs());
+    }
+  }
+
+  Future<void> _handleUserUtterance(
+    String rawText, {
+    bool fromVoice = true,
+  }) async {
     final text = rawText.trim();
     if (text.isEmpty) return;
+
+    final voiceTiming = fromVoice
+        ? widget.voiceController.consumeLastUtteranceTiming()
+        : null;
+    final turnTiming = _TurnTiming(
+      startedAt: voiceTiming?.speechEndedAt ?? DateTime.now(),
+      sttMs: voiceTiming?.sttMs ?? 0,
+      fromVoice: fromVoice,
+    );
 
     _appendUserMessage(text);
     _textController.clear();
@@ -894,9 +1020,9 @@ class _CookingScreenState extends State<CookingScreen>
       if (intent.type == VoiceIntentType.nextStep ||
           intent.type == VoiceIntentType.carryOn ||
           VoiceIntentParser.isReadyToStart(text)) {
-        _startCooking();
+        _startCooking(turnTiming: turnTiming);
       } else {
-        await _askAssistant(text);
+        await _askAssistant(text, turnTiming: turnTiming);
       }
       return;
     }
@@ -908,18 +1034,19 @@ class _CookingScreenState extends State<CookingScreen>
       if (RegExp(
         r"^(yes|yeah|yep|ok(ay)?|sure|skip( it)?|next( step)?|move on|go ahead)\b",
       ).hasMatch(text.toLowerCase())) {
-        _moveOn(fromVoice: true);
+        _moveOn(fromVoice: true, turnTiming: turnTiming);
         return;
       }
       if (RegExp(
         r"^(check|check first|check it|check this|take a look|inspect|look at this)\b",
       ).hasMatch(text.toLowerCase())) {
-        _triggerVisualCheck(userQuestion: text);
+        await _triggerVisualCheck(userQuestion: text, turnTiming: turnTiming);
         return;
       }
       if (RegExp(
         r"^(no|nope|don'?t|stay|cancel)\b",
       ).hasMatch(text.toLowerCase())) {
+        _recordLocalAction(turnTiming);
         return;
       }
     }
@@ -940,24 +1067,29 @@ class _CookingScreenState extends State<CookingScreen>
 
     switch (intent.type) {
       case VoiceIntentType.nextStep:
-        _nextOrFinish(fromVoice: true);
+        _nextOrFinish(fromVoice: true, turnTiming: turnTiming);
         return;
 
       case VoiceIntentType.carryOn:
         if (_isPaused) {
-          _togglePause(forcePause: false);
+          _togglePause(forcePause: false, turnTiming: turnTiming);
         } else {
-          _nextOrFinish(fromVoice: true);
+          _nextOrFinish(fromVoice: true, turnTiming: turnTiming);
         }
         return;
 
       case VoiceIntentType.previousStep:
         if (_currentStep > 0) {
-          _goToStep(_currentStep - 1, fromVoice: true);
+          _goToStep(
+            _currentStep - 1,
+            fromVoice: true,
+            turnTiming: turnTiming,
+          );
         } else {
           _appendAiMessage(
             'You are already on Step 1: ${_step.title}. ${_step.instruction}',
           );
+          _recordLocalAction(turnTiming);
         }
         return;
 
@@ -965,10 +1097,19 @@ class _CookingScreenState extends State<CookingScreen>
         _appendAiMessage(
           'Repeating Step ${_currentStep + 1}: ${_step.instruction} Tip: ${_step.tip}',
         );
+        final totalMs = turnTiming.elapsedMs();
+        if (turnTiming.fromVoice) {
+          _trackLocalActionMs(totalMs);
+        }
         widget.assistantService.logEvent(
           sessionId: _sessionId,
           type: 'step_repeat',
-          data: {'step': _currentStep},
+          data: {
+            'step': _currentStep,
+            'ms': totalMs,
+            'sttMs': turnTiming.sttMs,
+            'input': turnTiming.inputMode,
+          },
         );
         return;
 
@@ -977,6 +1118,7 @@ class _CookingScreenState extends State<CookingScreen>
         _appendAiMessage(
           'I opened the recipe steps and ingredient checklist for you.',
         );
+        _recordLocalAction(turnTiming);
         return;
 
       case VoiceIntentType.startTimer:
@@ -990,6 +1132,7 @@ class _CookingScreenState extends State<CookingScreen>
         _appendAiMessage(
           'I set a $mins-minute timer for ${label.toLowerCase()}. Keep going—I will let you know when it finishes.',
         );
+        _recordLocalAction(turnTiming);
         return;
 
       case VoiceIntentType.pauseTimer:
@@ -1003,6 +1146,7 @@ class _CookingScreenState extends State<CookingScreen>
             "don't need it.",
           );
         }
+        _recordLocalAction(turnTiming);
         return;
 
       case VoiceIntentType.cancelTimer:
@@ -1015,37 +1159,43 @@ class _CookingScreenState extends State<CookingScreen>
           setState(() => _timers.clear());
           _appendAiMessage('I stopped your timers.');
         }
+        _recordLocalAction(turnTiming);
         return;
 
       case VoiceIntentType.pauseSession:
-        _togglePause(forcePause: true);
+        _togglePause(forcePause: true, turnTiming: turnTiming);
         return;
 
       case VoiceIntentType.resumeSession:
-        _togglePause(forcePause: false);
+        _togglePause(forcePause: false, turnTiming: turnTiming);
         return;
 
       case VoiceIntentType.muteAudio:
         await widget.voiceController.setAudioMuted(true);
+        if (!mounted) return;
         widget.onShowToast('Voice audio muted');
+        _recordLocalAction(turnTiming);
         return;
 
       case VoiceIntentType.unmuteAudio:
         await widget.voiceController.setAudioMuted(false);
+        if (!mounted) return;
         _appendAiMessage('Voice guidance is back on.');
+        _recordLocalAction(turnTiming);
         return;
 
       case VoiceIntentType.finishCooking:
+        _recordLocalAction(turnTiming);
         _completeSession();
         return;
 
       case VoiceIntentType.visualCheckStep:
       case VoiceIntentType.visualQuestion:
-        await _triggerVisualCheck(userQuestion: text);
+        await _triggerVisualCheck(userQuestion: text, turnTiming: turnTiming);
         return;
 
       case VoiceIntentType.generalQuestion:
-        await _askAssistant(text);
+        await _askAssistant(text, turnTiming: turnTiming);
         return;
     }
   }
@@ -1059,7 +1209,10 @@ class _CookingScreenState extends State<CookingScreen>
     VoiceIntentType.openStepsSheet,
   };
 
-  Future<void> _askAssistant(String text) async {
+  Future<void> _askAssistant(
+    String text, {
+    required _TurnTiming turnTiming,
+  }) async {
     setState(() => _waitingForReply = true);
     widget.voiceController.setActivityState(
       VoiceActivityState.thinking,
@@ -1087,6 +1240,7 @@ class _CookingScreenState extends State<CookingScreen>
       if (mounted) setState(() => _waitingForReply = false);
     });
     if (!mounted) return;
+    final llmMs = DateTime.now().difference(startTime).inMilliseconds;
     if (_opening) _openingTurns++;
     // After an error the question was never answered, so the offer stands.
     _pendingOffer = response.isError
@@ -1123,6 +1277,12 @@ class _CookingScreenState extends State<CookingScreen>
       }
     }
 
+    final totalMs = turnTiming.elapsedMs();
+    final isMock = widget.assistantService.isMockMode;
+    if (turnTiming.fromVoice && !response.isError && !isMock) {
+      _trackLlmAskMs(totalMs);
+    }
+
     widget.assistantService.logEvent(
       sessionId: _sessionId,
       type: 'question',
@@ -1130,7 +1290,12 @@ class _CookingScreenState extends State<CookingScreen>
         'step': _opening ? -1 : _currentStep,
         'question': text,
         'reply': response.reply,
-        'ms': DateTime.now().difference(startTime).inMilliseconds,
+        'ms': totalMs,
+        'llmMs': llmMs,
+        'sttMs': turnTiming.sttMs,
+        'input': turnTiming.inputMode,
+        if (response.isError) 'error': true,
+        if (isMock) 'mock': true,
       },
     );
   }
@@ -1226,16 +1391,25 @@ class _CookingScreenState extends State<CookingScreen>
     );
   }
 
-  void _togglePause({bool? forcePause}) {
+  void _togglePause({bool? forcePause, _TurnTiming? turnTiming}) {
     final nextPaused = forcePause ?? !_isPaused;
     setState(() {
       _isPaused = nextPaused;
     });
     widget.voiceController.setSessionPaused(nextPaused);
+    final totalMs = turnTiming?.elapsedMs();
+    if (turnTiming != null && turnTiming.fromVoice && totalMs != null) {
+      _trackLocalActionMs(totalMs);
+    }
     widget.assistantService.logEvent(
       sessionId: _sessionId,
       type: nextPaused ? 'pause' : 'resume',
-      data: {'step': _currentStep},
+      data: {
+        'step': _currentStep,
+        'ms': ?totalMs,
+        if (turnTiming != null) 'sttMs': turnTiming.sttMs,
+        if (turnTiming != null) 'input': turnTiming.inputMode,
+      },
     );
     widget.onShowToast(
       nextPaused ? 'Cooking session paused' : 'Cooking session resumed',
@@ -1301,7 +1475,7 @@ class _CookingScreenState extends State<CookingScreen>
 
   /// Next and "next step" ask first when this step hasn't been checked.
   /// Users can always skip; this only confirms.
-  void _nextOrFinish({bool fromVoice = false}) {
+  void _nextOrFinish({bool fromVoice = false, _TurnTiming? turnTiming}) {
     if (!_isPaused && !_checkedSteps.contains(_currentStep)) {
       setState(() => _confirmSkipOpen = true);
       const ask =
@@ -1314,16 +1488,22 @@ class _CookingScreenState extends State<CookingScreen>
       } else {
         _speakOnly(ask, isQuestion: true);
       }
+      if (turnTiming != null) _recordLocalAction(turnTiming);
       return;
     }
-    _moveOn(fromVoice: fromVoice);
+    _moveOn(fromVoice: fromVoice, turnTiming: turnTiming);
   }
 
-  void _moveOn({bool fromVoice = false}) {
+  void _moveOn({bool fromVoice = false, _TurnTiming? turnTiming}) {
     if (_isLastStep) {
+      if (turnTiming != null) _recordLocalAction(turnTiming);
       _completeSession();
     } else {
-      _goToStep(_currentStep + 1, fromVoice: fromVoice);
+      _goToStep(
+        _currentStep + 1,
+        fromVoice: fromVoice,
+        turnTiming: turnTiming,
+      );
     }
   }
 
@@ -2073,7 +2253,8 @@ class _CookingScreenState extends State<CookingScreen>
               controller: _textController,
               autofocus: true,
               textInputAction: TextInputAction.send,
-              onSubmitted: _handleUserUtterance,
+              onSubmitted: (value) =>
+                  _handleUserUtterance(value, fromVoice: false),
               style: Theme.of(context).textTheme.bodyLarge,
               decoration: const InputDecoration(
                 hintText: 'Type a question or command',
@@ -2087,7 +2268,8 @@ class _CookingScreenState extends State<CookingScreen>
               foregroundColor: Colors.white,
             ),
             tooltip: 'Send',
-            onPressed: () => _handleUserUtterance(_textController.text),
+            onPressed: () =>
+                _handleUserUtterance(_textController.text, fromVoice: false),
             icon: const Icon(Icons.send_rounded),
           ),
         ],
@@ -2417,4 +2599,21 @@ class _CookingScreenState extends State<CookingScreen>
       ),
     );
   }
+}
+
+class _TurnTiming {
+  final DateTime startedAt;
+  final int sttMs;
+  final bool fromVoice;
+
+  const _TurnTiming({
+    required this.startedAt,
+    required this.sttMs,
+    required this.fromVoice,
+  });
+
+  String get inputMode => fromVoice ? 'voice' : 'text';
+
+  int elapsedMs() =>
+      DateTime.now().difference(startedAt).inMilliseconds.clamp(0, 600000);
 }
