@@ -36,12 +36,16 @@ class ClaudeLLM(LLM):
                 max_tokens=max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": content}],
-                thinking={"type": "disabled"},
+                # Sonnet 5.5 thinks by default, and thinking can use up
+                # max_tokens (200 for /ask) before any text, leaving an empty
+                # reply. "between_tools" turns off up-front thinking; Sonnet
+                # 5.5 rejects "disabled" with a 400.
+                thinking={"type": "between_tools"},
                 timeout=timeout,
             )
         except anthropic.APITimeoutError as e:
             raise LLMTimeout(str(e)) from e
         except anthropic.APIError as e:
-            raise LLMError(f"claude: {e.__class__.__name__}") from e
+            raise LLMError(f"claude: {e.__class__.__name__}: {getattr(e, 'message', e)}") from e
 
         return "".join(block.text for block in resp.content if block.type == "text")
