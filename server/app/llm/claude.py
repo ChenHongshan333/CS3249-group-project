@@ -36,6 +36,7 @@ class ClaudeLLM(LLM):
                 max_tokens=max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": content}],
+                thinking={"type": "disabled"},
                 timeout=timeout,
             )
         except anthropic.APITimeoutError as e:
