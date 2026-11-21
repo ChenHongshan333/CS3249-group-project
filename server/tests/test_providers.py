@@ -7,7 +7,7 @@ import pytest
 
 from app.config import Settings
 from app.llm import LLMNotConfigured, build_llm
-from app.llm.claude import ClaudeLLM
+from app.llm.claude import ClaudeLLM, thinking_off
 from app.llm.openai_compat import OpenAICompatLLM
 
 
@@ -70,8 +70,22 @@ def test_claude_request_shape():
     content = sent["messages"][0]["content"]
     assert content[0]["type"] == "image" and content[0]["source"]["media_type"] == "image/jpeg"
     assert content[1] == {"type": "text", "text": "hi"}
-    # Sonnet 5.5 rejects "disabled"; "between_tools" turns off up-front thinking.
-    assert sent["thinking"] == {"type": "between_tools"}
+    assert sent["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+@pytest.mark.parametrize(
+    "model, extra",
+    [
+        ("claude-haiku-5-5", {"thinking": {"type": "disabled"}}),
+        # "disabled" is a 400 on Sonnet 5.5.
+        ("claude-sonnet-5-5", {"thinking": {"type": "between_tools"}}),
+        # Thinking can't be turned off on these.
+        ("claude-opus-5-5", {"output_config": {"effort": "low"}}),
+        ("claude-fable-5-2", {"output_config": {"effort": "low"}}),
+    ],
+)
+def test_claude_thinking_off_per_model(model, extra):
+    assert thinking_off(model) == extra
 
 
 @pytest.mark.parametrize("native", [True, False])
