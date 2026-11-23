@@ -106,6 +106,10 @@ import UIKit
     }
   }
 
+  // INNOVATION: Meta Glasses Persistent Bluetooth HFP Audio Routing (iOS) —
+  // Actively selects the glasses' Bluetooth HFP/LE microphone on AVAudioSession
+  // and monitors `routeChangeNotification` to automatically reclaim headset
+  // input if iOS reverts to the phone's built-in microphone mid-session.
   /// Routes audio input and output through a connected Bluetooth headset (such
   /// as Ray-Ban Meta glasses) using HFP so SpeechToText and Whisper VAD record
   /// from the glasses' microphone instead of the iPhone's built-in mic.
@@ -170,6 +174,11 @@ import UIKit
     try? session.setPreferredInput(nil)
   }
 
+  // INNOVATION: Kitchen-Resilient Native 16 kHz PCM Pre-Roll Ring-Buffer & Adaptive RMS VAD (iOS) —
+  // Continuously captures 16 kHz mono PCM via `AVAudioEngine` with a 350 ms
+  // pre-roll ring buffer (preserving word onsets) and a live-tunable adaptive
+  // RMS noise-floor tracker so kitchen sizzle, extractor fans, and clatter do
+  // not trigger false utterances before handing clean `.wav` clips to Whisper.
   // MARK: - 16 kHz Mono PCM Ring-Buffer + VAD Recorder for Whisper
 
   private func startVadListening(

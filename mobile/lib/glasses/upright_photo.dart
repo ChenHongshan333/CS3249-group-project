@@ -3,6 +3,12 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 
+// INNOVATION: Meta Glasses Off-Isolate EXIF & 90-Degree Upright Photo Correction —
+// Ray-Ban Meta DAT snapshots arrive rotated 90° anticlockwise without reliable
+// orientation metadata; this inspects EXIF orientation, normalizes or rotates
+// the JPEG upright inside a background `Isolate.run` so the Flutter UI stays
+// responsive, and ensures both the screen preview and vision LLM receive an
+// upright frame.
 /// Turns a glasses photo upright before it's shown or sent to the AI (#85).
 ///
 /// The glasses' photos show up rotated 90° anticlockwise, and Meta's plugin

@@ -16,6 +16,11 @@ enum GlassesConnectionState {
   connectedHardware,
 }
 
+// INNOVATION: Meta Glasses Hardware-Agnostic Interface & Mock Device Kit Parity —
+// Decouples all UI screens from the Meta Wearables Device Access Toolkit
+// (`meta_wearables_dat_flutter`) behind one reactive interface so real Ray-Ban
+// Meta glasses and the Mock Device Kit share identical capture, telemetry, and
+// fallback lifecycles across iOS, Android, web, and widget tests.
 /// Clean interface boundary in `lib/glasses/` between the UI screens and
 /// the Meta Wearables Device Access Toolkit (`meta_wearables_dat_flutter`).
 abstract class GlassesService extends ChangeNotifier {
@@ -500,6 +505,11 @@ class MetaWearablesDatGlassesService extends GlassesService {
     return capture;
   }
 
+  // INNOVATION: Meta Glasses Resilient Capture Recovery —
+  // Prevents concurrent capture freezes, guards closed-hinge/disconnected
+  // states, automatically prompts for missing camera permissions, waits up to
+  // 15 s for transient Bluetooth link drops after snapshots, and maps opaque
+  // DAT SDK exceptions to concise, actionable spoken guidance.
   Future<VisionCapture> _captureFromRealGlasses(
     Recipe recipe,
     int stepIndex,
@@ -600,6 +610,11 @@ class MetaWearablesDatGlassesService extends GlassesService {
     }
   }
 
+  // INNOVATION: Meta Glasses On-Demand Transient Camera Streaming —
+  // Opens the wearable video stream strictly for a single high-quality POV
+  // snapshot and tears it down immediately afterward (never stopping an
+  // unstarted session to avoid native SDK deadlocks), conserving glasses
+  // battery/thermals and keeping the capture LED active only per check.
   /// Starts the camera stream only for one photo, then stops it, so the
   /// glasses' capture light is on only while the photo is taken.
   Future<VisionCapture> _takeGlassesPhoto(

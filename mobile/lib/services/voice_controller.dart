@@ -1152,6 +1152,11 @@ class VoiceController extends ChangeNotifier {
     } catch (_) {}
   }
 
+  // INNOVATION: Meta Glasses Bluetooth HFP-to-Camera Contention Coordination —
+  // Keeping the glasses' Bluetooth HFP microphone link open can block the
+  // wearable camera stream from starting. This stops listening, awaits the
+  // spoken "hold still" TTS prompt, explicitly releases the Bluetooth HFP mic
+  // link before capture, and restores it automatically on the next speech turn.
   /// Waits for the spoken "hold still" prompt before allowing a glasses photo.
   /// Normal replies don't await speech completion, so they can't be used here.
   Future<bool> prepareForPhoto({required bool voiceGuidanceEnabled}) async {

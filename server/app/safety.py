@@ -70,6 +70,12 @@ def _claims(sentence: str, patterns: list[re.Pattern]) -> bool:
     return False
 
 
+# INNOVATION: Deterministic Food-Safety & Allergy Guardrail with Caveat Preservation —
+# Inspects every LLM reply clause-by-clause before TTS playback to catch unsafe
+# doneness ("chicken is cooked through") or allergy-safety claims and replace
+# them with safe verification advice, while preserving valid negated caveats
+# ("a photo can't confirm chicken is cooked through") and downgrading check
+# verdicts to "unsure".
 def make_safe(text: str) -> tuple[str, bool]:
     """Drop sentences that claim food is cooked or allergy-safe.
 
@@ -128,6 +134,11 @@ def parse_check(raw: str) -> tuple[CheckStatus, str]:
     return ("unsure" if replaced else status), say
 
 
+# INNOVATION: Phase-Scoped Offer/Action Validation & Adapted-Step Safety Sanitization —
+# Validates every structured LLM offer and action against the active cooking
+# phase and current recipe state (rejecting invalid timers, unknown ingredients,
+# or removing all steps), recovers speakable text from truncated JSON, and
+# sanitizes dynamically adapted recipe steps (e.g., preventing "boil oil").
 def parse_ask(raw: str, req: AskRequest) -> tuple[str, Action | None, Action | None]:
     """Read {"reply", "offer", "action"} from the model.
 

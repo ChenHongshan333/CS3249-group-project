@@ -64,6 +64,11 @@ class VoiceIntentParser {
     'sixty': 60,
   };
 
+  // INNOVATION: Hybrid Intent Parser with Question/Request Guardrail —
+  // Combines on-device TFLite semantic classification with deterministic
+  // rule fallback and an explicit question-vs-request guardrail so open-ended
+  // cooking questions ("how small should I chop this?") route safely to the
+  // AI assistant rather than misfiring local navigation or timer commands.
   /// Asynchronously parses a spoken or typed command using the on-device
   /// TFLite semantic classifier if ready and confident, falling back to
   /// the deterministic rule-based parser.

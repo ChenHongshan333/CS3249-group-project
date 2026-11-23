@@ -23,6 +23,11 @@ class TfliteClassificationResult {
       'TfliteClassificationResult(type: ${type.name}, confidence: ${confidence.toStringAsFixed(3)})';
 }
 
+// INNOVATION: On-Device Semantic Intent Parser via Quantized all-MiniLM-L6-v2 Centroids —
+// Runs a quantized 384-dimensional sentence-embedding TFLite model locally with
+// pre-computed intent centroids and cosine similarity so natural cooking
+// commands ("I'm done with this step", "check my pan") resolve offline in
+// milliseconds without an LLM round-trip.
 /// On-device semantic intent classifier powered by `tflite_flutter` and
 /// sentence embeddings (`all-MiniLM-L6-v2`).
 ///

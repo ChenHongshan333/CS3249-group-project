@@ -111,6 +111,10 @@ class MainActivity : FlutterFragmentActivity() {
         super.onDestroy()
     }
 
+    // INNOVATION: Meta Glasses Persistent Bluetooth HFP Audio Routing (Android) —
+    // Claims the glasses' Bluetooth SCO communication device and listens to
+    // `OnCommunicationDeviceChangedListener` with debounced recovery so Android
+    // keeps speech capture on the wearable microphone when links transiently drop.
     /**
      * Records speech through a Bluetooth headset's mic, such as the glasses,
      * so the user doesn't have to talk to the phone on the counter. Replies
@@ -195,6 +199,11 @@ class MainActivity : FlutterFragmentActivity() {
         routeListener = null
     }
 
+    // INNOVATION: Kitchen-Resilient Native 16 kHz PCM Pre-Roll Ring-Buffer & Adaptive RMS VAD (Android) —
+    // Continuously streams 16 kHz mono PCM from `AudioRecord` with a 350 ms
+    // pre-roll ring buffer (preserving word onsets) and live-tunable adaptive
+    // RMS noise-floor tracking to filter kitchen background noise before
+    // emitting clean `.wav` utterances to on-device Whisper.
     @SuppressLint("MissingPermission")
     private fun startVadListening(
         silenceDurationMs: Int,

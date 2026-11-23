@@ -10,6 +10,11 @@ typedef AdaptedRecipe = ({
   Map<int, int> moved,
 });
 
+// INNOVATION: Hybrid Deterministic + LLM Dynamic Recipe Step Adaptation —
+// Rewrites or removes recipe steps live when ingredients are missing or
+// swapped, combining curated hand-written substitutions, clause-aware
+// deterministic sentence rewriting, and backend AI `adapt_steps`/`custom_swap`
+// edits while remapping step indices cleanly.
 /// Adapts recipe steps to missing ingredients. The choices on Get ready
 /// come with hand-written changes (lib/models/missing_options.dart); the
 /// rule-based rewrites here are the fallback, and serve the built-in demo

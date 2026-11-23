@@ -1,63 +1,138 @@
-# CookAlong mobile app (Flutter)
+# CookTogether Mobile App (Flutter)
 
-Owners:
+One Flutter codebase builds the iOS app, the Android app, and a web preview for quick UI checks. The screens communicate with smart glasses through a single interface, [`GlassesService`](lib/glasses/glasses_service.dart), keeping wearable hardware integration cleanly decoupled from the UI layer.
 
-- Jaxon: Meta glasses connection (camera, mic, speakers) in `lib/glasses/`
-- Screens in `lib/screens/`, styled by `lib/theme/`. Design rules for Claude Code are in [`.claude/skills/cookalong-flutter-ui/`](../.claude/skills/cookalong-flutter-ui/SKILL.md).
+The backend API contract is documented in [`docs/api.md`](../docs/api.md). By default, the app connects to the team's hosted backend (`https://cookalong-backend.onrender.com`); you can override it under **Profile → Developer → Backend URL**, or clear the URL to use built-in offline demo answers. When the backend is unreachable, the app speaks *"Sorry, I couldn't reach the assistant…"* rather than silently falling back to demo replies.
 
-One Flutter codebase builds the Android app, the iPhone app, and a web version for quick UI checks. The screens talk to the glasses through one interface, `GlassesService`, so glasses code and screen code meet in one place.
+> **Hosted backend cold start:** The backend runs on Render's free plan, which sleeps after 15 idle minutes and takes up to ~60 seconds to wake. CookTogether automatically pings `/health` when the app opens and when you reach *Get Ready*, so it is usually warm before the first question.
 
-The backend contract the app calls is in [`docs/api.md`](../docs/api.md). The app uses the team's deployed backend (`https://cookalong-backend.onrender.com`) by default; change it under Profile → Developer. Clear the URL to use built-in demo answers instead. When the backend can't answer, the app says "Sorry, I couldn't reach the assistant…" rather than giving a demo answer.
+---
 
-The backend runs on Render's free plan, which sleeps after 15 idle minutes and takes up to a minute to wake. The app wakes it when it opens and when you reach Get ready, so it is usually awake by the first question.
+## Compiling & Running the Flutter App
 
-## Run
+> **Evaluation tip (iOS):** Compiling and signing the iOS app for a physical iPhone requires **macOS, Xcode, and an Apple Developer account** (especially for Meta Wearables DAT entitlements). Evaluators do not need to compile the iOS build themselves if joining via **TestFlight**—see the root [`README.md`](../README.md#2-mobile-application-testflight-evaluation).
 
-Needs the Flutter SDK (stable, Dart 3.12 or newer).
+### Prerequisites
+
+| Target | Host OS | Required Tools & Notes |
+| --- | --- | --- |
+| **Shared** | Any | **Flutter SDK** (stable channel, **Dart `^3.12.2`**) |
+| **iOS** *(Primary / Meta Glasses)* | **macOS only** | **Xcode 26.4+**, **CocoaPods** (`pod`), physical iPhone running **iOS 17.6+**, and an **Apple Developer account** for code signing (`com.orion.cooktogether`). Builds signed with a free personal Apple ID expire after 7 days; paid Apple Developer accounts support TestFlight distribution. |
+| **Android** | macOS, Windows, or Linux | **Android Studio / Android SDK** (`minSdk 31` / Android 12+), **Java 17** (`JDK 17`), physical Android device with USB debugging enabled. |
+| **Web** *(UI check only)* | macOS, Windows, or Linux | **Chrome**. Supports simulated glasses only—native Meta DAT, `whisper.cpp` FFI, and TFLite NLU do not run on Web. |
+
+### Step 1 — Install Flutter Dependencies & Check ML Assets
 
 ```bash
 cd mobile
 flutter pub get
-flutter run -d chrome        # web, simulated glasses only
-flutter run                  # a connected Android phone or iPhone
-flutter test                 # unit and widget tests
 ```
 
-Builds need different tools:
+- **Bundled TFLite intent model:** `assets/models/all-MiniLM-L6-v2-quant.tflite` (~22 MB) and `assets/models/vocab.txt` are already committed in the repository and packaged into the app bundle automatically.
+- **On-device Whisper model (`base.en`):** `ggml-base.en.bin` is downloaded automatically on first mobile launch into the app's local storage directory (`WhisperTranscriber.ensureModelDownloaded()`); no manual model download step is needed during compilation.
 
-| Target | Build on | Also needs |
-| --- | --- | --- |
-| Web | Windows, macOS or Linux | Chrome |
-| Android | Windows, macOS or Linux | Android Studio (Android SDK) |
-| iPhone | **macOS only** | Xcode 26.4 or newer, an Apple ID for signing. Apps signed with a free Apple ID stop working after 7 days, so reinstall before a demo. |
+### Step 2 — Compile & Run for iOS (Physical iPhone / TestFlight)
 
-To render every screen to PNG for review, see the screenshot section in the UI skill.
+1. **Install CocoaPods dependencies:**
 
-## Simulated or real glasses
+   ```bash
+   cd mobile/ios
+   pod install
+   cd ..
+   ```
 
-The app uses the real glasses if it is already registered with the Meta AI app. Otherwise it says "Glasses not connected", and step checks use the phone camera.
+   > `ios/Podfile` targets iOS 17.6 and automatically configures `whisper_kit` with C++17 and Apple's `Accelerate` framework flags.
 
-Simulated glasses (Meta's Mock Device Kit) are for demos and the web build, and are hidden from users. Turn on **Profile → Developer → Simulated glasses when no real ones** to show them as connected and use their photos. The same section picks the simulated model and simulates a touchpad tap.
+2. **Configure Apple Developer Signing in Xcode:**
 
-### Connect real glasses
+   ```bash
+   open ios/Runner.xcworkspace
+   ```
 
-Needs the Meta AI app V290 or newer and glasses firmware V128 or newer.
+   - Select the **Runner** project → **Runner** target → **Signing & Capabilities**.
+   - Enable **Automatically manage signing** and select your **Apple Developer Team** (this also populates `$(DEVELOPMENT_TEAM)` inside `ios/Runner/Info.plist`'s `MWDAT` dictionary, which Meta's toolkit requires).
+   - If using your own Apple Developer account and `com.orion.cooktogether` is already claimed, update **Bundle Identifier** to a unique identifier.
 
-1. In the Meta AI app, open Settings → App Info and tap the version number five times. Turn on **Developer Mode**. If your glasses show an **Install** button there, tap it and keep the app open until it finishes.
-2. Install this app on the same phone (see the table above).
-3. In this app, open a recipe, tap **Connect** next to the glasses status, then **Connect my glasses**.
+3. **Compile and install on a connected iPhone:**
+
+   ```bash
+   flutter devices                           # note your iPhone's device ID
+   flutter run --release -d <ios-device-id>  # recommended for testing real Meta Glasses & Whisper speed
+   # or debug build:
+   flutter run -d <ios-device-id>
+   ```
+
+4. **Build an `.ipa` Archive for TestFlight (optional):**
+
+   ```bash
+   flutter build ipa --release
+   ```
+
+   Alternatively, open `ios/Runner.xcworkspace` in Xcode and run **Product → Archive → Distribute App → TestFlight & App Store**.
+
+### Step 3 — Compile & Run for Android
+
+1. Connect an Android 12+ (`API 31+`) phone with USB debugging enabled and verify detection:
+
+   ```bash
+   flutter devices
+   ```
+
+2. Compile and run directly on the device:
+
+   ```bash
+   flutter run --release -d <android-device-id>
+   ```
+
+3. Or build a standalone release APK:
+
+   ```bash
+   flutter build apk --release
+   # Output: build/app/outputs/flutter-apk/app-release.apk
+   ```
+
+### Step 4 — Run on Web (Quick UI Preview)
+
+```bash
+flutter run -d chrome
+```
+
+### Step 5 — Static Analysis & Automated Tests
+
+```bash
+flutter analyze   # Dart & Flutter lints / type checks
+flutter test      # unit and widget test suite
+```
+
+---
+
+## Simulated or Real Glasses
+
+The app uses real Ray-Ban Meta glasses if it is already registered with the Meta AI app. Otherwise it shows *"Glasses not connected"*, and step checks fall back to the phone camera.
+
+Simulated glasses (Meta's Mock Device Kit) are available for demos, testing, and the web build, and are hidden from normal users. Turn on **Profile → Developer → Simulated glasses when no real ones** to show them as connected and use their photos. The same section picks the simulated model and simulates a touchpad tap.
+
+### Connect Real Glasses
+
+Needs the **Meta AI app V290 or newer** and **glasses firmware V128 or newer**.
+
+1. In the Meta AI app, open **Settings → App Info** and tap the version number five times. Turn on **Developer Mode**. If your glasses show an **Install** button there, tap it and keep the app open until it finishes.
+2. Install CookTogether on the same phone (via TestFlight or the compilation steps above).
+3. In CookTogether, open a recipe, tap **Connect** next to the glasses status, then **Connect my glasses**.
 4. Meta AI opens. Approve the unverified app; this is normal in Developer Mode. Meta AI returns to CookTogether through the `cookalong://` link.
 5. Allow camera access when asked.
 
-If the glasses are turned off later, Get ready shows "Glasses disconnected". Turn them on, tap **Reconnect**, then **Reconnect glasses**.
+If the glasses are turned off later, *Get Ready* shows *"Glasses disconnected"*. Turn them on, tap **Reconnect**, then **Reconnect glasses**.
 
 After that, **Check** on the cooking screen takes a photo with the glasses. The glasses camera turns on only while the photo is taken. If it can't take a photo (glasses folded, too warm, or not connected), the app says why instead of checking a blank image.
 
-Speech and the spoken replies go through the glasses as a normal Bluetooth headset, so they work without this registration.
+Speech and spoken replies route through the glasses as a Bluetooth HFP headset, so they work without repeating camera registration.
+
+---
 
 ## Voice Control & Wake Word
 
-CookTogether features hands-free voice assistance powered by on-device Voice Activity Detection (VAD) and local Whisper (`base.en` model).
+CookTogether features hands-free voice assistance powered by native 16 kHz PCM Voice Activity Detection (VAD), local Whisper (`base.en`), and an on-device hybrid TFLite (`all-MiniLM-L6-v2`) intent parser.
 
 ### Wake Phrase
 
@@ -93,15 +168,18 @@ When CookTogether asks you a direct question (for example, *"Skip this step with
 * **Text Input:** Tap the keyboard icon or **More ("...") → Type instead** to type commands or questions manually.
 * **Microphone Routing:** Audio is recorded through the Meta glasses' Bluetooth microphone if connected, or automatically falls back to the phone's built-in microphone when glasses are unavailable.
 
-### Where the setup lives
+---
 
-These are already done. Keep them when you change the app ID or name:
+## Native Meta Glasses Configuration Reference
 
-- `ios/Runner/Info.plist`: the `MWDAT` dictionary (Developer Mode values), the `cookalong` URL scheme, accessory and Bluetooth background modes, and local network access.
-- `ios/Runner/SceneDelegate.swift`: forwards the Meta AI callback URL to the plugin.
-- `android/app/src/main/AndroidManifest.xml`: the Meta app ID and token, plus the `cookalong://` intent filter.
-- `android/app/src/main/kotlin/.../MainActivity.kt`: extends `FlutterFragmentActivity`, and `minSdk` is 31.
+These native platform configurations are already set up in the repository. Preserve them if changing the bundle/application ID or app name:
 
-Both platforms opt out of Meta's toolkit analytics, so study sessions don't send usage data to Meta.
+- `ios/Runner/Info.plist`: the `MWDAT` dictionary (Developer Mode values & `$(DEVELOPMENT_TEAM)`), the `cookalong` URL scheme, `fb-viewapp` query scheme, external accessory protocol (`com.meta.ar.wearable`), Bluetooth background modes, and local network access.
+- `ios/Runner/SceneDelegate.swift`: forwards the `cookalong://` Meta AI callback URL to the plugin (`MetaWearablesDatHandleURL`).
+- `ios/Runner/AppDelegate.swift`: native Bluetooth HFP audio routing and 16 kHz PCM pre-roll VAD engine.
+- `android/app/src/main/AndroidManifest.xml`: Meta app ID and client token (`0` for Developer Mode), analytics opt-out, Bluetooth permissions, and the `cookalong://` intent filter.
+- `android/app/src/main/kotlin/com/cs3249/mobile/MainActivity.kt`: extends `FlutterFragmentActivity`, implements Bluetooth SCO mic persistence and 16 kHz PCM pre-roll VAD (`minSdk 31`).
 
-If registration fails with "not set up for Meta glasses", call `MetaWearablesDat.dumpDiagnostics()` from a debug build and fix the findings it lists. The plugin's own guide is [`meta_wearables_dat_flutter`](https://pub.dev/packages/meta_wearables_dat_flutter).
+Both platforms opt out of Meta's toolkit analytics so user sessions do not transmit usage telemetry to Meta.
+
+If registration fails with *"not set up for Meta glasses"*, call `MetaWearablesDat.dumpDiagnostics()` from a debug build and resolve the reported items. See also [`meta_wearables_dat_flutter`](https://pub.dev/packages/meta_wearables_dat_flutter).
