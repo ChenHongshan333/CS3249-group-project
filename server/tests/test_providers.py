@@ -70,6 +70,8 @@ def test_claude_request_shape():
     content = sent["messages"][0]["content"]
     assert content[0]["type"] == "image" and content[0]["source"]["media_type"] == "image/jpeg"
     assert content[1] == {"type": "text", "text": "hi"}
+    # Sonnet 5.5 rejects "disabled"; "between_tools" turns off up-front thinking.
+    assert sent["thinking"] == {"type": "between_tools"}
 
 
 @pytest.mark.parametrize("native", [True, False])

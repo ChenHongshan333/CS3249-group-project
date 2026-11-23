@@ -160,6 +160,7 @@ def _add_routes(app: FastAPI) -> None:
         )
         reply, offer, action = safety.parse_ask(raw, req)
         if not reply:
+            log.error("empty reply, raw model output: %r", raw[:500])
             raise LLMError("empty reply")
         return AskResponse(reply=reply, offer=offer, action=action)
 
